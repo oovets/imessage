@@ -1,0 +1,27 @@
+name: docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**.md"
+      - "mkdocs.yml"
+      - "docs/**"
+      - "scripts/docs.sh"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write   # mkdocs gh-deploy pushes the built site to the gh-pages branch
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install mkdocs-material
+      - run: bash scripts/docs.sh
+      - run: mkdocs gh-deploy --force --no-history
