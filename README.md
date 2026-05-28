@@ -1,7 +1,7 @@
-# messages
+# imessage
 
-[![latest release](https://img.shields.io/github/v/release/oovets/messages?label=latest%20release)](https://github.com/oovets/messages/releases/latest)
-[![macOS](https://img.shields.io/badge/macOS-desktop-black)](https://github.com/oovets/messages/releases/latest)
+[![latest release](https://img.shields.io/github/v/release/oovets/imessage?label=latest%20release)](https://github.com/oovets/imessage/releases/latest)
+[![macOS](https://img.shields.io/badge/macOS-desktop-black)](https://github.com/oovets/imessage/releases/latest)
 [![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8D8)](https://tauri.app/)
 [![React + TypeScript](https://img.shields.io/badge/React-TypeScript-3178C6)](https://react.dev/)
 
@@ -14,9 +14,9 @@ and zustand: a clean multi-pane imessage experience with keychain credential sto
 native notifications, deep links, and locally-fetched rich link previews. a browser-served
 web build exists for development, but the shipping product is the macos desktop app.
 
-download -> [latest release](https://github.com/oovets/messages/releases/latest) ·
-[apple silicon dmg](https://github.com/oovets/messages/releases/download/v0.1.3/Messages_0.1.3_aarch64.dmg) ·
-[intel dmg](https://github.com/oovets/messages/releases/download/v0.1.3/Messages_0.1.3_x64.dmg)
+download -> [latest release](https://github.com/oovets/imessage/releases/latest) ·
+[apple silicon dmg](https://github.com/oovets/imessage/releases/download/v0.1.3/Messages_0.1.3_aarch64.dmg) ·
+[intel dmg](https://github.com/oovets/imessage/releases/download/v0.1.3/Messages_0.1.3_x64.dmg)
 
 ```
 == desktop features ==
