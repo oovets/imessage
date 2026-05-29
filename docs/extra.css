@@ -68,6 +68,8 @@ body,
   color: #5fd75f;
   border: 1px solid #2f3a2f;
   border-radius: 4px;
+  /* one extra character of left padding so text isn't flush against the border */
+  padding-left: calc(1.18em + 1ch);
 }
 
 /* inline `code`: slightly lighter so it stays legible inside prose */
