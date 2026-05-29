@@ -20,6 +20,7 @@ theme:
 
 extra_css:
   - extra.css
+  - https://stevoo.net/theme.css
 
 nav:
   - readme: index.md
