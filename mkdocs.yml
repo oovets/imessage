@@ -21,6 +21,11 @@ theme:
 extra_css:
   - extra.css
   - https://stevoo.net/theme.css
+  - https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css
+
+extra_javascript:
+  - https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js
+  - https://stevoo.net/map.js
 
 nav:
   - readme: index.md
