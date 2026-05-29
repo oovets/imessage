@@ -5,7 +5,6 @@
 [![Docs](https://img.shields.io/badge/docs-mkdocs--material-blue.svg)](https://stevoo.net/imessage/)
 
 ![](docs/assets/messages-mockup.svg)
-
 native macos desktop app for bluebubbles servers. a real tauri 2 application that installs
 into /applications, lives in the menu bar, launches at login, and feels at home on macos —
 not a webpage in a wrapper. built with tauri 2, rust, react, typescript, vite, tailwind,
