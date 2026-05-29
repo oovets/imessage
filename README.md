@@ -1,12 +1,10 @@
-# imessage
-
 [![latest release](https://img.shields.io/github/v/release/oovets/imessage?label=latest%20release)](https://github.com/oovets/imessage/releases/latest)
 [![macOS](https://img.shields.io/badge/macOS-desktop-black)](https://github.com/oovets/imessage/releases/latest)
 [![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8D8)](https://tauri.app/)
 [![React + TypeScript](https://img.shields.io/badge/React-TypeScript-3178C6)](https://react.dev/)
 [![Docs](https://img.shields.io/badge/docs-mkdocs--material-blue.svg)](https://stevoo.net/imessage/)
 
-![layout mockup](docs/assets/messages-mockup.svg)
+![](docs/assets/messages-mockup.svg)
 
 native macos desktop app for bluebubbles servers. a real tauri 2 application that installs
 into /applications, lives in the menu bar, launches at login, and feels at home on macos —
@@ -23,11 +21,17 @@ download -> [latest release](https://github.com/oovets/imessage/releases/latest)
 == desktop features ==
 
 - real macos app bundle: native menu, tray icon, dock presence, Cmd+Q
+
 - macos keychain-backed credential storage in release builds
+
 - native desktop notifications for incoming messages
+
 - launch-at-login and messages:// deep links to jump straight to a chat
+
 - link previews fetched locally through the tauri http plugin (no cors hacks)
+
 - app-wide font scaling (Cmd +, Cmd -, Cmd 0) plus theme colour editing
+
 - multi-pane conversations, replies, tapbacks, image/video/file attachments with
   full-size preview dialogs
 ```
@@ -38,14 +42,15 @@ download -> [latest release](https://github.com/oovets/imessage/releases/latest)
 current version 0.1.3. macos releases are built by github actions from v* tags:
   apple silicon   aarch64-apple-darwin on macos-latest
   intel           x86_64-apple-darwin on macos-13
+
 release builds are currently unsigned unless apple signing + notarization secrets are
 added to the repo.
 ```
 
 ```
 == requirements ==
-
 to use the app:
+
 - macos (apple silicon or intel)
 - a reachable bluebubbles server + its url and password/api key
 
@@ -65,11 +70,16 @@ read the messages sqlite db); accessibility + automation granted (to send messag
 
 install:
 1. download the latest server from bluebubbles.app/server (or the github releases)
+
 2. move BlueBubbles.app to /applications and launch it
+
 3. approve prompts: system settings -> privacy & security -> full disk access, then
    accessibility, then automation (allow control of messages + system events)
+
 4. set a strong server password (this is the api password the client uses)
+
 5. choose a port (default 1234) and start the server
+
 6. optional: launch on startup + disable app nap so it survives reboots
 
 exposing: lan-only uses http://<mac-ip>:1234. for remote, use cloudflare tunnel
@@ -124,16 +134,21 @@ npm run tauri:build  # build local desktop bundles
 secure settings   src/lib/secureConfig.ts + native tauri commands in src-tauri/src/lib.rs.
                   web keeps credentials in memory; tauri dev uses dev storage; release uses
                   keychain; clearing settings removes current + legacy keychain entries.
+
 realtime + sync   connects to the bluebubbles socket.io-compatible websocket; falls back to
                   http polling. (src/hooks/useWebSocket.ts, usePollingFallback.ts,
                   src/api/client.ts)
+
 messages + attach optimistic outgoing render, deduped against server echoes via temp guids;
                   images inline (click -> dark full-size dialog), video as <video controls>,
                   other attachments as links. (src/components/Message*.tsx, store/useAppStore)
+
 link previews     fetched locally via the tauri http plugin, cached in zustand with a bounded
                   size. (src/lib/linkPreview.ts, components/LinkPreviewCard.tsx)
+
 appearance        light/dark + superlight modes, app-wide font scaling (Cmd +/-/0), font
                   family + colour-token editing, auto-hidden scrollbars. (src/lib/appearance.ts)
+
 macos integration native menu + tray actions, launch at login, desktop notifications,
                   messages:// deep links:  messages://chat/<guid>  or
                   messages://open?chat=<guid>
@@ -174,9 +189,12 @@ npm run tauri:build     # for desktop packaging changes
 
 keychain prompts in dev   unsigned dev binaries trigger repeated keychain trust prompts;
                           dev builds avoid keychain (dev storage), release builds use it.
+
 dmg build "resource busy" a temp app from a mounted dmg blocks hdiutil detach; quit it,
                           eject the temp volume, rerun npm run tauri:build.
+
 self-signed server cert   open the server url in a browser first and accept the cert.
+
 unsigned release warning  gatekeeper may require manual approval; add apple signing +
                           notarization secrets to github actions before wider distribution.
 ```
