@@ -4,6 +4,7 @@
 [![macOS](https://img.shields.io/badge/macOS-desktop-black)](https://github.com/oovets/imessage/releases/latest)
 [![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8D8)](https://tauri.app/)
 [![React + TypeScript](https://img.shields.io/badge/React-TypeScript-3178C6)](https://react.dev/)
+[![Docs](https://img.shields.io/badge/docs-mkdocs--material-blue.svg)](https://stevoo.net/imessage/)
 
 ![layout mockup](docs/assets/messages-mockup.svg)
 
