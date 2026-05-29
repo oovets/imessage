@@ -70,6 +70,9 @@ body,
   border-radius: 4px;
   /* one extra character of left padding so text isn't flush against the border */
   padding-left: calc(1.18em + 1ch);
+  /* wrap long lines instead of scrolling sideways (lines that fit stay aligned) */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* inline `code`: slightly lighter so it stays legible inside prose */
