@@ -31,6 +31,10 @@ download -> [latest release](https://github.com/oovets/imessage/releases/latest)
 
 - app-wide font scaling (Cmd +, Cmd -, Cmd 0) plus theme colour editing
 
+- native window vibrancy and an overlay titlebar -- frosted, draggable from the top
+
+- emoji shortcode autocomplete (type :smile) plus a searchable emoji picker
+
 - multi-pane conversations, replies, tapbacks, image/video/file attachments with
   full-size preview dialogs
 ```
@@ -102,6 +106,28 @@ npm run tauri:build    # produce a local .app and .dmg (under src-tauri/target/r
 # frontend-only (browser, no rust shell rebuild):
 npm run dev            # vite dev server
 npm run build          # type-check + build the frontend
+```
+
+```
+== local code signing ==
+
+unsigned local builds re-trigger the macos keychain trust prompt on every launch (the
+keychain can't remember "always allow" without a stable code signature). to silence it,
+npm run tauri:build signs the bundle with a stable identity.
+
+create the signing certificate once:
+  keychain access -> certificate assistant -> create a certificate
+  name: Messages Desktop Signing , identity type: self signed root , type: code signing
+
+the tauri:build script reads APPLE_SIGNING_IDENTITY and defaults to "Messages Desktop
+Signing". override it with your own cert name, or APPLE_SIGNING_IDENTITY="-" for an
+ad-hoc (unsigned) build:
+  APPLE_SIGNING_IDENTITY="Apple Development: you@example.com" npm run tauri:build
+  APPLE_SIGNING_IDENTITY="-" npm run tauri:build
+
+after the first launch of a signed build, click "always allow" once; the stable signature
+means it won't ask again, even after future rebuilds. github actions release builds are
+independent of this (still unsigned unless notarization secrets are added).
 ```
 
 ```
@@ -186,8 +212,9 @@ npm run tauri:build     # for desktop packaging changes
 ```
 == troubleshooting ==
 
-keychain prompts in dev   unsigned dev binaries trigger repeated keychain trust prompts;
-                          dev builds avoid keychain (dev storage), release builds use it.
+keychain prompts          dev builds avoid the keychain (dev storage). unsigned release
+                          builds re-prompt every launch; sign locally so "always allow"
+                          sticks -- see "local code signing" above.
 
 dmg build "resource busy" a temp app from a mounted dmg blocks hdiutil detach; quit it,
                           eject the temp volume, rerun npm run tauri:build.

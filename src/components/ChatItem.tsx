@@ -37,7 +37,7 @@ export function ChatItem({ chat, isSelected, onClick, compact = false }: ChatIte
         title={name}
         className={cn(
           "w-full flex items-center justify-center px-2 py-2 relative active:bg-accent/80",
-          superlightMode ? "hover:bg-muted/30" : "transition-colors duration-75 hover:bg-accent/60",
+          superlightMode ? "hover:bg-muted/30" : "transition-[background-color,transform] duration-150 ease-out hover:bg-accent/60 active:scale-[0.99]",
           isSelected && (superlightMode ? "bg-muted/40" : "bg-accent")
         )}
       >
@@ -64,7 +64,7 @@ export function ChatItem({ chat, isSelected, onClick, compact = false }: ChatIte
       aria-pressed={isSelected}
       className={cn(
         "w-full flex items-center gap-3 pl-5 pr-4 py-2.5 text-left relative active:bg-accent/80",
-        superlightMode ? "hover:bg-muted/30" : "border-b transition-colors duration-75 hover:bg-accent/60",
+        superlightMode ? "hover:bg-muted/30" : "border-b transition-[background-color,transform] duration-150 ease-out hover:bg-accent/60 active:scale-[0.99]",
         isSelected && (superlightMode ? "bg-muted/40" : "bg-accent")
       )}
     >

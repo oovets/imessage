@@ -127,16 +127,17 @@ export function ChatList() {
   }, [filteredChats, selectedChatGUID, selectChat]);
 
   return (
-    <div className={cn("flex flex-col h-full", superlightMode ? "bg-background" : "border-r bg-background/95 backdrop-blur-xl")}>
+    <div className={cn("app-sidebar flex flex-col h-full", superlightMode ? "bg-background" : "border-r bg-background/95 backdrop-blur-xl")}>
       {/* Header */}
       <div
+        data-tauri-drag-region
         className={cn(
-          "flex items-center px-3 py-3 sticky top-0 z-10",
+          "app-sidebar-header flex items-center px-3 py-3 sticky top-0 z-10",
           superlightMode ? "justify-between bg-background" : "justify-between border-b bg-background/80 backdrop-blur-xl",
           sidebarHidden && "md:justify-center md:px-0"
         )}
       >
-        <div className="flex items-center gap-1.5 min-w-0">
+        <div data-tauri-drag-region className="flex items-center gap-1.5 min-w-0">
           <Button
             variant="ghost"
             size="icon"
@@ -154,7 +155,7 @@ export function ChatList() {
           {!superlightMode && !sidebarHidden && (
             <>
               <MessageCircle className="h-5 w-5 text-primary" />
-              <h1 className="font-semibold text-sm">Messages</h1>
+              <h1 data-tauri-drag-region className="font-semibold text-sm">Messages</h1>
               <span
                 className="relative flex h-2 w-2"
                 title={

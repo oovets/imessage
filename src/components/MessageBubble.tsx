@@ -89,6 +89,17 @@ function renderTextWithLinks(text: string, isMe: boolean, superlightMode: boolea
 const IMAGE_MIME = /^image\//;
 const VIDEO_MIME = /^video\//;
 
+// Stable per-sender colour for names in group chats (derived from the address
+// so the same person is always the same hue). Tuned to stay legible on both
+// the light and dark muted backgrounds.
+function senderNameColor(address: string): string {
+  let hash = 0;
+  for (let i = 0; i < address.length; i++) {
+    hash = (hash * 31 + address.charCodeAt(i)) | 0;
+  }
+  return `hsl(${Math.abs(hash) % 360} 70% 60%)`;
+}
+
 export function MessageBubble({
   message,
   showSender,
@@ -184,8 +195,13 @@ export function MessageBubble({
               "mb-1 px-3",
               superlightMode
                 ? "text-xs font-semibold text-foreground"
-                : "text-[11px] text-muted-foreground"
+                : "text-[11px] font-medium"
             )}
+            style={
+              superlightMode || !message.handle?.address
+                ? undefined
+                : { color: senderNameColor(message.handle.address) }
+            }
           >
             {senderName}
           </span>
@@ -193,6 +209,7 @@ export function MessageBubble({
 
         <div className={cn("relative group", superlightMode ? "max-w-[95%] w-full" : "max-w-[78%]")}>
           <div
+            title={new Date(message.dateCreated).toLocaleString()}
             className={cn(
               "px-3.5 py-2 text-sm select-text",
               superlightMode
@@ -201,6 +218,9 @@ export function MessageBubble({
                     "shadow-sm transition-all duration-200",
                     cornerClass,
                     isMe ? "bg-[#0b93f6] text-white" : "bg-muted text-foreground",
+                    // Tail only on the last bubble of a run (keeps the rounded
+                    // bottom corner that the nib attaches to).
+                    isLastInGroup && (isMe ? "msg-tail-me" : "msg-tail-them"),
                     message.pending && "opacity-70",
                     message.failed && "opacity-90 ring-1 ring-destructive/60"
                   )
@@ -379,7 +399,12 @@ export function MessageBubble({
             </time>
             {message.pending && <span className="ml-1 opacity-70">· Sending…</span>}
             {message.failed && (
-              <span className="ml-1 text-destructive">· Failed to send</span>
+              <span
+                className="ml-1 text-destructive cursor-help"
+                title={message.failedReason ?? "Failed to send"}
+              >
+                · Failed to send{message.failedReason ? " (hover for details)" : ""}
+              </span>
             )}
           </span>
         )}

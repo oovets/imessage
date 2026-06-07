@@ -54,8 +54,8 @@ export function TypingIndicator({ chatGUID }: TypingIndicatorProps) {
 function Dot({ delay }: { delay: string }) {
   return (
     <span
-      className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce"
-      style={{ animationDelay: delay, animationDuration: "1s" }}
+      className="typing-dot h-1.5 w-1.5 rounded-full bg-muted-foreground/60"
+      style={{ animationDelay: delay }}
     />
   );
 }

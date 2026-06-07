@@ -1,6 +1,8 @@
 #[cfg(target_os = "macos")]
 use keyring::Entry;
 use serde::{Deserialize, Serialize};
+#[cfg(target_os = "macos")]
+use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
 use tauri::{
     menu::Menu, menu::MenuBuilder, menu::MenuItemBuilder, menu::PredefinedMenuItem,
     menu::SubmenuBuilder, Emitter, Manager, Runtime,
@@ -132,6 +134,20 @@ fn clear_secure_config() -> Result<(), String> {
     #[cfg(not(target_os = "macos"))]
     {
         Ok(())
+    }
+}
+
+/// Apply the native macOS translucent "vibrancy" material behind the window so
+/// the frosted titlebar and sidebar pick up the desktop/wallpaper colour.
+#[cfg(target_os = "macos")]
+fn apply_window_vibrancy<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = apply_vibrancy(
+            &window,
+            NSVisualEffectMaterial::Sidebar,
+            Some(NSVisualEffectState::Active),
+            None,
+        );
     }
 }
 
@@ -267,6 +283,8 @@ pub fn run() {
             let app_handle = app.handle();
             setup_app_menu(&app_handle)?;
             setup_tray(&app_handle)?;
+            #[cfg(target_os = "macos")]
+            apply_window_vibrancy(&app_handle);
 
             if cfg!(debug_assertions) {
                 app.handle().plugin(

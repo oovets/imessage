@@ -101,7 +101,9 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
+    <div className="app-shell flex h-screen overflow-hidden bg-background">
+      {/* Draggable titlebar strip (Tauri only — hidden via CSS in the browser). */}
+      <div className="app-titlebar" data-tauri-drag-region />
       <aside
         className={cn(
           "flex flex-col min-h-0 shrink-0 transition-[width]",

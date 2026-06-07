@@ -57,11 +57,6 @@
   body {
     @apply bg-background text-foreground;
     font-family: var(--app-font-family);
-    text-shadow: 0 1px 1px rgb(0 0 0 / 0.08);
-  }
-
-  .dark body {
-    text-shadow: 0 2px 4px rgb(0 0 0 / 0.9);
   }
 
   .scrollbar-autohide {
@@ -119,7 +114,124 @@
     display: none !important;
   }
 
-  .dark.superlight-ui body {
-    text-shadow: 0 2px 4px rgb(0 0 0 / 0.9) !important;
+  /* ---- Native Tauri window (vibrancy + overlay titlebar) ---- */
+
+  /* Let the macOS vibrancy material show through the window. The opaque body /
+     app-shell backgrounds would otherwise cover it completely. */
+  .tauri body {
+    background-color: transparent;
+  }
+
+  .tauri .app-shell {
+    background-color: transparent;
+    /* Inset content below the overlay titlebar / traffic lights. */
+    padding-top: 1.75rem;
+  }
+
+  /* Draggable strip across the top where the traffic lights float. */
+  .app-titlebar {
+    display: none;
+  }
+  .tauri .app-titlebar {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1.75rem;
+    z-index: 50;
+  }
+
+  /* Make the sidebar genuinely frosted so the titlebar + sidebar read as one
+     continuous translucent surface (real-Messages look). Skipped in the flat
+     superlight theme, which stays fully opaque. */
+  html.tauri:not(.superlight-ui) .app-sidebar {
+    background-color: hsl(var(--background) / 0.62);
+  }
+  html.tauri:not(.superlight-ui) .app-sidebar .app-sidebar-header {
+    background-color: hsl(var(--background) / 0.45);
+  }
+}
+
+/* ---- iMessage-style bubble tails ----
+   Drawn with two pseudo-elements behind the bubble: ::before is the
+   bubble-coloured nib, ::after carves its outer edge with the page colour.
+   z-index:0 on the bubble keeps the negative-z pseudos in its stacking
+   context (in front of the conversation background, behind the bubble fill). */
+.msg-tail-me,
+.msg-tail-them {
+  position: relative;
+  z-index: 0;
+}
+
+.msg-tail-them::before {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: -7px;
+  width: 16px;
+  height: 16px;
+  background: hsl(var(--muted));
+  border-bottom-right-radius: 16px 14px;
+  z-index: -1;
+}
+.msg-tail-them::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: -16px;
+  width: 16px;
+  height: 16px;
+  background: hsl(var(--background));
+  border-bottom-right-radius: 10px;
+  z-index: -1;
+}
+
+.msg-tail-me::before {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  right: -7px;
+  width: 16px;
+  height: 16px;
+  background: #0b93f6;
+  border-bottom-left-radius: 16px 14px;
+  z-index: -1;
+}
+.msg-tail-me::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  right: -16px;
+  width: 16px;
+  height: 16px;
+  background: hsl(var(--background));
+  border-bottom-left-radius: 10px;
+  z-index: -1;
+}
+
+/* Typing indicator: a gentle bob + fade, softer than animate-bounce. */
+@keyframes typing-bob {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+.typing-dot {
+  animation: typing-bob 1.3s infinite ease-in-out;
+}
+
+/* Respect users who prefer less motion: drop the slide/zoom animations. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
   }
 }

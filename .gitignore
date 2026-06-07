@@ -1,4 +1,36 @@
+# Dependencies
+node_modules/
 
-# mkdocs site build
+# Build output
+/dist
+/build
+
+# TypeScript incremental build cache
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+
+# macOS
+.DS_Store
+
+# Tauri / Rust build + generated files (Cargo.lock is committed on purpose)
+src-tauri/target/
+src-tauri/gen/
+
+# mkdocs site build (docs/*.md are generated from sources; site/ is the build output)
 /site
 /docs/*.md

@@ -16,6 +16,7 @@ import {
 import { useAppStore } from "@/store/useAppStore";
 import { clearSecureConfig, saveSecureConfig } from "@/lib/secureConfig";
 import { isTauriRuntime } from "@/lib/tauriEnv";
+import { cn } from "@/lib/utils";
 import {
   MAX_FONT_SCALE,
   MIN_FONT_SCALE,
@@ -64,6 +65,7 @@ export function SettingsDialog(_props: SettingsDialogProps) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [tab, setTab] = useState<"server" | "general" | "appearance">("server");
   const autoOpenedRef = useRef(false);
 
   useEffect(() => {
@@ -193,182 +195,218 @@ export function SettingsDialog(_props: SettingsDialogProps) {
       </DialogTrigger>
       <DialogContent className="scrollbar-autohide max-h-[85vh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Server Settings</DialogTitle>
-          <DialogDescription>
-            Credentials use local dev storage in Tauri dev and macOS Keychain in release builds.
+          <DialogTitle>Settings</DialogTitle>
+          <DialogDescription className="sr-only">
+            Server connection, general preferences, and appearance.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-4 py-2">
-          <div className="grid gap-2">
-            <Label htmlFor="server-url">Server URL</Label>
-            <Input
-              id="server-url"
-              placeholder="https://your-server:1234"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="password">Password</Label>
-            <Input
-              id="password"
-              type="password"
-              placeholder="your-api-password"
-              value={pwd}
-              onChange={(e) => setPwd(e.target.value)}
-            />
-          </div>
 
-          {isTauriRuntime() && (
-            <label className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
-              <span>Launch at login</span>
-              <input
-                type="checkbox"
-                checked={launchOnLogin}
-                onChange={toggleLaunchOnLogin}
-                className="h-4 w-4"
-              />
-            </label>
+        {/* Tab bar */}
+        <div className="flex gap-1 rounded-lg bg-muted/50 p-1">
+          {(
+            [
+              ["server", "Server"],
+              ["general", "General"],
+              ["appearance", "Appearance"],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setTab(key)}
+              className={cn(
+                "flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                tab === key
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="grid gap-4 py-2">
+          {tab === "server" && (
+            <>
+              <div className="grid gap-2">
+                <Label htmlFor="server-url">Server URL</Label>
+                <Input
+                  id="server-url"
+                  placeholder="https://your-server:1234"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="your-api-password"
+                  value={pwd}
+                  onChange={(e) => setPwd(e.target.value)}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Credentials use local dev storage in Tauri dev and the macOS Keychain in
+                release builds.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                If your server uses a self-signed certificate, visit{" "}
+                <span className="font-mono">{url || "https://your-server"}</span> directly in
+                the browser first and accept the certificate.
+              </p>
+            </>
           )}
 
-          <div className="grid gap-2 border-t pt-3">
-            <Label htmlFor="superlight-mode">Superlight UI</Label>
-            <label
-              htmlFor="superlight-mode"
-              className="inline-flex items-center gap-2 text-sm text-muted-foreground"
-            >
-              <input
-                id="superlight-mode"
-                type="checkbox"
-                checked={superlightMode}
-                onChange={(e) => setSuperlightMode(e.target.checked)}
-                className="h-4 w-4"
-              />
-              Show only text and separators
-            </label>
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="show-timestamps">Timestamps</Label>
-            <label
-              htmlFor="show-timestamps"
-              className="inline-flex items-center gap-2 text-sm text-muted-foreground"
-            >
-              <input
-                id="show-timestamps"
-                type="checkbox"
-                checked={showTimestamps}
-                onChange={(e) => setShowTimestamps(e.target.checked)}
-                className="h-4 w-4"
-              />
-              Show message timestamps
-            </label>
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="link-previews">Link previews</Label>
-            <div className="flex items-center justify-between gap-3">
-              <label
-                htmlFor="link-previews"
-                className="inline-flex items-center gap-2 text-sm text-muted-foreground"
-              >
-                <input
-                  id="link-previews"
-                  type="checkbox"
-                  checked={linkPreviewsEnabled}
-                  onChange={(e) => setLinkPreviewsEnabled(e.target.checked)}
-                  className="h-4 w-4"
+          {tab === "general" && (
+            <>
+              {isTauriRuntime() && (
+                <label className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
+                  <span>Launch at login</span>
+                  <input
+                    type="checkbox"
+                    checked={launchOnLogin}
+                    onChange={toggleLaunchOnLogin}
+                    className="h-4 w-4"
+                  />
+                </label>
+              )}
+
+              <div className="grid gap-2">
+                <Label htmlFor="superlight-mode">Superlight UI</Label>
+                <label
+                  htmlFor="superlight-mode"
+                  className="inline-flex items-center gap-2 text-sm text-muted-foreground"
+                >
+                  <input
+                    id="superlight-mode"
+                    type="checkbox"
+                    checked={superlightMode}
+                    onChange={(e) => setSuperlightMode(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  Show only text and separators
+                </label>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="show-timestamps">Timestamps</Label>
+                <label
+                  htmlFor="show-timestamps"
+                  className="inline-flex items-center gap-2 text-sm text-muted-foreground"
+                >
+                  <input
+                    id="show-timestamps"
+                    type="checkbox"
+                    checked={showTimestamps}
+                    onChange={(e) => setShowTimestamps(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  Show message timestamps
+                </label>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="link-previews">Link previews</Label>
+                <div className="flex items-center justify-between gap-3">
+                  <label
+                    htmlFor="link-previews"
+                    className="inline-flex items-center gap-2 text-sm text-muted-foreground"
+                  >
+                    <input
+                      id="link-previews"
+                      type="checkbox"
+                      checked={linkPreviewsEnabled}
+                      onChange={(e) => setLinkPreviewsEnabled(e.target.checked)}
+                      className="h-4 w-4"
+                    />
+                    Fetch rich previews automatically in desktop mode
+                  </label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 shrink-0 px-2 text-xs"
+                    onClick={clearLinkPreviewCache}
+                  >
+                    Clear cache
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+
+          {tab === "appearance" && (
+            <div className="grid gap-3">
+              <p className="text-xs text-muted-foreground">
+                Use Cmd +, Cmd - and Cmd 0 to change font size from anywhere.
+              </p>
+
+              <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+                <div>
+                  <p className="text-sm font-medium">Font size</p>
+                  <p className="text-xs text-muted-foreground">
+                    {Math.round(appearance.fontScale * 100)}%
+                  </p>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 w-8 px-0"
+                    onClick={decreaseFontScale}
+                    disabled={appearance.fontScale <= MIN_FONT_SCALE}
+                    aria-label="Decrease font size"
+                  >
+                    -
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-2"
+                    onClick={resetFontScale}
+                  >
+                    100%
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 w-8 px-0"
+                    onClick={increaseFontScale}
+                    disabled={appearance.fontScale >= MAX_FONT_SCALE}
+                    aria-label="Increase font size"
+                  >
+                    +
+                  </Button>
+                </div>
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="font-family">Font family</Label>
+                <Input
+                  id="font-family"
+                  value={appearance.fontFamily}
+                  onChange={(e) => setFontFamily(e.target.value)}
+                  placeholder="system-ui, sans-serif"
                 />
-                Fetch rich previews automatically in desktop mode
-              </label>
+              </div>
+
+              {renderThemeEditor("light")}
+              {renderThemeEditor("dark")}
+
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-8 shrink-0 px-2 text-xs"
-                onClick={clearLinkPreviewCache}
+                onClick={() => resetThemeOverrides()}
               >
-                Clear cache
+                Reset colors and font
               </Button>
             </div>
-          </div>
-
-          <div className="grid gap-3 border-t pt-3">
-            <div>
-              <Label>Appearance</Label>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Use Cmd +, Cmd - and Cmd 0 to change font size from anywhere.
-              </p>
-            </div>
-
-            <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
-              <div>
-                <p className="text-sm font-medium">Font size</p>
-                <p className="text-xs text-muted-foreground">
-                  {Math.round(appearance.fontScale * 100)}%
-                </p>
-              </div>
-              <div className="flex items-center gap-1">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 w-8 px-0"
-                  onClick={decreaseFontScale}
-                  disabled={appearance.fontScale <= MIN_FONT_SCALE}
-                  aria-label="Decrease font size"
-                >
-                  -
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 px-2"
-                  onClick={resetFontScale}
-                >
-                  100%
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 w-8 px-0"
-                  onClick={increaseFontScale}
-                  disabled={appearance.fontScale >= MAX_FONT_SCALE}
-                  aria-label="Increase font size"
-                >
-                  +
-                </Button>
-              </div>
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="font-family">Font family</Label>
-              <Input
-                id="font-family"
-                value={appearance.fontFamily}
-                onChange={(e) => setFontFamily(e.target.value)}
-                placeholder="system-ui, sans-serif"
-              />
-            </div>
-
-            {renderThemeEditor("light")}
-            {renderThemeEditor("dark")}
-
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => resetThemeOverrides()}
-            >
-              Reset colors and font
-            </Button>
-          </div>
-
-          <p className="text-xs text-muted-foreground">
-            If your server uses a self-signed certificate, visit{" "}
-            <span className="font-mono">{url || "https://your-server"}</span> directly in the
-            browser first and accept the certificate.
-          </p>
+          )}
 
           {settingsError && <p className="text-xs text-destructive">{settingsError}</p>}
         </div>

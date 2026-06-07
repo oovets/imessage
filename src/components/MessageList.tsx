@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, MessagesSquare } from "lucide-react";
 import { MessageBubble } from "@/components/MessageBubble";
+import { MessageListSkeleton } from "@/components/MessageListSkeleton";
 import { TypingIndicator } from "@/components/TypingIndicator";
 import { useAppStore } from "@/store/useAppStore";
 import { getClient } from "@/api/clientFactory";
@@ -267,17 +268,21 @@ export function MessageList({ chatGUID }: MessageListProps) {
   }
 
   if (loadingMessages && messages.length === 0) {
-    return (
+    return superlightMode ? (
       <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
         Loading messages…
       </div>
+    ) : (
+      <MessageListSkeleton />
     );
   }
 
   if (messages.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-        No messages yet
+      <div className="flex-1 flex flex-col items-center justify-center gap-2 text-muted-foreground">
+        {!superlightMode && <MessagesSquare className="h-9 w-9 opacity-30" />}
+        <p className="text-sm">No messages yet</p>
+        <p className="text-xs opacity-70">Say hello 👋</p>
       </div>
     );
   }

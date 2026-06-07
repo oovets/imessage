@@ -29,7 +29,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "APPLE_SIGNING_IDENTITY=\"${APPLE_SIGNING_IDENTITY:-Messages Desktop Signing}\" tauri build"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.0",

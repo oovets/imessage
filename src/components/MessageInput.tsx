@@ -1,10 +1,16 @@
 import { useState, useRef, type KeyboardEvent } from "react";
-import { ArrowUp, Paperclip, X, Reply } from "lucide-react";
+import { ArrowUp, Paperclip, X, Reply, Smile } from "lucide-react";
 import { useAppStore } from "@/store/useAppStore";
 import { getClient } from "@/api/clientFactory";
 import { cn } from "@/lib/utils";
 import type { Message } from "@/types";
 import { decodeEscapedUnicode } from "@/types";
+import { EmojiSuggestions } from "@/components/EmojiSuggestions";
+import { EmojiPicker } from "@/components/EmojiPicker";
+import {
+  useEmojiAutocomplete,
+  autoReplaceClosedShortcode,
+} from "@/hooks/useEmojiAutocomplete";
 
 interface MessageInputProps {
   chatGUID: string;
@@ -39,9 +45,34 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
   const replaceMessage = useAppStore((s) => s.replaceMessage);
   const updateChatPreview = useAppStore((s) => s.updateChatPreview);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const emoji = useEmojiAutocomplete(text, setText, textareaRef);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const hasText = text.trim().length > 0;
   const replyPreview = decodeEscapedUnicode(replyTarget?.text);
+
+  function handleChange(value: string) {
+    // Convert a fully-typed `:shortcode:` straight to its emoji.
+    const replaced = autoReplaceClosedShortcode(value);
+    setText(replaced ?? value);
+  }
+
+  function insertEmoji(char: string) {
+    const el = textareaRef.current;
+    const start = el?.selectionStart ?? text.length;
+    const end = el?.selectionEnd ?? text.length;
+    const next = text.slice(0, start) + char + text.slice(end);
+    setText(next);
+    const caret = start + char.length;
+    requestAnimationFrame(() => {
+      if (el) {
+        el.focus();
+        el.setSelectionRange(caret, caret);
+        el.style.height = "auto";
+        el.style.height = Math.min(el.scrollHeight, 140) + "px";
+      }
+    });
+  }
 
   function send() {
     const trimmed = text.trim();
@@ -66,17 +97,29 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
         replaceMessage(chatGUID, optimistic.guid, { ...optimistic, pending: false });
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
-        setConnectionNotice(`Unable to send message: ${detail}`);
+        // Replies/reactions go through the BlueBubbles Private API. If that
+        // isn't set up on the server, only these fail while plain (AppleScript)
+        // messages keep working — so give a targeted hint.
+        const isReply = replyGuid.length > 0;
+        const looksLikePrivateApi =
+          isReply && /private|method|not enabled|helper/i.test(detail);
+        const reason = looksLikePrivateApi
+          ? `Replies need the BlueBubbles Private API, which the server rejected. Enable “Private API Features” in the BlueBubbles server settings (and install the Private API helper bundle). Server said: ${detail}`
+          : detail;
+        setConnectionNotice(`Unable to send message: ${reason}`);
         replaceMessage(chatGUID, optimistic.guid, {
           ...optimistic,
           pending: false,
           failed: true,
+          failedReason: reason,
         });
       }
     })();
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    // Let the emoji picker claim navigation / commit keys first.
+    if (emoji.handleKeyDown(e)) return;
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       send();
@@ -118,17 +161,47 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
         </div>
       )}
       <div className={cn("flex gap-2", superlightMode ? "items-center" : "items-end")}>
+        {/* Tight cluster: paperclip + emoji sit snug, narrow hit-area. */}
+        <div className="flex items-center shrink-0">
         <button
           type="button"
           className={cn(
-            "h-9 w-9 text-muted-foreground flex items-center justify-center shrink-0",
-            !superlightMode && "rounded-full hover:bg-muted transition-colors"
+            "h-9 w-7 text-muted-foreground flex items-center justify-center shrink-0 transition-transform active:scale-90",
+            !superlightMode && "rounded-full hover:bg-muted hover:text-foreground"
           )}
           aria-label="Attach file"
           title="Attachments coming soon"
         >
           <Paperclip className="h-4 w-4" />
         </button>
+
+        <div className="relative shrink-0">
+          <button
+            type="button"
+            // Keep this pointerdown from reaching the picker's outside-click
+            // listener, so the button reliably toggles instead of close+reopen.
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => setPickerOpen((v) => !v)}
+            aria-label="Insert emoji"
+            aria-expanded={pickerOpen}
+            title="Emoji"
+            className={cn(
+              "h-9 w-7 flex items-center justify-center transition-transform active:scale-90",
+              pickerOpen ? "text-foreground" : "text-muted-foreground",
+              !superlightMode && "rounded-full hover:bg-muted hover:text-foreground"
+            )}
+          >
+            <Smile className="h-4 w-4" />
+          </button>
+          {pickerOpen && (
+            <EmojiPicker
+              superlight={superlightMode}
+              onSelect={insertEmoji}
+              onClose={() => setPickerOpen(false)}
+            />
+          )}
+        </div>
+        </div>
 
         <div
           className={cn(
@@ -137,11 +210,23 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
           )}
           onClick={() => textareaRef.current?.focus()}
         >
+          <EmojiSuggestions
+            suggestions={emoji.suggestions}
+            activeIndex={emoji.activeIndex}
+            superlight={superlightMode}
+            onSelect={emoji.select}
+            onHover={emoji.setActiveIndex}
+          />
           <textarea
             ref={textareaRef}
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+              handleChange(e.target.value);
+              emoji.syncCaret();
+            }}
             onKeyDown={handleKeyDown}
+            onKeyUp={emoji.syncCaret}
+            onSelect={emoji.syncCaret}
             onInput={handleInput}
             placeholder={replyTarget ? "Reply…" : ""}
             rows={1}

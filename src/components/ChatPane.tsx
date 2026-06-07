@@ -99,7 +99,7 @@ export function ChatPane({ paneId, chatGUID, isActive, canClose, showMobileBack 
         isActive && !superlightMode && "ring-1 ring-inset ring-primary/30"
       )}
     >
-      <div className={cn("flex items-center gap-1 px-2 md:px-3 py-2 shrink-0", superlightMode ? "bg-background" : "border-b bg-background/80 backdrop-blur-xl")}>
+      <div data-tauri-drag-region className={cn("flex items-center gap-1 px-2 md:px-3 py-2 shrink-0", superlightMode ? "bg-background" : "border-b bg-background/80 backdrop-blur-xl")}>
         {showMobileBack && (
           <Button
             variant="ghost"
@@ -113,16 +113,16 @@ export function ChatPane({ paneId, chatGUID, isActive, canClose, showMobileBack 
         )}
 
         {empty ? (
-          <div className="flex items-center gap-2 flex-1 min-w-0 text-muted-foreground text-xs px-2">
+          <div data-tauri-drag-region className="flex items-center gap-2 flex-1 min-w-0 text-muted-foreground text-xs px-2">
             <MessageSquarePlus className="h-4 w-4" />
-            <span>Empty pane — pick a chat</span>
+            <span data-tauri-drag-region>Empty pane — pick a chat</span>
           </div>
         ) : (
-          <div className="flex items-center gap-2 flex-1 min-w-0">
+          <div data-tauri-drag-region className="flex items-center gap-2 flex-1 min-w-0">
             <div className="h-7 w-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-semibold shrink-0">
               {getChatInitials(selectedChat)}
             </div>
-            <span className="font-semibold text-sm truncate">{getChatDisplayName(selectedChat)}</span>
+            <span data-tauri-drag-region className="font-semibold text-sm truncate">{getChatDisplayName(selectedChat)}</span>
           </div>
         )}
 

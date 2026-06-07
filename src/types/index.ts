@@ -22,6 +22,7 @@ export interface Message {
   chatGUID?: string;
   pending?: boolean;
   failed?: boolean;
+  failedReason?: string;
   tempGuid?: string;
 }
 
