@@ -155,7 +155,7 @@ export function ChatList() {
           {!superlightMode && !sidebarHidden && (
             <>
               <MessageCircle className="h-5 w-5 text-primary" />
-              <h1 data-tauri-drag-region className="font-semibold text-sm">Messages</h1>
+              <h1 data-tauri-drag-region className="text-xs font-bold tracking-[0.14em] uppercase text-muted-foreground">Messages</h1>
               <span
                 className="relative flex h-2 w-2"
                 title={

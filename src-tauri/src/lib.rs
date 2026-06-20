@@ -1,4 +1,4 @@
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use keyring::Entry;
 use serde::{Deserialize, Serialize};
 #[cfg(target_os = "macos")]
@@ -9,11 +9,11 @@ use tauri::{
 };
 use tauri::{tray::MouseButton, tray::MouseButtonState, tray::TrayIconBuilder, tray::TrayIconEvent};
 
-#[cfg(target_os = "macos")]
-const KEYCHAIN_SERVICE: &str = "com.oovets.messages";
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+const KEYRING_SERVICE: &str = "com.oovets.messages";
 #[cfg(target_os = "macos")]
 const LEGACY_KEYCHAIN_SERVICE: &str = "com.oovets.imessagereact";
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 const KEY_CONFIG: &str = "secure-config";
 
 const MENU_SHOW: &str = "menu_show";
@@ -31,41 +31,41 @@ struct SecureConfig {
     password: String,
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn keyring_entry(service: &str, key: &str) -> Result<Entry, String> {
-    Entry::new(service, key).map_err(|e| format!("keychain init failed: {e}"))
+    Entry::new(service, key).map_err(|e| format!("keyring init failed: {e}"))
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn read_secret(service: &str, key: &str) -> Result<Option<String>, String> {
     let entry = keyring_entry(service, key)?;
     match entry.get_password() {
         Ok(value) => Ok(Some(value)),
         Err(keyring::Error::NoEntry) => Ok(None),
-        Err(err) => Err(format!("keychain read failed: {err}")),
+        Err(err) => Err(format!("keyring read failed: {err}")),
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn write_secret(key: &str, value: &str) -> Result<(), String> {
-    let entry = keyring_entry(KEYCHAIN_SERVICE, key)?;
+    let entry = keyring_entry(KEYRING_SERVICE, key)?;
     entry
         .set_password(value)
-        .map_err(|e| format!("keychain write failed: {e}"))
+        .map_err(|e| format!("keyring write failed: {e}"))
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn delete_secret(service: &str, key: &str) -> Result<(), String> {
     let entry = keyring_entry(service, key)?;
     match entry.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(err) => Err(format!("keychain delete failed: {err}")),
+        Err(err) => Err(format!("keyring delete failed: {err}")),
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn parse_secure_config(raw_config: &str) -> Result<SecureConfig, String> {
-    serde_json::from_str(raw_config).map_err(|e| format!("keychain config parse failed: {e}"))
+    serde_json::from_str(raw_config).map_err(|e| format!("keyring config parse failed: {e}"))
 }
 
 #[cfg(target_os = "macos")]
@@ -79,15 +79,16 @@ fn load_legacy_secure_config() -> Result<Option<SecureConfig>, String> {
 
 #[tauri::command]
 fn load_secure_config() -> Result<Option<SecureConfig>, String> {
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
-        if let Some(raw_config) = read_secret(KEYCHAIN_SERVICE, KEY_CONFIG)? {
+        if let Some(raw_config) = read_secret(KEYRING_SERVICE, KEY_CONFIG)? {
             return parse_secure_config(&raw_config).map(Some);
         }
 
+        #[cfg(target_os = "macos")]
         if let Some(config) = load_legacy_secure_config()? {
             let raw_config = serde_json::to_string(&config)
-                .map_err(|e| format!("keychain config serialize failed: {e}"))?;
+                .map_err(|e| format!("keyring config serialize failed: {e}"))?;
             write_secret(KEY_CONFIG, &raw_config)?;
             return Ok(Some(config));
         }
@@ -95,7 +96,7 @@ fn load_secure_config() -> Result<Option<SecureConfig>, String> {
         return Ok(None);
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
         Ok(None)
     }
@@ -103,22 +104,22 @@ fn load_secure_config() -> Result<Option<SecureConfig>, String> {
 
 #[tauri::command]
 fn save_secure_config(server_url: String, password: String) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
         let config = SecureConfig {
             server_url,
             password,
         };
         let raw_config = serde_json::to_string(&config)
-            .map_err(|e| format!("keychain config serialize failed: {e}"))?;
+            .map_err(|e| format!("keyring config serialize failed: {e}"))?;
         write_secret(KEY_CONFIG, &raw_config)?;
         return Ok(());
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
         let _ = (server_url, password);
-        Err("Secure keychain storage is only enabled on macOS builds.".to_string())
+        Err("Secure keyring storage is not available on this platform.".to_string())
     }
 }
 
@@ -126,19 +127,23 @@ fn save_secure_config(server_url: String, password: String) -> Result<(), String
 fn clear_secure_config() -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        delete_secret(KEYCHAIN_SERVICE, KEY_CONFIG)?;
+        delete_secret(KEYRING_SERVICE, KEY_CONFIG)?;
         delete_secret(LEGACY_KEYCHAIN_SERVICE, KEY_CONFIG)?;
         return Ok(());
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
+    {
+        delete_secret(KEYRING_SERVICE, KEY_CONFIG)?;
+        return Ok(());
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
         Ok(())
     }
 }
 
-/// Apply the native macOS translucent "vibrancy" material behind the window so
-/// the frosted titlebar and sidebar pick up the desktop/wallpaper colour.
 #[cfg(target_os = "macos")]
 fn apply_window_vibrancy<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     if let Some(window) = app.get_webview_window("main") {

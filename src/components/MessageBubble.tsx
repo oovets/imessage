@@ -154,6 +154,13 @@ export function MessageBubble({
 
   const senderName =
     !isMe && message.handle ? message.handle.firstName || message.handle.address : null;
+  const senderInitials = (senderName ?? "")
+    .trim()
+    .split(/\s+/)
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
 
   const hasContent = !!(decodedText || message.attachments?.length);
   if (!hasContent) return null;
@@ -161,13 +168,13 @@ export function MessageBubble({
   const cornerClass = isMe
     ? cn(
         "rounded-2xl",
-        !isLastInGroup && "rounded-br-md",
-        !isFirstInGroup && "rounded-tr-md"
+        !isFirstInGroup && "rounded-tr-md",
+        isLastInGroup && "rounded-br-[6px]"
       )
     : cn(
         "rounded-2xl",
-        !isLastInGroup && "rounded-bl-md",
-        !isFirstInGroup && "rounded-tl-md"
+        !isFirstInGroup && "rounded-tl-md",
+        isLastInGroup && "rounded-bl-[6px]"
       );
 
   async function handleCopy() {
@@ -207,7 +214,17 @@ export function MessageBubble({
           </span>
         )}
 
-        <div className={cn("relative group", superlightMode ? "max-w-[95%] w-full" : "max-w-[78%]")}>
+        <div className={cn(superlightMode ? "w-full" : "flex items-end gap-2 w-full", isMe && "justify-end")}>
+          {!isMe && !superlightMode && (
+            isLastInGroup ? (
+              <div className="h-7 w-7 shrink-0 rounded-full bg-[#5e84c9] text-white text-[10px] font-semibold flex items-center justify-center select-none">
+                {senderInitials}
+              </div>
+            ) : (
+              <div className="w-7 shrink-0" aria-hidden="true" />
+            )
+          )}
+          <div className={cn("relative group", superlightMode ? "max-w-[95%] w-full" : "max-w-[78%]")}>
           <div
             title={new Date(message.dateCreated).toLocaleString()}
             className={cn(
@@ -215,12 +232,9 @@ export function MessageBubble({
               superlightMode
                 ? cn("px-0 py-0 bg-transparent", isMe ? "text-right text-muted-foreground" : "text-foreground")
                 : cn(
-                    "shadow-sm transition-all duration-200",
+                    "transition-colors duration-200",
                     cornerClass,
-                    isMe ? "bg-[#0b93f6] text-white" : "bg-muted text-foreground",
-                    // Tail only on the last bubble of a run (keeps the rounded
-                    // bottom corner that the nib attaches to).
-                    isLastInGroup && (isMe ? "msg-tail-me" : "msg-tail-them"),
+                    isMe ? "bg-[#5e84c9] text-white" : "bg-muted text-foreground",
                     message.pending && "opacity-70",
                     message.failed && "opacity-90 ring-1 ring-destructive/60"
                   )
@@ -390,7 +404,8 @@ export function MessageBubble({
             ))}
           </div>
         )}
-      </div>
+          </div>
+        </div>
 
         {showTime && (
           <span className={cn("text-[10px] text-muted-foreground mt-1", isMe ? "pr-1" : "pl-1")}>

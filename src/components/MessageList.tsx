@@ -326,11 +326,21 @@ export function MessageList({ chatGUID }: MessageListProps) {
             return (
               <div key={msg.guid}>
                 {showDateChip && (
-                  <div className="flex items-center justify-center my-4 px-4">
-                    <span className={cn("text-[11px] font-medium text-muted-foreground", superlightMode ? "px-0 py-0" : "px-3 py-1 bg-muted/60 rounded-full")}>
-                      {formatDateChip(msg.dateCreated)}
-                    </span>
-                  </div>
+                  superlightMode ? (
+                    <div className="flex items-center justify-center my-4 px-4">
+                      <span className="text-[11px] font-medium text-muted-foreground">
+                        {formatDateChip(msg.dateCreated)}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3 my-4 px-4">
+                      <div className="flex-1 h-px bg-border" />
+                      <span className="text-[10px] font-semibold tracking-[0.16em] uppercase text-muted-foreground">
+                        {formatDateChip(msg.dateCreated)}
+                      </span>
+                      <div className="flex-1 h-px bg-border" />
+                    </div>
+                  )
                 )}
                 {showTimeHeader && (
                   <div className="flex items-center justify-center my-3">
