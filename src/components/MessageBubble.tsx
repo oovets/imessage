@@ -328,6 +328,7 @@ export function MessageBubble({
                   <StreamedVideo
                     key={att.guid}
                     src={src}
+                    mime={mime}
                     className="rounded-lg max-h-80 max-w-full -mx-1 mb-1"
                   />
                 );

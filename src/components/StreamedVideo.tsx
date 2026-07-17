@@ -7,7 +7,15 @@
 import { useEffect, useState } from "react";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 
-export function StreamedVideo({ src, className }: { src: string; className?: string }) {
+export function StreamedVideo({
+  src,
+  mime,
+  className,
+}: {
+  src: string;
+  mime?: string;
+  className?: string;
+}) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -18,8 +26,11 @@ export function StreamedVideo({ src, className }: { src: string; className?: str
       try {
         const res = await tauriFetch(src);
         if (!res.ok) throw new Error(`http ${res.status}`);
-        const blob = await res.blob();
+        const buffer = await res.arrayBuffer();
         if (cancelled) return;
+        // The server often omits Content-Type, so a plain res.blob() has no
+        // type and the <video> can't pick a decoder. Force the known mime.
+        const blob = new Blob([buffer], { type: mime || "video/mp4" });
         created = URL.createObjectURL(blob);
         setObjectUrl(created);
       } catch {
@@ -30,7 +41,7 @@ export function StreamedVideo({ src, className }: { src: string; className?: str
       cancelled = true;
       if (created) URL.revokeObjectURL(created);
     };
-  }, [src]);
+  }, [src, mime]);
 
   if (failed) {
     return (
@@ -46,5 +57,13 @@ export function StreamedVideo({ src, className }: { src: string; className?: str
       </div>
     );
   }
-  return <video src={objectUrl} controls preload="metadata" className={className} />;
+  return (
+    <video
+      src={objectUrl}
+      controls
+      preload="metadata"
+      className={className}
+      onError={() => setFailed(true)}
+    />
+  );
 }
