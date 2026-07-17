@@ -6,6 +6,7 @@ import { useAppStore } from "@/store/useAppStore";
 import { getClient } from "@/api/clientFactory";
 import { extractFirstUrl, fetchLinkPreview } from "@/lib/linkPreview";
 import { LinkPreviewCard } from "@/components/LinkPreviewCard";
+import { OrientedImage } from "@/components/OrientedImage";
 import { TelegramMedia } from "@/telegram/TelegramMedia";
 import {
   Dialog,
@@ -107,11 +108,10 @@ function AttachmentImage({
   alt: string;
   onOpen: (src: string, alt: string) => void;
 }) {
-  // Display the full image (it carries EXIF orientation, which the browser
-  // applies) rather than the server thumbnail (BlueBubbles drops EXIF on
-  // downscale, so thumbnails render rotated). Fall back to the thumbnail if
-  // the full download fails.
-  const [src, setSrc] = useState(fullSrc);
+  // Render the full image through OrientedImage: it applies EXIF orientation
+  // (server thumbnails drop it and render rotated) and keeps only a downscaled
+  // bitmap in memory. `thumbSrc` is unused now but kept in the signature.
+  void thumbSrc;
   return (
     <button
       type="button"
@@ -123,15 +123,10 @@ function AttachmentImage({
       className="-mx-1 mb-1 block cursor-zoom-in border-0 bg-transparent p-0"
       aria-label="Open full image"
     >
-      <img
-        src={src}
+      <OrientedImage
+        src={fullSrc}
         alt={alt}
-        loading="lazy"
-        onError={() => {
-          if (src !== thumbSrc) setSrc(thumbSrc);
-        }}
-        className="rounded-lg max-h-80 max-w-full object-cover"
-        style={{ imageOrientation: "from-image" }}
+        className="rounded-lg max-h-80 max-w-full"
       />
     </button>
   );

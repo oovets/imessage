@@ -24,6 +24,21 @@ export const tg = {
       beforeId: before?.id ?? null,
       limit,
     }),
+  /** Decrypt media to a temp file (for streaming via convertFileSrc). */
+  mediaFile: (
+    accountId: number,
+    chatId: number,
+    messageId: number,
+    cacheKey: string,
+    ext?: string,
+  ) =>
+    invoke<string>("tg_media_file", {
+      accountId,
+      chatId,
+      messageId,
+      cacheKey,
+      ext: ext ?? null,
+    }),
   avatarDataUrl: (accountId: number, chatId: number) =>
     invoke<string | null>("tg_avatar_data_url", { accountId, chatId }),
   userAvatarDataUrl: (accountId: number, userId: number) =>

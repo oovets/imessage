@@ -311,6 +311,48 @@ pub async fn tg_set_typing(
         .map_err(|e| e.to_string())
 }
 
+/// Directory for decrypted media temp files (streamed via the asset protocol).
+fn media_tmp_dir() -> PathBuf {
+    std::env::temp_dir().join("unified-inbox-media")
+}
+
+/// Best-effort clear of leftover decrypted media temp files (called on start).
+pub fn clear_media_tmp() {
+    let _ = std::fs::remove_dir_all(media_tmp_dir());
+}
+
+/// Decrypt a media blob to a plaintext temp file and return its path, so the
+/// frontend can stream it via `convertFileSrc` (the asset protocol supports
+/// HTTP range requests — real seeking, no giant base64 data URL in memory).
+/// Used for video; large files never enter the JS heap.
+#[tauri::command]
+pub async fn tg_media_file(
+    state: State<'_, TelegramState>,
+    account_id: AccountId,
+    chat_id: ChatId,
+    message_id: MessageId,
+    cache_key: String,
+    ext: Option<String>,
+) -> Result<String, String> {
+    let core = state.core()?;
+    let dir = media_tmp_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let safe: String = cache_key
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .collect();
+    let ext = ext.unwrap_or_else(|| "bin".to_owned());
+    let path = dir.join(format!("{safe}.{ext}"));
+    if !path.exists() {
+        let bytes = core
+            .media_bytes(account_id, chat_id, message_id, &cache_key)
+            .await
+            .map_err(|e| e.to_string())?;
+        std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
+    }
+    Ok(path.to_string_lossy().into_owned())
+}
+
 #[tauri::command]
 pub async fn tg_media_data_url(
     state: State<'_, TelegramState>,

@@ -294,6 +294,7 @@ pub fn run() {
             telegram::tg_avatar_data_url,
             telegram::tg_user_avatar_data_url,
             telegram::tg_media_data_url,
+            telegram::tg_media_file,
             telegram::tg_send_message,
             telegram::tg_edit_message,
             telegram::tg_delete_messages,
@@ -322,6 +323,7 @@ pub fn run() {
             }
 
             // Start the Telegram core (non-fatal: the app runs without it).
+            telegram::clear_media_tmp();
             let tg_state = tauri::async_runtime::block_on(telegram::init(&app_handle));
             app.manage(tg_state);
 

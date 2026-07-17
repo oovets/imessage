@@ -3,6 +3,7 @@
 // render inline; documents render as a downloadable card.
 
 import { useEffect, useState } from "react";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { FileDown } from "lucide-react";
 import type { Attachment } from "@/types";
 import { tg } from "./api";
@@ -21,25 +22,38 @@ function parse(guid: string) {
 
 export function TelegramMedia({ att }: { att: Attachment }) {
   const { accountId, chatId, messageId, type, cacheKey } = parse(att.guid);
+  const mime = att.mimeType ?? "";
+  const isVideo = mime.startsWith("video/");
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    tg.mediaDataUrl(accountId, chatId, messageId, cacheKey, att.mimeType)
-      .then((u) => {
-        if (!cancelled) setUrl(u);
-      })
-      .catch(() => {
-        if (!cancelled) setFailed(true);
-      });
+    if (isVideo) {
+      // Stream from a decrypted temp file via the asset protocol (range
+      // requests / seeking, no full-video base64 in the JS heap).
+      const ext = mime.split("/")[1] || "mp4";
+      tg.mediaFile(accountId, chatId, messageId, cacheKey, ext)
+        .then((path) => {
+          if (!cancelled) setUrl(convertFileSrc(path));
+        })
+        .catch(() => {
+          if (!cancelled) setFailed(true);
+        });
+    } else {
+      tg.mediaDataUrl(accountId, chatId, messageId, cacheKey, att.mimeType)
+        .then((u) => {
+          if (!cancelled) setUrl(u);
+        })
+        .catch(() => {
+          if (!cancelled) setFailed(true);
+        });
+    }
     return () => {
       cancelled = true;
     };
   }, [att.guid]);
 
-  const mime = att.mimeType ?? "";
-  const isVideo = mime.startsWith("video/");
   const isSticker = type === "sticker";
   // Photos and stickers are images; a "document" with an image mime is one too.
   const isImage = type === "photo" || type === "sticker" || mime.startsWith("image/");
