@@ -398,37 +398,36 @@ fn sanitize_name(name: &str) -> String {
     if safe.is_empty() { "media.bin".to_owned() } else { safe }
 }
 
-/// Existing temp-file path for `name`, or `None`. Lets the frontend skip a
-/// re-download when a media temp file is already on disk. Async + spawn_blocking
-/// so the filesystem stat never runs on the main thread.
-#[tauri::command]
-pub async fn media_temp_path(name: String) -> Option<String> {
-    let path = media_tmp_dir().join(sanitize_name(&name));
-    tokio::task::spawn_blocking(move || {
-        path.exists().then(|| path.to_string_lossy().into_owned())
-    })
-    .await
-    .ok()
-    .flatten()
-}
-
-/// Write bytes to a media temp file (served via the asset protocol) and return
-/// its path. Used for iMessage attachments so a video streams from disk (range
-/// requests) instead of living fully in the JS heap during playback.
+/// Download `url` to a media temp file and return its path (served via the
+/// asset protocol for range-based streaming).
 ///
-/// **Must be async**: a synchronous command runs on the main thread, and
-/// writing a large video there froze the UI (beachball). spawn_blocking moves
-/// the write to the blocking pool.
+/// Crucially, the bytes are fetched **in Rust** and never cross the IPC
+/// boundary — passing a whole video as a command argument blocked the main
+/// thread on deserialization (a multi-second freeze). Used for iMessage
+/// attachments (invalid certs accepted for self-hosted BlueBubbles servers).
 #[tauri::command]
-pub async fn save_media_temp(bytes: Vec<u8>, name: String) -> Result<String, String> {
+pub async fn download_to_temp(url: String, name: String) -> Result<String, String> {
     let dir = media_tmp_dir();
-    let file = sanitize_name(&name);
+    let path = dir.join(sanitize_name(&name));
+    if tokio::fs::try_exists(&path).await.unwrap_or(false) {
+        return Ok(path.to_string_lossy().into_owned());
+    }
+    let client = tauri_plugin_http::reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .build()
+        .map_err(|e| e.to_string())?;
+    let bytes = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .bytes()
+        .await
+        .map_err(|e| e.to_string())?
+        .to_vec();
     tokio::task::spawn_blocking(move || {
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let path = dir.join(file);
-        if !path.exists() {
-            std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
-        }
+        std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
         Ok(path.to_string_lossy().into_owned())
     })
     .await

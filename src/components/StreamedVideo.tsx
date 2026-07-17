@@ -1,14 +1,12 @@
-// Plays a BlueBubbles video attachment with low memory use.
+// Plays a BlueBubbles video attachment with no UI freeze and low memory.
 //
-// A plain <video src={serverUrl}> won't play (the webview's own networking
-// hits CORS/cert/range on the server). We fetch the bytes through the Tauri
-// http plugin *once*, write them to a temp file, and stream that file via the
-// asset protocol (convertFileSrc) — so playback seeks from disk with range
-// requests instead of holding the whole video in the JS heap. A cached temp
-// file is reused across mounts, avoiding re-downloads.
+// The backend downloads the file to a temp file (bytes fetched in Rust — they
+// never cross the IPC boundary, which is what froze the main thread before)
+// and we stream it via the asset protocol (convertFileSrc), so playback seeks
+// from disk with range requests instead of holding the whole video in memory.
+// A cached temp file is reused across mounts.
 
 import { useEffect, useState } from "react";
-import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 
 // Stable, collision-resistant temp-file name from the source URL.
@@ -36,18 +34,7 @@ export function StreamedVideo({
       try {
         const ext = (mime?.split("/")[1] || "mp4").replace(/[^a-z0-9]/gi, "");
         const name = nameFor(src, ext);
-        // Reuse an already-downloaded temp file if present (no re-fetch).
-        const existing = await invoke<string | null>("media_temp_path", { name });
-        if (cancelled) return;
-        if (existing) {
-          setFileSrc(convertFileSrc(existing));
-          return;
-        }
-        const res = await tauriFetch(src);
-        if (!res.ok) throw new Error(`http ${res.status}`);
-        const bytes = new Uint8Array(await res.arrayBuffer());
-        if (cancelled) return;
-        const path = await invoke<string>("save_media_temp", { bytes, name });
+        const path = await invoke<string>("download_to_temp", { url: src, name });
         if (!cancelled) setFileSrc(convertFileSrc(path));
       } catch {
         if (!cancelled) setFailed(true);
