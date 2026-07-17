@@ -33,7 +33,10 @@ download -> [latest release](https://github.com/oovets/imessage/releases/latest)
 
 - native window vibrancy and an overlay titlebar -- frosted, draggable from the top
 
-- emoji shortcode autocomplete (type :smile) plus a searchable emoji picker
+- emoji autocomplete -- type a plain word (fire) or a :shortcode (:smile), plus a
+  searchable emoji picker
+
+- memory-conscious: bounded message cache (lru eviction) and downscaled image thumbnails
 
 - multi-pane conversations, replies, tapbacks, image/video/file attachments with
   full-size preview dialogs
@@ -148,9 +151,22 @@ unsigned builds: if macos says the app "is damaged and can't be opened", move it
 npm run dev          # start vite dev server
 npm run build        # type-check + build the frontend
 npm run lint         # eslint flat config
+npm run test         # vitest unit tests
 npm run preview      # preview the built frontend
 npm run tauri:dev    # run the desktop app in development
 npm run tauri:build  # build local desktop bundles
+```
+
+```
+== dev diagnostics ==
+
+memory work has two dev-only helpers. in a dev build the web inspector console exposes
+window.__mem() (js heap, dom nodes, cached message counts) and window.__memRec (start / mark /
+stop / dump to record a scenario walkthrough as a table + csv). scripts/mem-snapshot.sh prints
+the matching rss for the rust process and its wkwebview content process -- diff before/after
+launch to find the app's renderer pid:
+  scripts/mem-snapshot.sh before   # before launching the app
+  scripts/mem-snapshot.sh after    # the new WebContent pid is the app's
 ```
 
 ```
@@ -161,12 +177,17 @@ secure settings   src/lib/secureConfig.ts + native tauri commands in src-tauri/s
                   keychain; clearing settings removes current + legacy keychain entries.
 
 realtime + sync   connects to the bluebubbles socket.io-compatible websocket; falls back to
-                  http polling. (src/hooks/useWebSocket.ts, usePollingFallback.ts,
-                  src/api/client.ts)
+                  http polling. http and websocket both go through the tauri plugins
+                  (rust-side), so dev reaches a cleartext lan server without webview ats/cors
+                  blocks. (src/hooks/useWebSocket.ts, lib/wsTransport.ts,
+                  usePollingFallback.ts, src/api/client.ts)
 
 messages + attach optimistic outgoing render, deduped against server echoes via temp guids;
-                  images inline (click -> dark full-size dialog), video as <video controls>,
-                  other attachments as links. (src/components/Message*.tsx, store/useAppStore)
+                  images inline as downscaled thumbnails (click -> dark full-size dialog),
+                  video as <video controls>, other attachments as links. socket events that
+                  arrive without attachment data are backfilled over http. the in-memory cache
+                  is bounded (lru, 30 chats x 100 messages) and persisted.
+                  (src/components/Message*.tsx, store/useAppStore.ts, store/messageCache.ts)
 
 link previews     fetched locally via the tauri http plugin, cached in zustand with a bounded
                   size. (src/lib/linkPreview.ts, components/LinkPreviewCard.tsx)
@@ -187,13 +208,15 @@ src/                 react application
   api/               bluebubbles api client
   components/        ui and chat components
   hooks/             realtime, polling, desktop hooks
-  lib/               utilities, appearance, secure config, previews
-  store/             zustand app state
+  lib/               utilities, appearance, secure config, previews, ws transport, diagnostics
+  store/             zustand app state (+ messageCache.ts bounded cache)
   types/             shared typescript types
+scripts/             dev helpers (mem-snapshot.sh)
 src-tauri/           tauri 2 desktop shell (capabilities/ icons/ src/ rust commands)
 eslint.config.js     eslint 9 flat config
 package.json         npm scripts + frontend deps
 vite.config.ts       vite config
+vitest.config.ts     vitest config
 ```
 
 ```bash
@@ -204,6 +227,7 @@ npm run tauri:build -- --target aarch64-apple-darwin --bundles app,dmg  # apple 
 
 # verification before shipping
 npm run lint
+npm run test
 npm run build
 cd src-tauri && cargo check
 npm run tauri:build     # for desktop packaging changes
