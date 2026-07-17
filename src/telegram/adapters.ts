@@ -5,7 +5,7 @@
 // `tg:<accountId>:<chatId>:<messageId>`. The prefix is what the store and the
 // message router use to tell the two sources apart.
 
-import type { Chat, Message } from "@/types";
+import type { Attachment, Chat, Message } from "@/types";
 import type { TgChat, TgMedia, TgMessage } from "./types";
 
 export function tgChatGuid(accountId: number, chatId: number): string {
@@ -68,22 +68,51 @@ export function tgChatToChat(accountId: number, c: TgChat): Chat {
   };
 }
 
+// Renderable media (photo/sticker/document) becomes an attachment whose guid
+// encodes what TelegramMedia needs to fetch the bytes lazily. cache_key never
+// contains ":" (it's `photo-<id>` / `doc-<id>`), so ":" is a safe separator.
+function tgMediaAttachments(m: TgMessage): Attachment[] {
+  const media = m.media;
+  if (!media || media.type === "other") return [];
+  const mime =
+    media.type === "photo"
+      ? "image/jpeg"
+      : media.type === "sticker"
+        ? "image/webp"
+        : media.mime_type;
+  const name =
+    media.type === "document"
+      ? media.file_name
+      : media.type === "sticker"
+        ? `${media.emoji} sticker`
+        : "Photo";
+  const guid = `tgmedia:${m.account_id}:${m.chat_id}:${m.id}:${media.type}:${media.cache_key}`;
+  return [{ guid, mimeType: mime, transferName: name, url: "" }];
+}
+
 export function tgMessageToMessage(m: TgMessage): Message {
+  const attachments = tgMediaAttachments(m);
+  // Only fall back to a media placeholder when there's nothing renderable
+  // (polls, locations); otherwise let the image/document speak for itself.
+  const text = m.text || (attachments.length === 0 ? mediaPlaceholder(m.media) : "");
+  const tgReactions = m.reactions.length
+    ? m.reactions.map((r) => (r.count > 1 ? `${r.emoji} ${r.count}` : r.emoji))
+    : undefined;
   return {
     guid: tgMessageGuid(m.account_id, m.chat_id, m.id),
-    text: m.text || mediaPlaceholder(m.media),
+    text,
     isFromMe: m.outgoing,
     dateCreated: Date.parse(m.date),
     handle:
       m.sender_id != null
         ? { address: String(m.sender_id), firstName: m.sender_name ?? "" }
         : null,
-    // Media and reactions are wired up in a later phase.
-    attachments: [],
+    attachments,
     associatedMessageGuid: "",
     associatedMessageType: "",
     chatGUID: tgChatGuid(m.account_id, m.chat_id),
     pending: m.send_state === "pending",
     failed: m.send_state === "failed",
+    tgReactions,
   };
 }

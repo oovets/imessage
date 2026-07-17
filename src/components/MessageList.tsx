@@ -3,10 +3,23 @@ import { ChevronDown, MessagesSquare } from "lucide-react";
 import { MessageBubble } from "@/components/MessageBubble";
 import { MessageListSkeleton } from "@/components/MessageListSkeleton";
 import { TypingIndicator } from "@/components/TypingIndicator";
-import { useAppStore } from "@/store/useAppStore";
+import { useAppStore, isTelegramChatGuid } from "@/store/useAppStore";
 import { getClient } from "@/api/clientFactory";
+import { tg } from "@/telegram/api";
+import { parseTgChatGuid } from "@/telegram/adapters";
 import { cn } from "@/lib/utils";
 import type { Message } from "@/types";
+
+// iMessage tapbacks have no exact Telegram equivalents; map to the nearest
+// standard Telegram reaction (note: Telegram's "laugh" is 😁, not 😂).
+const TAPBACK_TO_EMOJI: Record<string, string> = {
+  love: "❤️",
+  like: "👍",
+  dislike: "👎",
+  laugh: "😁",
+  emphasize: "🔥",
+  question: "🤔",
+};
 
 interface MessageListProps {
   chatGUID: string;
@@ -120,6 +133,20 @@ export function MessageList({ chatGUID }: MessageListProps) {
   }
 
   async function handleReact(m: Message, reactionKey: string) {
+    // Telegram: map the iMessage tapback to the nearest Telegram emoji and
+    // send it through the Telegram core (no optimistic tapback child-message;
+    // the authoritative aggregate arrives via tg:core-event).
+    if (isTelegramChatGuid(chatGUID)) {
+      const emoji = TAPBACK_TO_EMOJI[reactionKey];
+      if (!emoji) return;
+      const { accountId, chatId } = parseTgChatGuid(chatGUID);
+      const messageId = Number(m.guid.split(":").pop());
+      if (!Number.isFinite(messageId) || messageId <= 0) return;
+      const already = (m.tgReactions ?? []).some((r) => r.startsWith(emoji));
+      void tg.react(accountId, chatId, messageId, already ? null : emoji).catch(() => {});
+      return;
+    }
+
     const typeNum = REACTION_KEY_TO_TYPE[reactionKey];
     if (!typeNum) return;
     const tempGuid = (typeof crypto !== "undefined" && "randomUUID" in crypto)
@@ -321,7 +348,9 @@ export function MessageList({ chatGUID }: MessageListProps) {
             const showSender = isFirstInGroup && !msg.isFromMe;
             const showTime = showTimestamps && isLastInGroup;
 
-            const reactions = reactionMap.get(msg.guid);
+            // Telegram messages carry their own aggregated emoji reactions;
+            // iMessage messages derive theirs from tapback child-messages.
+            const reactions = msg.tgReactions ?? reactionMap.get(msg.guid);
 
             return (
               <div key={msg.guid}>

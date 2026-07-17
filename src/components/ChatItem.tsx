@@ -1,7 +1,8 @@
 import { memo } from "react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 import { cn } from "@/lib/utils";
+import { useTelegramAvatar } from "@/telegram/useTelegramAvatar";
 import {
   decodeEscapedUnicode,
   getChatDisplayName,
@@ -26,6 +27,7 @@ function ChatItemComponent({ chat, isSelected, onSelect, compact = false }: Chat
   );
   const name = getChatDisplayName(chat);
   const initials = getChatInitials(chat);
+  const avatarUrl = useTelegramAvatar(chat.guid);
   const lastTime = chat.lastMessage?.dateCreated
     ? formatMessageTime(chat.lastMessage.dateCreated)
     : "";
@@ -47,6 +49,7 @@ function ChatItemComponent({ chat, isSelected, onSelect, compact = false }: Chat
           <span className="absolute left-0 top-2 bottom-2 w-0.5 rounded-r-full bg-primary" />
         )}
         <Avatar className="h-10 w-10 shrink-0">
+          {avatarUrl && <AvatarImage src={avatarUrl} alt={name} />}
           <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
             {initials}
           </AvatarFallback>
@@ -81,6 +84,7 @@ function ChatItemComponent({ chat, isSelected, onSelect, compact = false }: Chat
       )}
       {!superlightMode && (
         <Avatar className="h-10 w-10 shrink-0">
+          {avatarUrl && <AvatarImage src={avatarUrl} alt={name} />}
           <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
             {initials}
           </AvatarFallback>

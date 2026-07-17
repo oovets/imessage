@@ -214,6 +214,20 @@ pub async fn tg_delete_messages(
 }
 
 #[tauri::command]
+pub async fn tg_react(
+    state: State<'_, TelegramState>,
+    account_id: AccountId,
+    chat_id: ChatId,
+    message_id: MessageId,
+    emoji: Option<String>,
+) -> Result<(), String> {
+    let core = state.core()?;
+    core.react(account_id, chat_id, message_id, emoji)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn tg_mark_read(
     state: State<'_, TelegramState>,
     account_id: AccountId,

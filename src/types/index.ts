@@ -24,6 +24,9 @@ export interface Message {
   failed?: boolean;
   failedReason?: string;
   tempGuid?: string;
+  // Unified inbox: Telegram's own emoji reaction chips (already aggregated),
+  // shown instead of the iMessage tapback aggregation for tg messages.
+  tgReactions?: string[];
 }
 
 export interface Chat {

@@ -297,6 +297,7 @@ pub fn run() {
             telegram::tg_send_message,
             telegram::tg_edit_message,
             telegram::tg_delete_messages,
+            telegram::tg_react,
             telegram::tg_mark_read,
             telegram::tg_set_typing,
         ])

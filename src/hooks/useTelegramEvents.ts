@@ -18,6 +18,7 @@ type CoreEvent =
       message_ids: number[];
     }
   | { kind: "chat_updated"; chat: TgChat }
+  | { kind: "typing"; account_id: number; chat_id: number; user_id: number }
   | { kind: string };
 
 export function useTelegramEvents() {
@@ -48,6 +49,14 @@ export function useTelegramEvents() {
         case "chat_updated": {
           const c = (event as { chat: TgChat }).chat;
           store.upsertChat(tgChatToChat(c.account_id, c));
+          break;
+        }
+
+        case "typing": {
+          const e = event as { account_id: number; chat_id: number };
+          // setTyping stores a future expiry timestamp; Telegram only signals
+          // "started", so each event refreshes the window.
+          store.setTyping(`tg:${e.account_id}:${e.chat_id}`, true);
           break;
         }
 

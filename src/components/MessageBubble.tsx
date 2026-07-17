@@ -6,6 +6,7 @@ import { useAppStore } from "@/store/useAppStore";
 import { getClient } from "@/api/clientFactory";
 import { extractFirstUrl, fetchLinkPreview } from "@/lib/linkPreview";
 import { LinkPreviewCard } from "@/components/LinkPreviewCard";
+import { TelegramMedia } from "@/telegram/TelegramMedia";
 import {
   Dialog,
   DialogContent,
@@ -284,6 +285,10 @@ export function MessageBubble({
             onDoubleClick={() => onReact?.(message, "love")}
           >
             {message.attachments?.map((att) => {
+              // Telegram media is fetched lazily via its own component.
+              if (att.guid.startsWith("tgmedia:")) {
+                return <TelegramMedia key={att.guid} att={att} />;
+              }
               const mime = att.mimeType ?? "";
               const client = getClient(serverUrl, password);
               const src = att.url || client.getAttachmentUrl(att.guid);

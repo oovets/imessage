@@ -64,6 +64,12 @@ export const tg = {
   ) => invoke<void>("tg_edit_message", { accountId, chatId, messageId, text }),
   deleteMessages: (accountId: number, chatId: number, messageIds: TgMessageId[]) =>
     invoke<void>("tg_delete_messages", { accountId, chatId, messageIds }),
+  react: (
+    accountId: number,
+    chatId: number,
+    messageId: TgMessageId,
+    emoji: string | null,
+  ) => invoke<void>("tg_react", { accountId, chatId, messageId, emoji }),
   markRead: (accountId: number, chatId: number) =>
     invoke<void>("tg_mark_read", { accountId, chatId }),
   setTyping: (accountId: number, chatId: number) =>
