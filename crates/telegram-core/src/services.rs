@@ -370,6 +370,17 @@ impl Core {
     // ----- media -----------------------------------------------------------
 
     /// Fetch media bytes: encrypted cache first, network on miss (with
+    /// Cache read that treats a decryption failure as a miss. The cache key
+    /// can change (e.g. after Keychain migration), leaving old blobs
+    /// undecryptable; those must re-download rather than surface an error.
+    async fn cached_or_none(&self, key: &str) -> CoreResult<Option<Vec<u8>>> {
+        match self.cache.get(key).await {
+            Ok(value) => Ok(value),
+            Err(cache::CacheError::Decrypt) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
     /// progress events on the bus).
     pub async fn media_bytes(
         &self,
@@ -378,7 +389,7 @@ impl Core {
         message_id: MessageId,
         cache_key: &str,
     ) -> CoreResult<Vec<u8>> {
-        if let Some(bytes) = self.cache.get(cache_key).await? {
+        if let Some(bytes) = self.cached_or_none(cache_key).await? {
             return Ok(bytes);
         }
         let client = self.accounts.client(account_id).await?;
@@ -435,7 +446,7 @@ impl Core {
         user_id: UserId,
     ) -> CoreResult<Option<Vec<u8>>> {
         let key = format!("uavatar-{user_id}");
-        if let Some(bytes) = self.cache.get(&key).await? {
+        if let Some(bytes) = self.cached_or_none(&key).await? {
             return Ok(Some(bytes));
         }
         // A private-chat id equals the user id, so download_avatar resolves the
@@ -445,7 +456,7 @@ impl Core {
             let _permit = self.avatar_downloads.acquire().await.ok();
             // Re-check the cache: another request for the same user may have
             // fetched it while we waited for a permit.
-            if let Some(bytes) = self.cache.get(&key).await? {
+            if let Some(bytes) = self.cached_or_none(&key).await? {
                 return Ok(Some(bytes));
             }
             match client.download_avatar(user_id).await {
@@ -476,7 +487,7 @@ impl Core {
             .await?
             .and_then(|c| c.avatar_key)
         {
-            if let Some(bytes) = self.cache.get(&key).await? {
+            if let Some(bytes) = self.cached_or_none(&key).await? {
                 return Ok(Some(bytes));
             }
         }
