@@ -94,7 +94,27 @@ impl SecretStore for KeychainSecretStore {
 
     fn get(&self, name: &str) -> Result<Option<Vec<u8>>, SecretError> {
         let _guard = self.locked()?;
-        Ok(self.read_blob()?.get(name).cloned())
+        let mut map = self.read_blob()?;
+        if let Some(value) = map.get(name) {
+            return Ok(Some(value.clone()));
+        }
+        // Migration: an earlier layout stored each secret as its own Keychain
+        // item. If one still exists, fold it into the blob so we keep the
+        // user's session/cache key (and never read the legacy item again).
+        if name == BLOB_ITEM {
+            return Ok(None);
+        }
+        let legacy = keyring::Entry::new(&self.service, name)
+            .map_err(|e| SecretError::Backend(e.to_string()))?;
+        match legacy.get_secret() {
+            Ok(bytes) => {
+                map.insert(name.to_owned(), bytes.clone());
+                self.write_blob(&map)?;
+                Ok(Some(bytes))
+            }
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(e) => Err(SecretError::Backend(e.to_string())),
+        }
     }
 
     fn delete(&self, name: &str) -> Result<(), SecretError> {

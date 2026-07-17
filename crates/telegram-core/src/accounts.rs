@@ -75,13 +75,15 @@ impl AccountManager {
 
     /// Reconnect every account with a stored session (called at startup).
     pub async fn resume_all(&self) -> CoreResult<()> {
+        // Attempt every account: start_runtime trusts the actual session (does
+        // it still hold a logged-in user?) over the stored `authorized` flag,
+        // which can go stale — e.g. after a transient startup failure marked an
+        // account logged-out even though its session is intact.
         for account in self.inner.db.accounts().list().await? {
-            if account.authorized {
-                if let Err(e) = self.inner.clone().start_runtime(account.id).await {
-                    // One broken account must not prevent the app (and the
-                    // other accounts) from starting.
-                    tracing::error!(account = account.id, "failed to resume account: {e}");
-                }
+            if let Err(e) = self.inner.clone().start_runtime(account.id).await {
+                // One broken account must not prevent the app (and the other
+                // accounts) from starting.
+                tracing::error!(account = account.id, "failed to resume account: {e}");
             }
         }
         Ok(())
@@ -298,6 +300,14 @@ impl Inner {
             )
             .map_err(CoreError::Telegram)?,
         );
+        // Only resume accounts whose session still holds a logged-in user, and
+        // keep the DB `authorized` flag in sync with that reality.
+        if !session.has_self_user() {
+            let _ = self.db.accounts().set_authorized(account_id, false).await;
+            return Ok(());
+        }
+        let _ = self.db.accounts().set_authorized(account_id, true).await;
+
         let client = Arc::new(TelegramClient::connect(
             session,
             self.config.telegram.api_id,
