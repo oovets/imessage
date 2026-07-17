@@ -3,9 +3,11 @@ import { ArrowLeft, MessageCircleDashed, SplitSquareHorizontal, SplitSquareVerti
 import { Button } from "@/components/ui/button";
 import { MessageList } from "@/components/MessageList";
 import { MessageInput } from "@/components/MessageInput";
-import { useAppStore } from "@/store/useAppStore";
+import { useAppStore, isTelegramChatGuid } from "@/store/useAppStore";
 import { getClient } from "@/api/clientFactory";
 import { getChatDisplayName, getChatInitials } from "@/types";
+import { tg } from "@/telegram/api";
+import { parseTgChatGuid, tgMessageToMessage } from "@/telegram/adapters";
 import { cn } from "@/lib/utils";
 
 interface ChatPaneProps {
@@ -44,6 +46,25 @@ export function ChatPane({ paneId, chatGUID, isActive, canClose, showMobileBack 
     const lastFetchedAt = snapshot.messageFetchedAt[chatGUID] ?? 0;
 
     if (!hasCached) setLoadingMessages(true);
+
+    // Telegram chats load through the tg_* commands, not BlueBubbles.
+    if (isTelegramChatGuid(chatGUID)) {
+      const { accountId, chatId } = parseTgChatGuid(chatGUID);
+      tg.messages(accountId, chatId, undefined, 50)
+        .then((tgMsgs) => {
+          if (cancelled) return;
+          setMessages(chatGUID, tgMsgs.map(tgMessageToMessage));
+        })
+        .catch((e: unknown) => {
+          if (!cancelled) setFetchError(String(e));
+        })
+        .finally(() => {
+          if (!cancelled) setLoadingMessages(false);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
 
     const client = getClient(serverUrl, password);
     const after = hasCached ? lastFetchedAt : undefined;

@@ -1,3 +1,5 @@
+mod telegram;
+
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use keyring::Entry;
 use serde::{Deserialize, Serialize};
@@ -283,7 +285,15 @@ pub fn run() {
             load_secure_config,
             save_secure_config,
             clear_secure_config,
-            set_menubar_visible
+            set_menubar_visible,
+            // Telegram (unified inbox)
+            telegram::tg_status,
+            telegram::tg_list_accounts,
+            telegram::tg_chat_list,
+            telegram::tg_messages,
+            telegram::tg_avatar_data_url,
+            telegram::tg_user_avatar_data_url,
+            telegram::tg_media_data_url,
         ])
         .setup(|app| {
             let app_handle = app.handle();
@@ -299,6 +309,11 @@ pub fn run() {
                         .build(),
                 )?;
             }
+
+            // Start the Telegram core (non-fatal: the app runs without it).
+            let tg_state = tauri::async_runtime::block_on(telegram::init(&app_handle));
+            app.manage(tg_state);
+
             Ok(())
         })
         .on_menu_event(|app, event| match event.id().as_ref() {

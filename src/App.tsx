@@ -5,6 +5,7 @@ import { PaneTreeRoot } from "@/components/PaneTree";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { usePollingFallback } from "@/hooks/usePollingFallback";
 import { useDesktopFeatures } from "@/hooks/useDesktopFeatures";
+import { useTelegramInbox } from "@/hooks/useTelegramInbox";
 import { useAppStore, type PaneNode } from "@/store/useAppStore";
 import { useTheme } from "@/components/ThemeProvider";
 import { applyAppearance } from "@/lib/appearance";
@@ -27,6 +28,7 @@ export default function App() {
   useDesktopFeatures();
   useWebSocket();
   usePollingFallback();
+  useTelegramInbox();
 
   const selectedChatGUID = useAppStore((s) => s.selectedChatGUID);
   const paneTree = useAppStore((s) => s.paneTree);

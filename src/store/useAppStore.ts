@@ -280,6 +280,11 @@ interface AppState {
   typingChats: Record<string, number>;
   setTyping: (chatGUID: string, display: boolean) => void;
 
+  // Unified inbox: Telegram availability + its slice of the chat list.
+  telegramAvailable: boolean;
+  setTelegramAvailable: (v: boolean) => void;
+  setTelegramChats: (chats: Chat[]) => void;
+
   setConfig: (serverUrl: string, password: string) => void;
   clearConfig: () => void;
   setConfigLoaded: (v: boolean) => void;
@@ -335,6 +340,22 @@ function deriveSelectedChat(tree: PaneNode, activePaneId: string): string | null
   return fallbackLeaf.type === "leaf" ? fallbackLeaf.chatGUID : null;
 }
 
+// Unified inbox: Telegram chats live in the same `chats` array as iMessage
+// chats, distinguished by a `tg:` GUID prefix. Each source updates only its
+// own slice so the two never clobber each other, and the merged list is
+// sorted by most-recent activity so conversations interleave by time.
+const TG_GUID_PREFIX = "tg:";
+export function isTelegramChatGuid(guid: string): boolean {
+  return guid.startsWith(TG_GUID_PREFIX);
+}
+function chatActivity(chat: Chat): number {
+  return chat.lastMessage?.dateCreated ?? 0;
+}
+function sortChatsByRecency(list: Chat[]): Chat[] {
+  // Stable sort keeps each source's incoming order among equal/unknown times.
+  return [...list].sort((a, b) => chatActivity(b) - chatActivity(a));
+}
+
 export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
@@ -352,6 +373,7 @@ export const useAppStore = create<AppState>()(
       linkPreviewsEnabled: true,
 
       chats: [],
+      telegramAvailable: false,
       paneTree: EMPTY_LEAF,
       activePaneId: EMPTY_LEAF.id,
       paneLayouts: {},
@@ -574,7 +596,25 @@ export const useAppStore = create<AppState>()(
         });
       },
 
-      setChats: (chats) => set({ chats }),
+      // iMessage source: replace all non-Telegram chats, keep Telegram ones.
+      setChats: (chats) =>
+        set((s) => ({
+          chats: sortChatsByRecency([
+            ...chats,
+            ...s.chats.filter((c) => isTelegramChatGuid(c.guid)),
+          ]),
+        })),
+
+      // Telegram source: replace all Telegram chats, keep iMessage ones.
+      setTelegramChats: (tgChats) =>
+        set((s) => ({
+          chats: sortChatsByRecency([
+            ...s.chats.filter((c) => !isTelegramChatGuid(c.guid)),
+            ...tgChats,
+          ]),
+        })),
+
+      setTelegramAvailable: (v) => set({ telegramAvailable: v }),
 
       setMessages: (chatGUID, messages) => {
         const capped = capMessages(messages);
