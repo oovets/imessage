@@ -19,17 +19,43 @@ use shared::AppConfig;
 use tauri::{AppHandle, Emitter, State};
 use telegram_core::Core;
 
-/// Managed state holding the (optional) running Telegram core.
+/// Managed state holding the Telegram core once it has started in the
+/// background. Interior-mutable so init never blocks app startup.
 pub struct TelegramState {
-    core: Option<Arc<Core>>,
+    core: std::sync::Mutex<Option<Arc<Core>>>,
+}
+
+impl Default for TelegramState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TelegramState {
-    /// The running core, or a user-facing error when Telegram is unavailable.
+    pub fn new() -> Self {
+        Self {
+            core: std::sync::Mutex::new(None),
+        }
+    }
+
+    /// Publish the started core (called from the background init task).
+    pub fn set(&self, core: Arc<Core>) {
+        if let Ok(mut guard) = self.core.lock() {
+            *guard = Some(core);
+        }
+    }
+
+    /// The running core, or a user-facing error when Telegram isn't ready.
     fn core(&self) -> Result<Arc<Core>, String> {
         self.core
-            .clone()
-            .ok_or_else(|| "Telegram is not configured on this device".to_string())
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone())
+            .ok_or_else(|| "Telegram is not ready".to_string())
+    }
+
+    fn is_ready(&self) -> bool {
+        self.core.lock().map(|g| g.is_some()).unwrap_or(false)
     }
 }
 
@@ -43,14 +69,15 @@ fn dev_config_path() -> Option<PathBuf> {
     candidates.into_iter().find(|p| p.exists())
 }
 
-/// Try to start the Telegram core. Returns state with `core: None` (and logs)
-/// if Telegram is not configured or fails to start — never panics the app.
-pub async fn init(app: &AppHandle) -> TelegramState {
+/// Start the Telegram core. Returns `None` (and logs) if Telegram isn't
+/// configured or fails to start — never panics the app. Runs in a background
+/// task so it never blocks app startup (Keychain reads, connecting, sync).
+pub async fn init_core(app: &AppHandle) -> Option<Arc<Core>> {
     let mut config = match AppConfig::load(dev_config_path().as_deref()) {
         Ok(config) => config,
         Err(e) => {
             log::warn!("telegram: config load failed, disabling: {e}");
-            return TelegramState { core: None };
+            return None;
         }
     };
     // Compile-time baked credentials: set TG_API_ID / TG_API_HASH when building
@@ -68,7 +95,7 @@ pub async fn init(app: &AppHandle) -> TelegramState {
     }
     if config.require_api_credentials().is_err() {
         log::info!("telegram: no API credentials (TG_API_ID/TG_API_HASH), disabling");
-        return TelegramState { core: None };
+        return None;
     }
 
     let secrets = Arc::new(KeychainSecretStore::new());
@@ -78,11 +105,11 @@ pub async fn init(app: &AppHandle) -> TelegramState {
             let bridge_app = app.clone();
             let bridge_core = Arc::clone(&core);
             tauri::async_runtime::spawn(bridge_events(bridge_app, bridge_core));
-            TelegramState { core: Some(core) }
+            Some(core)
         }
         Err(e) => {
             log::warn!("telegram: core failed to start, disabling: {e}");
-            TelegramState { core: None }
+            None
         }
     }
 }
@@ -116,7 +143,7 @@ fn data_url(bytes: &[u8], mime: &str) -> String {
 /// Whether Telegram is available (configured and running).
 #[tauri::command]
 pub fn tg_status(state: State<'_, TelegramState>) -> bool {
-    state.core.is_some()
+    state.is_ready()
 }
 
 #[tauri::command]

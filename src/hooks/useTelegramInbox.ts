@@ -2,6 +2,7 @@
 // appear in the unified chat list alongside iMessage conversations.
 
 import { useEffect } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "@/store/useAppStore";
 import { tg } from "@/telegram/api";
 import { tgChatToChat } from "@/telegram/adapters";
@@ -12,6 +13,16 @@ export function useTelegramInbox() {
   const setTelegramAvailable = useAppStore((s) => s.setTelegramAvailable);
   // Re-runs when an account is added/removed (reloadTelegram bumps this).
   const reloadNonce = useAppStore((s) => s.telegramReloadNonce);
+
+  // The Telegram core starts in the background; reload once it signals ready.
+  useEffect(() => {
+    const unlisten = listen("tg:ready", () => {
+      useAppStore.getState().reloadTelegram();
+    });
+    return () => {
+      unlisten.then((f) => f()).catch(() => {});
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

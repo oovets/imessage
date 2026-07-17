@@ -325,10 +325,18 @@ pub fn run() {
                 )?;
             }
 
-            // Start the Telegram core (non-fatal: the app runs without it).
-            telegram::clear_media_tmp();
-            let tg_state = tauri::async_runtime::block_on(telegram::init(&app_handle));
-            app.manage(tg_state);
+            // Everything Telegram runs OFF the main thread so app startup is
+            // never blocked (Keychain reads, connecting, sync, temp cleanup).
+            app.manage(telegram::TelegramState::new());
+            std::thread::spawn(telegram::clear_media_tmp);
+            let tg_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Some(core) = telegram::init_core(&tg_handle).await {
+                    tg_handle.state::<telegram::TelegramState>().set(core);
+                    // Tell the webview Telegram is ready so it (re)loads chats.
+                    let _ = tg_handle.emit("tg:ready", ());
+                }
+            });
 
             Ok(())
         })
