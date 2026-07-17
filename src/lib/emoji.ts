@@ -337,3 +337,21 @@ export function findEmojiByName(name: string): Emoji | undefined {
   const q = norm(name);
   return EMOJIS.find((e) => e.name === q || e.keywords?.includes(q));
 }
+
+/**
+ * All emojis whose name or a keyword *exactly* equals `word`. Used for the
+ * Messages-style plain-word suggestions: only confident, whole-word matches so
+ * ordinary typing doesn't constantly pop the picker.
+ */
+export function findEmojisByWord(word: string, limit = 8): Emoji[] {
+  const q = norm(word);
+  if (!q) return [];
+  const out: Emoji[] = [];
+  for (const e of EMOJIS) {
+    if (e.name === q || e.keywords?.includes(q)) {
+      out.push(e);
+      if (out.length >= limit) break;
+    }
+  }
+  return out;
+}
