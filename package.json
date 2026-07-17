@@ -1,7 +1,7 @@
 {
   "name": "messages",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Native macOS iMessage desktop client for BlueBubbles, built with Tauri, React, and TypeScript.",
   "license": "MIT",
   "type": "module",
