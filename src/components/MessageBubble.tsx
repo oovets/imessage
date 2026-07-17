@@ -107,7 +107,11 @@ function AttachmentImage({
   alt: string;
   onOpen: (src: string, alt: string) => void;
 }) {
-  const [src, setSrc] = useState(thumbSrc);
+  // Display the full image (it carries EXIF orientation, which the browser
+  // applies) rather than the server thumbnail (BlueBubbles drops EXIF on
+  // downscale, so thumbnails render rotated). Fall back to the thumbnail if
+  // the full download fails.
+  const [src, setSrc] = useState(fullSrc);
   return (
     <button
       type="button"
@@ -124,9 +128,10 @@ function AttachmentImage({
         alt={alt}
         loading="lazy"
         onError={() => {
-          if (src !== fullSrc) setSrc(fullSrc);
+          if (src !== thumbSrc) setSrc(thumbSrc);
         }}
         className="rounded-lg max-h-80 max-w-full object-cover"
+        style={{ imageOrientation: "from-image" }}
       />
     </button>
   );

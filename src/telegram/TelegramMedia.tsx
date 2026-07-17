@@ -38,38 +38,62 @@ export function TelegramMedia({ att }: { att: Attachment }) {
     };
   }, [att.guid]);
 
-  if (type === "document") {
+  const mime = att.mimeType ?? "";
+  const isVideo = mime.startsWith("video/");
+  const isSticker = type === "sticker";
+  // Photos and stickers are images; a "document" with an image mime is one too.
+  const isImage = type === "photo" || type === "sticker" || mime.startsWith("image/");
+
+  if (isVideo) {
+    if (url) {
+      return (
+        <video
+          src={url}
+          controls
+          preload="metadata"
+          className="rounded-lg max-h-80 max-w-full -mx-1 mb-1"
+        />
+      );
+    }
     return (
-      <a
-        href={url ?? undefined}
-        download={att.transferName}
-        className="flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 my-1 text-sm hover:bg-muted/60"
-        title={att.transferName}
-      >
-        <FileDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-        <span className="truncate">{att.transferName}</span>
-      </a>
+      <div className="rounded-lg bg-muted/40 text-muted-foreground text-xs px-3 py-6 my-1 text-center min-w-32">
+        {failed ? "⚠ video unavailable" : "Loading video…"}
+      </div>
     );
   }
 
-  // photo / sticker
-  const isSticker = type === "sticker";
-  if (url) {
+  if (isImage) {
+    if (url) {
+      return (
+        <img
+          src={url}
+          alt={att.transferName}
+          style={{ imageOrientation: "from-image" }}
+          className={
+            isSticker
+              ? "max-h-32 max-w-[8rem] -mx-1 mb-1"
+              : "rounded-lg max-h-80 max-w-full -mx-1 mb-1 object-cover"
+          }
+        />
+      );
+    }
     return (
-      <img
-        src={url}
-        alt={att.transferName}
-        className={
-          isSticker
-            ? "max-h-32 max-w-[8rem] -mx-1 mb-1"
-            : "rounded-lg max-h-80 max-w-full -mx-1 mb-1 object-cover"
-        }
-      />
+      <div className="rounded-lg bg-muted/40 text-muted-foreground text-xs px-3 py-6 my-1 text-center min-w-32">
+        {failed ? "⚠ media unavailable" : "Loading media…"}
+      </div>
     );
   }
+
+  // Other documents: a download card.
   return (
-    <div className="rounded-lg bg-muted/40 text-muted-foreground text-xs px-3 py-6 my-1 text-center min-w-32">
-      {failed ? "⚠ media unavailable" : "Loading media…"}
-    </div>
+    <a
+      href={url ?? undefined}
+      download={att.transferName}
+      className="flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 my-1 text-sm hover:bg-muted/60"
+      title={att.transferName}
+    >
+      <FileDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+      <span className="truncate">{att.transferName}</span>
+    </a>
   );
 }
