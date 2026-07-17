@@ -94,7 +94,37 @@ npm.
 ## Setting up the iMessage backend (BlueBubbles)
 
 The BlueBubbles server is a macOS app that bridges iMessage to an HTTP/WebSocket API. It
-must run on a Mac signed into iCloud with Messages working.
+must run on a Mac signed into iCloud with Messages working. There are three ways to set it
+up: the in-app wizard, the one-command script, or a manual install.
+
+### In-app first-run wizard
+
+On first launch in a desktop build, if no server is configured the app opens an onboarding
+wizard that installs and configures BlueBubbles for you and pre-fills the connection. This
+is the easiest path — just follow the steps and grant the privacy permissions it prompts
+for.
+
+### One command
+
+`scripts/demo-setup.sh` does the same thing headlessly: it installs a BlueBubbles server
+and the Messages desktop client, configures the server without its own setup wizard, and
+pre-fills the client's connection. It needs a Mac signed into iCloud with Messages working;
+macOS still asks you to grant three privacy toggles by hand (the script opens the right
+panes for you).
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/oovets/imessage/main/scripts/demo-setup.sh
+bash demo-setup.sh --dry-run          # preview every step, change nothing
+bash demo-setup.sh                    # generated password, printed at the end
+bash demo-setup.sh --login --headless # server at login, no dock icon
+bash demo-setup.sh --no-client        # only the server
+bash demo-setup.sh --uninstall        # remove it all (add --purge to wipe data too)
+```
+
+Note: iMessage cannot activate inside a macOS VM (Apple blocks it), so the end-to-end demo
+needs a physical Mac; a VM is fine for testing the installer flow itself.
+
+### Manual install
 
 **Host requirements:** a Mac on macOS 11+, signed into iCloud with iMessage enabled and a
 visible conversation; always-on power and network with sleep prevented; Full Disk Access
