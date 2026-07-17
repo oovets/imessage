@@ -126,6 +126,18 @@ generic or Intel VMs (VMware, VirtualBox, QEMU) that present blank or fake ident
 Apple Silicon VMs running under Apple's Virtualization.framework — such as VirtualBuddy —
 it activates normally, so the full end-to-end demo works there too.
 
+### Clean reset
+
+To wipe every trace of the client for a fresh first-run test (the app bundle plus its
+keychain entries, Application Support, caches, WebView storage and preferences — none of
+which deleting the `.app` alone removes), use `scripts/reset-demo.sh`:
+
+```bash
+bash scripts/reset-demo.sh --dry-run  # preview what would be deleted
+bash scripts/reset-demo.sh            # remove the client + its data
+bash scripts/reset-demo.sh --server   # also remove the BlueBubbles server and its data
+```
+
 ### Manual install
 
 **Host requirements:** a Mac on macOS 11+, signed into iCloud with iMessage enabled and a
