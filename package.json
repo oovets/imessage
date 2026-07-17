@@ -29,7 +29,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "tauri:dev": "tauri dev",
-    "tauri:build": "APPLE_SIGNING_IDENTITY=\"${APPLE_SIGNING_IDENTITY:-Messages Desktop Signing}\" NO_STRIP=1 tauri build"
+    "tauri:build": "APPLE_SIGNING_IDENTITY=\"${APPLE_SIGNING_IDENTITY:-Messages Desktop Signing}\" NO_STRIP=1 tauri build",
+    "test": "vitest run"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.0",
@@ -43,6 +44,7 @@
     "@tauri-apps/plugin-deep-link": "^2.4.9",
     "@tauri-apps/plugin-http": "^2.5.9",
     "@tauri-apps/plugin-notification": "^2.3.3",
+    "@tauri-apps/plugin-websocket": "^2.4.2",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "lucide-react": "^0.462.0",
@@ -67,6 +69,7 @@
     "tailwindcss": "^3.4.14",
     "typescript": "^5.6.2",
     "typescript-eslint": "^8.59.1",
-    "vite": "^8.0.10"
+    "vite": "^8.0.10",
+    "vitest": "^2.1.9"
   }
 }

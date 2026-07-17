@@ -6,18 +6,29 @@ import {
   type KeyboardEvent,
   type RefObject,
 } from "react";
-import { searchEmojis, findEmojiByName, type Emoji } from "@/lib/emoji";
+import { searchEmojis, findEmojiByName, findEmojisByWord, type Emoji } from "@/lib/emoji";
 
 // Matches a `:shortcode` token that ends at the caret. The token must start at
 // the beginning of input or after whitespace, so URLs / times like "10:30" or
 // "http://" don't trigger the picker.
 const TOKEN_RE = /(?:^|\s):([a-z0-9_+-]+)$/i;
 
+// Matches a plain trailing word (Messages-style trigger). Requires ≥3 letters so
+// ordinary short words ("ok", "no", "hi") don't pop the picker.
+const WORD_RE = /(?:^|\s)([\p{L}]{3,})$/u;
+
 // A complete `:shortcode:` typed in one go — converted to the emoji directly.
 const CLOSED_RE = /(?:^|\s):([a-z0-9_+-]+):$/i;
 
 const MIN_QUERY = 2;
 const MAX_SUGGESTIONS = 8;
+
+interface EmojiToken {
+  query: string;
+  /** Number of chars before the caret this token spans (incl. leading ':'). */
+  length: number;
+  kind: "colon" | "word";
+}
 
 interface UseEmojiAutocomplete {
   /** Suggestions to render; empty when the picker is closed. */
@@ -54,16 +65,30 @@ export function useEmojiAutocomplete(
     if (el) setCaret(el.selectionStart ?? text.length);
   }, [textareaRef, text.length]);
 
-  const query = useMemo(() => {
+  const token = useMemo<EmojiToken | null>(() => {
     const before = text.slice(0, caret);
-    const match = before.match(TOKEN_RE);
-    return match ? match[1].toLowerCase() : null;
+    const colon = before.match(TOKEN_RE);
+    if (colon) {
+      return { query: colon[1].toLowerCase(), length: colon[1].length + 1, kind: "colon" };
+    }
+    const word = before.match(WORD_RE);
+    if (word) {
+      return { query: word[1].toLowerCase(), length: word[1].length, kind: "word" };
+    }
+    return null;
   }, [text, caret]);
 
+  const query = token?.query ?? null;
+
   const suggestions = useMemo(() => {
-    if (!query || query.length < MIN_QUERY || query === dismissed) return [];
-    return searchEmojis(query, MAX_SUGGESTIONS);
-  }, [query, dismissed]);
+    if (!token || token.query === dismissed) return [];
+    if (token.kind === "colon") {
+      if (token.query.length < MIN_QUERY) return [];
+      return searchEmojis(token.query, MAX_SUGGESTIONS);
+    }
+    // Plain word: exact matches only, so ordinary sentences stay quiet.
+    return findEmojisByWord(token.query, MAX_SUGGESTIONS);
+  }, [token, dismissed]);
 
   const open = suggestions.length > 0;
 
@@ -102,11 +127,10 @@ export function useEmojiAutocomplete(
   const select = useCallback(
     (index: number) => {
       const emoji = suggestions[index];
-      if (!emoji || !query) return;
-      // token = ':' + query (query is what TOKEN_RE captured before the caret)
-      replaceToken(query.length + 1, emoji.char + " ");
+      if (!emoji || !token) return;
+      replaceToken(token.length, emoji.char + " ");
     },
-    [suggestions, query, replaceToken]
+    [suggestions, token, replaceToken]
   );
 
   const handleKeyDown = useCallback(
@@ -122,6 +146,13 @@ export function useEmojiAutocomplete(
           setActiveIndex((i) => (i - 1 + suggestions.length) % suggestions.length);
           return true;
         case "Enter":
+          // For a plain-word suggestion, Enter should still send the message
+          // (the word stays as typed) — only Tab / click accepts the emoji.
+          // A `:shortcode` was explicit intent, so Enter accepts it.
+          if (token?.kind === "word") return false;
+          e.preventDefault();
+          select(activeIndex);
+          return true;
         case "Tab":
           e.preventDefault();
           select(activeIndex);
@@ -134,7 +165,7 @@ export function useEmojiAutocomplete(
           return false;
       }
     },
-    [open, suggestions.length, select, activeIndex, query]
+    [open, suggestions.length, select, activeIndex, query, token]
   );
 
   return {

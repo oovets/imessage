@@ -17,25 +17,26 @@ function formatConnectionError(err: unknown): string {
 }
 
 export function ChatList() {
-  const {
-    chats,
-    selectedChatGUID,
-    selectChat,
-    setChats,
-    setLoadingChats,
-    loadingChats,
-    serverUrl,
-    password,
-    isConfigured,
-    wsConnected,
-    pollingFallback,
-    superlightMode,
-    networkOnline,
-    connectionNotice,
-    setConnectionNotice,
-    sidebarHidden,
-    toggleSidebarHidden,
-  } = useAppStore();
+  // Narrow selectors: ChatList must not re-render on every WebSocket message,
+  // typing event, or link-preview write. It only depends on the fields it
+  // actually renders. Store actions are stable references across renders.
+  const chats = useAppStore((s) => s.chats);
+  const selectedChatGUID = useAppStore((s) => s.selectedChatGUID);
+  const selectChat = useAppStore((s) => s.selectChat);
+  const setChats = useAppStore((s) => s.setChats);
+  const setLoadingChats = useAppStore((s) => s.setLoadingChats);
+  const loadingChats = useAppStore((s) => s.loadingChats);
+  const serverUrl = useAppStore((s) => s.serverUrl);
+  const password = useAppStore((s) => s.password);
+  const isConfigured = useAppStore((s) => s.isConfigured);
+  const wsConnected = useAppStore((s) => s.wsConnected);
+  const pollingFallback = useAppStore((s) => s.pollingFallback);
+  const superlightMode = useAppStore((s) => s.superlightMode);
+  const networkOnline = useAppStore((s) => s.networkOnline);
+  const connectionNotice = useAppStore((s) => s.connectionNotice);
+  const setConnectionNotice = useAppStore((s) => s.setConnectionNotice);
+  const sidebarHidden = useAppStore((s) => s.sidebarHidden);
+  const toggleSidebarHidden = useAppStore((s) => s.toggleSidebarHidden);
 
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
@@ -47,7 +48,9 @@ export function ChatList() {
     try {
       const client = getClient(serverUrl, password);
       baseChats = await client.getChats();
-      const previousByGuid = new Map(chats.map((c) => [c.guid, c]));
+      const previousByGuid = new Map(
+        useAppStore.getState().chats.map((c) => [c.guid, c])
+      );
       const merged = baseChats.map((chat) => {
         const prev = previousByGuid.get(chat.guid);
         if (!prev) return chat;
@@ -274,7 +277,7 @@ export function ChatList() {
               key={chat.guid}
               chat={chat}
               isSelected={chat.guid === selectedChatGUID}
-              onClick={() => selectChat(chat.guid)}
+              onSelect={selectChat}
               compact={sidebarHidden}
             />
           ))

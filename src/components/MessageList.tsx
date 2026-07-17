@@ -293,7 +293,7 @@ export function MessageList({ chatGUID }: MessageListProps) {
     <div className="flex-1 relative min-h-0">
       <div
         ref={scrollRef}
-        className="scrollbar-autohide absolute inset-0 overflow-y-auto py-2 [overflow-anchor:none]"
+        className="scrollbar-autohide absolute inset-0 overflow-y-auto overflow-x-hidden py-2 [overflow-anchor:none]"
       >
         <div
           ref={contentRef}

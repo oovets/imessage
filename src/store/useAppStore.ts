@@ -9,6 +9,12 @@ import {
   type ThemeTokenKey,
 } from "@/lib/appearance";
 import type { Chat, LinkPreview, Message } from "@/types";
+import {
+  collectOpenChatGuids,
+  evictMessageCache,
+  touchOrder,
+  type MessageCacheState,
+} from "./messageCache";
 
 const MAX_CACHED_MESSAGES = 100;
 const MAX_CACHED_LINK_PREVIEWS = 200;
@@ -134,6 +140,30 @@ function shouldReplaceLocalOutgoing(local: Message, incoming: Message): boolean 
   );
 }
 
+function capMessages(messages: Message[]): Message[] {
+  return messages.length > MAX_CACHED_MESSAGES
+    ? messages.slice(-MAX_CACHED_MESSAGES)
+    : messages;
+}
+
+/**
+ * Apply LRU eviction after a write to `chatGUID`. The just-written chat and any
+ * chat currently open in a pane are protected from eviction; everything else
+ * beyond MAX_CACHED_CHATS is dropped, oldest first. Returns the store patch.
+ */
+function pruneMessageCache(
+  paneTree: PaneNode,
+  touchedGuid: string,
+  next: MessageCacheState
+): MessageCacheState {
+  const keep = collectOpenChatGuids(paneTree);
+  keep.add(touchedGuid);
+  return evictMessageCache(
+    { ...next, messageOrder: touchOrder(next.messageOrder, touchedGuid) },
+    keep
+  );
+}
+
 function mergeMessageList(existing: Message[], incomingMessages: Message[]): Message[] {
   const byGuid = new Map(existing.map((m) => [m.guid, m]));
 
@@ -236,6 +266,7 @@ interface AppState {
   paneLayouts: Record<string, number[]>;
 
   messages: Record<string, Message[]>;
+  messageOrder: string[];
   replyTarget: Record<string, Message | null>;
   messageFetchedAt: Record<string, number>;
   linkPreviewCache: Record<string, LinkPreview>;
@@ -327,6 +358,7 @@ export const useAppStore = create<AppState>()(
 
       selectedChatGUID: null,
       messages: {},
+      messageOrder: [],
       replyTarget: {},
       messageFetchedAt: {},
       linkPreviewCache: {},
@@ -360,6 +392,7 @@ export const useAppStore = create<AppState>()(
           isConfigured: false,
           chats: [],
           messages: {},
+          messageOrder: [],
           messageFetchedAt: {},
           paneTree: EMPTY_LEAF,
           activePaneId: EMPTY_LEAF.id,
@@ -544,11 +577,15 @@ export const useAppStore = create<AppState>()(
       setChats: (chats) => set({ chats }),
 
       setMessages: (chatGUID, messages) => {
-        const newest = messages[messages.length - 1]?.dateCreated ?? 0;
-        set((s) => ({
-          messages: { ...s.messages, [chatGUID]: messages },
-          messageFetchedAt: { ...s.messageFetchedAt, [chatGUID]: newest },
-        }));
+        const capped = capMessages(messages);
+        const newest = capped[capped.length - 1]?.dateCreated ?? 0;
+        set((s) =>
+          pruneMessageCache(s.paneTree, chatGUID, {
+            messages: { ...s.messages, [chatGUID]: capped },
+            messageFetchedAt: { ...s.messageFetchedAt, [chatGUID]: newest },
+            messageOrder: s.messageOrder,
+          })
+        );
       },
 
       mergeMessages: (chatGUID, newMessages) => {
@@ -556,10 +593,13 @@ export const useAppStore = create<AppState>()(
         const existing = get().messages[chatGUID] ?? [];
         const merged = mergeMessageList(existing, newMessages);
         const newest = merged[merged.length - 1]?.dateCreated ?? 0;
-        set((s) => ({
-          messages: { ...s.messages, [chatGUID]: merged },
-          messageFetchedAt: { ...s.messageFetchedAt, [chatGUID]: newest },
-        }));
+        set((s) =>
+          pruneMessageCache(s.paneTree, chatGUID, {
+            messages: { ...s.messages, [chatGUID]: merged },
+            messageFetchedAt: { ...s.messageFetchedAt, [chatGUID]: newest },
+            messageOrder: s.messageOrder,
+          })
+        );
       },
 
       upsertMessage: (message) => {
@@ -594,14 +634,15 @@ export const useAppStore = create<AppState>()(
               nextChats = s.chats.map((c) => (c.guid === chatGUID ? updatedChat : c));
             }
           }
-          return {
+          const pruned = pruneMessageCache(s.paneTree, chatGUID, {
             messages: { ...s.messages, [chatGUID]: updated },
             messageFetchedAt: {
               ...s.messageFetchedAt,
               [chatGUID]: Math.max(s.messageFetchedAt[chatGUID] ?? 0, newest),
             },
-            chats: nextChats,
-          };
+            messageOrder: s.messageOrder,
+          });
+          return { ...pruned, chats: nextChats };
         });
       },
 
@@ -663,6 +704,7 @@ export const useAppStore = create<AppState>()(
         messages: Object.fromEntries(
           Object.entries(s.messages).map(([k, v]) => [k, (v as Message[]).slice(-MAX_CACHED_MESSAGES)])
         ),
+        messageOrder: s.messageOrder,
         messageFetchedAt: s.messageFetchedAt,
       }),
     }
