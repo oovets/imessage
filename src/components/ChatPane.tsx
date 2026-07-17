@@ -53,7 +53,12 @@ export function ChatPane({ paneId, chatGUID, isActive, canClose, showMobileBack 
       tg.messages(accountId, chatId, undefined, 50)
         .then((tgMsgs) => {
           if (cancelled) return;
-          setMessages(chatGUID, tgMsgs.map(tgMessageToMessage));
+          // tg_messages returns newest-first; MessageList renders array order
+          // with the newest at the bottom, so sort ascending by time.
+          const ordered = tgMsgs
+            .map(tgMessageToMessage)
+            .sort((a, b) => a.dateCreated - b.dateCreated);
+          setMessages(chatGUID, ordered);
           // Opening a chat marks it read (server + local via tg:core-event).
           void tg.markRead(accountId, chatId).catch(() => {});
         })
