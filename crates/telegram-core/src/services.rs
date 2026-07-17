@@ -393,6 +393,9 @@ impl Core {
             return Ok(bytes);
         }
         let client = self.accounts.client(account_id).await?;
+        // Bound concurrent getFile calls (shared with avatar downloads) so
+        // opening a media-heavy chat doesn't trip FLOOD_WAIT.
+        let _permit = self.download_slots.acquire().await.ok();
         let bus = self.bus.clone();
         let progress_key = cache_key.to_owned();
         let (key, bytes) = client
@@ -453,7 +456,7 @@ impl Core {
         // user peer and fetches their photo. Failure (no photo, or peer not in
         // the session cache) just yields the initials fallback.
         if let Ok(client) = self.accounts.client(account_id).await {
-            let _permit = self.avatar_downloads.acquire().await.ok();
+            let _permit = self.download_slots.acquire().await.ok();
             // Re-check the cache: another request for the same user may have
             // fetched it while we waited for a permit.
             if let Some(bytes) = self.cached_or_none(&key).await? {
@@ -493,7 +496,7 @@ impl Core {
         }
         // Miss (or key unknown): download and cache, bounded by the semaphore.
         if let Ok(client) = self.accounts.client(account_id).await {
-            let _permit = self.avatar_downloads.acquire().await.ok();
+            let _permit = self.download_slots.acquire().await.ok();
             if let Some((key, bytes)) = client.download_avatar(chat_id).await? {
                 self.cache.put(&key, &bytes).await?;
                 return Ok(Some(bytes));

@@ -66,10 +66,11 @@ pub struct Core {
     pub accounts: accounts::AccountManager,
     /// Cached list of active reaction emoji (rarely changes; fetched once).
     reactions_cache: tokio::sync::Mutex<Option<Vec<String>>>,
-    /// Bounds concurrent avatar downloads. The UI requests many avatars at
-    /// once (chat list + every group sender); firing them all in parallel
-    /// trips Telegram's FLOOD_WAIT on `upload.getFile`. Cache hits bypass this.
-    avatar_downloads: tokio::sync::Semaphore,
+    /// Bounds concurrent media/avatar downloads. The UI requests many at once
+    /// (chat-list avatars + every group sender + inline photos/video when a
+    /// chat opens); firing them all in parallel trips Telegram's FLOOD_WAIT on
+    /// `upload.getFile`. Cache hits bypass this.
+    download_slots: tokio::sync::Semaphore,
 }
 
 impl Core {
@@ -103,7 +104,7 @@ impl Core {
             bus,
             accounts,
             reactions_cache: tokio::sync::Mutex::new(None),
-            avatar_downloads: tokio::sync::Semaphore::new(3),
+            download_slots: tokio::sync::Semaphore::new(3),
         });
         core.accounts.resume_all().await?;
 
