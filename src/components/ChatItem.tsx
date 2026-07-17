@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 import { cn } from "@/lib/utils";
@@ -13,11 +14,12 @@ import { useAppStore } from "@/store/useAppStore";
 interface ChatItemProps {
   chat: Chat;
   isSelected: boolean;
-  onClick: () => void;
+  onSelect: (guid: string) => void;
   compact?: boolean;
 }
 
-export function ChatItem({ chat, isSelected, onClick, compact = false }: ChatItemProps) {
+function ChatItemComponent({ chat, isSelected, onSelect, compact = false }: ChatItemProps) {
+  const onClick = () => onSelect(chat.guid);
   const superlightMode = useAppStore((s) => s.superlightMode);
   const isTyping = useAppStore(
     (s) => (s.typingChats[chat.guid] ?? 0) > Date.now()
@@ -117,3 +119,7 @@ export function ChatItem({ chat, isSelected, onClick, compact = false }: ChatIte
     </button>
   );
 }
+
+// Memoized so a whole-list re-render (e.g. the progressive setChats bursts from
+// enrichChatActivity) only re-renders items whose props actually changed.
+export const ChatItem = memo(ChatItemComponent);
