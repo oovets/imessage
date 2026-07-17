@@ -1,6 +1,18 @@
+import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import type { Chat, Message } from "@/types";
+import { isTauriRuntime } from "@/lib/tauriEnv";
 
 const CONTACT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+// Route API calls through the Tauri HTTP plugin (Rust-side) when running in the
+// desktop shell. The WebView's own fetch is subject to WKWebView App Transport
+// Security and CORS, which block cleartext-HTTP calls to a LAN BlueBubbles
+// server (e.g. http://192.168.x.x:1234) — the plugin is immune to both. Falls
+// back to the browser fetch in the pure-web build. Same pattern as linkPreview.
+const httpFetch: typeof fetch = (input: RequestInfo | URL, init?: RequestInit) =>
+  isTauriRuntime()
+    ? (tauriFetch as unknown as typeof fetch)(input, init)
+    : fetch(input, init);
 
 function encodeParam(value: string): string {
   return encodeURIComponent(value).replace(/!/g, "%21");
@@ -75,7 +87,7 @@ export class BlueBubblesClient {
 
     try {
       const url = `${this.baseUrl}/api/v1/contact/query?${this.authParam()}`;
-      const res = await fetch(url, {
+      const res = await httpFetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: "{}",
@@ -114,7 +126,7 @@ export class BlueBubblesClient {
     const url = `${this.baseUrl}/api/v1/chat/query?${this.authParam()}`;
     let res: Response;
     try {
-      res = await fetch(url, {
+      res = await httpFetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -193,7 +205,7 @@ export class BlueBubblesClient {
       `${this.baseUrl}/api/v1/chat/${encodeURIComponent(chatGUID)}/message` +
       `?${qs}`;
 
-    const res = await fetch(url);
+    const res = await httpFetch(url);
     if (!res.ok) throw new Error(`getMessages failed: ${res.status}`);
     const json = await res.json();
 
@@ -224,8 +236,17 @@ export class BlueBubblesClient {
     return msgs;
   }
 
-  getAttachmentUrl(attachmentGUID: string): string {
-    return `${this.baseUrl}/api/v1/attachment/${encodeURIComponent(attachmentGUID)}/download?${this.authParam()}`;
+  getAttachmentUrl(
+    attachmentGUID: string,
+    opts?: { width?: number; quality?: "good" | "better" | "best" }
+  ): string {
+    let url = `${this.baseUrl}/api/v1/attachment/${encodeURIComponent(attachmentGUID)}/download?${this.authParam()}`;
+    // Server-side downscale for inline thumbnails. Unknown params are ignored
+    // by the BlueBubbles server (it returns the original), and the caller has an
+    // onError fallback to the full URL, so this can never break rendering.
+    if (opts?.width) url += `&width=${opts.width}`;
+    if (opts?.quality) url += `&quality=${opts.quality}`;
+    return url;
   }
 
   async sendMessage(
@@ -245,7 +266,7 @@ export class BlueBubblesClient {
       payload.selectedMessageGuid = replyToGUID;
       payload.partIndex = 0;
     }
-    const res = await fetch(url, {
+    const res = await httpFetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -268,7 +289,7 @@ export class BlueBubblesClient {
     partIndex = 0
   ): Promise<void> {
     const url = `${this.baseUrl}/api/v1/message/react?${this.authParam()}`;
-    const res = await fetch(url, {
+    const res = await httpFetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
