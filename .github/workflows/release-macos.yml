@@ -38,6 +38,21 @@ jobs:
           node-version: 24
           cache: npm
 
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # Cache the Cargo registry and the workspace target dir keyed on the
+      # target triple, so the huge MTProto/TLS/Tauri dependency tree is compiled
+      # once instead of from scratch on every run (Intel builds went from ~25min
+      # to a few minutes on a warm cache).
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+          key: ${{ matrix.target }}
+
       - name: Install frontend dependencies
         run: npm ci --legacy-peer-deps
 

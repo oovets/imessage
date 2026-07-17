@@ -389,8 +389,13 @@ re-prompt every launch; sign locally so "always allow" sticks — see
 **DMG build "resource busy".** A temp app from a mounted DMG blocks `hdiutil detach`. Quit
 it, eject the temp volume, and rerun `npm run tauri:build`.
 
-**Self-signed server certificate.** Open the BlueBubbles server URL in a browser first and
-accept the certificate.
+**HTTP vs HTTPS.** For a server on the same machine or LAN, use plain `http://` (for example
+`http://localhost:1234`) — no certificate is involved, and that is what the automatic setup
+saves. HTTPS only matters when you expose the server over the internet; there, prefer a real
+certificate via a Cloudflare Tunnel rather than a self-signed one. The desktop app routes
+requests through the Rust HTTP plugin, so it is not subject to the WebView's cleartext/CORS
+restrictions. If you do front the server with a self-signed certificate, open its URL in a
+browser once and accept the certificate.
 
 **Unsigned release warning.** Gatekeeper may require manual approval; add Apple signing and
 notarization secrets to GitHub Actions before wider distribution.
