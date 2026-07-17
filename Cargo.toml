@@ -1,0 +1,73 @@
+[workspace]
+resolver = "2"
+members = [
+    "src-tauri",
+    "crates/shared",
+    "crates/database",
+    "crates/cache",
+    "crates/telegram-api",
+    "crates/telegram-core",
+]
+
+# Shared package metadata for the Telegram crates (the host `app` crate in
+# src-tauri keeps its own [package] fields).
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+authors = ["Stefan"]
+
+[workspace.dependencies]
+# Internal Telegram crates
+shared = { path = "crates/shared" }
+database = { path = "crates/database" }
+cache = { path = "crates/cache" }
+telegram-api = { path = "crates/telegram-api" }
+telegram-core = { path = "crates/telegram-core" }
+
+# Async runtime
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "fs", "io-util", "signal"] }
+async-trait = "0.1"
+futures-util = "0.3"
+
+# Telegram (MTProto)
+grammers-client = "0.10"
+grammers-session = { version = "0.10", features = ["serde"] }
+grammers-tl-types = "0.10"
+
+# Persistence (sqlx 0.9 requires rustc >= 1.94; 0.8 matches the MSRV)
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "chrono", "macros"] }
+
+# Serialization / config
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.9"
+
+# Errors
+thiserror = "2"
+anyhow = "1"
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+
+# Crypto / security
+keyring = { version = "3", features = ["apple-native"] }
+chacha20poly1305 = "0.10"
+rand = "0.9"
+sha2 = "0.10"
+base64 = "0.22"
+
+# Misc
+chrono = { version = "0.4", features = ["serde"] }
+directories = "6"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
+[profile.dev.package."*"]
+opt-level = 1

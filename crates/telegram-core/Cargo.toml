@@ -1,0 +1,28 @@
+[package]
+name = "telegram-core"
+description = "Business logic: account manager, sync engine, services, event bus"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+default = ["qr-login"]
+## Forwarded to telegram-api: enables the QR login flow.
+qr-login = ["telegram-api/qr-login"]
+
+[dependencies]
+shared = { workspace = true }
+database = { workspace = true }
+cache = { workspace = true }
+telegram-api = { workspace = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints.clippy]
+unwrap_used = "deny"

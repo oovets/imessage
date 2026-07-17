@@ -1,0 +1,21 @@
+[package]
+name = "database"
+description = "SQLite persistence layer: the local source of truth for the UI"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+shared = { workspace = true }
+sqlx = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+
+[lints.clippy]
+unwrap_used = "deny"
