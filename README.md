@@ -74,6 +74,7 @@ working; macos still asks you to grant three privacy toggles by hand (the script
 right panes for you).
 
   curl -fsSLO https://raw.githubusercontent.com/oovets/imessage/main/scripts/demo-setup.sh
+  bash demo-setup.sh --dry-run              # preview every step, change nothing
   bash demo-setup.sh                        # generated password, printed at the end
   bash demo-setup.sh --login --headless     # server at login, no dock icon
   bash demo-setup.sh --no-client            # only the server

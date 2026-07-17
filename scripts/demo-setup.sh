@@ -28,6 +28,7 @@
 #   --yes           don't pause for confirmation before installing
 #   --uninstall     remove the apps + saved connection (add --purge to also
 #                   delete the BlueBubbles data directory)
+#   --dry-run       print what it would do without touching the system (implies --yes)
 set -euo pipefail
 
 # --- config ----------------------------------------------------------------
@@ -46,6 +47,7 @@ INSTALL_CLIENT="1"
 ASSUME_YES="0"
 UNINSTALL="0"
 PURGE="0"
+DRY_RUN="0"
 
 # --- pretty logging --------------------------------------------------------
 bold() { printf '\033[1m%s\033[0m\n' "$1"; }
@@ -53,6 +55,7 @@ step() { printf '\n\033[1;36m▶ %s\033[0m\n' "$1"; }
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$1"; }
 warn() { printf '  \033[33m!\033[0m %s\n' "$1"; }
 die()  { printf '\n\033[31m✗ %s\033[0m\n' "$1" >&2; exit 1; }
+would() { printf '  \033[35m∅ would\033[0m %s\n' "$1"; }
 
 confirm() {
   [ "$ASSUME_YES" = "1" ] && return 0
@@ -71,6 +74,7 @@ while [ $# -gt 0 ]; do
     --no-client) INSTALL_CLIENT="0"; shift ;;
     --uninstall) UNINSTALL="1"; shift ;;
     --purge)    PURGE="1"; shift ;;
+    --dry-run)  DRY_RUN="1"; ASSUME_YES="1"; shift ;;
     --yes|-y)   ASSUME_YES="1"; shift ;;
     -h|--help)  awk 'NR==1{next} /^#/{sub(/^# ?/,"");print;next} {exit}' "$0"; exit 0 ;;
     *) die "unknown option: $1 (try --help)" ;;
@@ -142,6 +146,7 @@ bold ""
 bold "Plan:"
 echo "  • BlueBubbles server  → /Applications  (port $PORT, headless=$HEADLESS, login=$SET_LOGIN)"
 [ "$INSTALL_CLIENT" = "1" ] && echo "  • Messages Desktop    → /Applications, connection pre-filled"
+[ "$DRY_RUN" = "1" ] && bold "  (dry run — nothing will be downloaded, installed, or changed)"
 confirm "Proceed?" || die "Aborted."
 
 # --- download + install helpers -------------------------------------------
@@ -162,8 +167,13 @@ for a in d.get('assets',[]):
 install_dmg() {
   # install_dmg <dmg-url> <App Name.app>  → copies the .app into /Applications
   local url="$1" appname="$2" dmg mnt
-  dmg="$(mktemp -t bbdemo).dmg"
   step "Downloading $appname"
+  if [ "$DRY_RUN" = "1" ]; then
+    would "download $url"
+    would "install into /Applications/$appname (dequarantined)"
+    return 0
+  fi
+  dmg="$(mktemp -t bbdemo).dmg"
   curl -fL --progress-bar "$url" -o "$dmg" || die "download failed: $url"
   mnt="$(mktemp -d)"
   hdiutil attach -nobrowse -quiet -mountpoint "$mnt" "$dmg" || die "could not mount $dmg"
@@ -183,6 +193,10 @@ install_dmg() {
 # --- server config seeding -------------------------------------------------
 seed_config() {
   # seed_config <name> <value> — upsert into BlueBubbles' config.db
+  if [ "$DRY_RUN" = "1" ]; then
+    local shown="$2"; [ "$1" = "password" ] && shown="********"
+    would "set config $1 = $shown"; return 0
+  fi
   sqlite3 "$BB_DB" \
     "INSERT INTO config(name,value) VALUES('$1','$2')
      ON CONFLICT(name) DO UPDATE SET value=excluded.value;"
@@ -195,13 +209,17 @@ install_dmg "$BB_URL" "BlueBubbles.app"
 
 # First launch creates config.db (typeorm migrations); then quit so we can seed.
 step "Initializing BlueBubbles config"
-open -a "BlueBubbles" || die "could not launch BlueBubbles"
-for _ in $(seq 1 60); do [ -f "$BB_DB" ] && break; sleep 1; done
-[ -f "$BB_DB" ] || die "BlueBubbles did not create its config database in time."
-sleep 2
-osascript -e 'tell application "BlueBubbles" to quit' >/dev/null 2>&1 || pkill -x BlueBubbles || true
-sleep 2
-ok "config.db ready"
+if [ "$DRY_RUN" = "1" ]; then
+  would "launch BlueBubbles once to create config.db, then quit"
+else
+  open -a "BlueBubbles" || die "could not launch BlueBubbles"
+  for _ in $(seq 1 60); do [ -f "$BB_DB" ] && break; sleep 1; done
+  [ -f "$BB_DB" ] || die "BlueBubbles did not create its config database in time."
+  sleep 2
+  osascript -e 'tell application "BlueBubbles" to quit' >/dev/null 2>&1 || pkill -x BlueBubbles || true
+  sleep 2
+  ok "config.db ready"
+fi
 
 step "Writing headless server configuration"
 seed_config password "$PASSWORD"
@@ -222,34 +240,41 @@ cat <<'EOF'
     1. Full Disk Access     → enable "BlueBubbles"   (to read the Messages database)
     2. Accessibility        → enable "BlueBubbles"   (to send messages)
     3. Automation           → allow BlueBubbles to control "Messages" & "System Events"
-  Opening the panes for you now…
 EOF
-open "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles" 2>/dev/null || true
-confirm "Done granting Full Disk Access?" || warn "You can grant it later; the API won't read history until you do."
-open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility" 2>/dev/null || true
-open "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation" 2>/dev/null || true
-confirm "Done granting Accessibility & Automation?" || warn "Sending messages will fail until these are granted."
+if [ "$DRY_RUN" = "1" ]; then
+  would "open the Full Disk Access / Accessibility / Automation panes and wait for you to grant them"
+else
+  open "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles" 2>/dev/null || true
+  confirm "Done granting Full Disk Access?" || warn "You can grant it later; the API won't read history until you do."
+  open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility" 2>/dev/null || true
+  open "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation" 2>/dev/null || true
+  confirm "Done granting Accessibility & Automation?" || warn "Sending messages will fail until these are granted."
+fi
 
 # --- 3) start server + verify ---------------------------------------------
 step "Starting BlueBubbles server"
-open -a "BlueBubbles" || die "could not launch BlueBubbles"
-
 api="http://localhost:$PORT/api/v1"
-printf '  waiting for the API'
-reachable="0"
-for _ in $(seq 1 40); do
-  if curl -fsS "$api/server/info?password=$PASSWORD" >/dev/null 2>&1; then reachable="1"; break; fi
-  printf '.'; sleep 1
-done
-printf '\n'
-[ "$reachable" = "1" ] && ok "API is up on port $PORT" || warn "API not reachable yet — check the server window / permissions."
+if [ "$DRY_RUN" = "1" ]; then
+  would "start BlueBubbles and poll $api/server/info until the API responds"
+  would "check $api/message/count to confirm Full Disk Access works"
+else
+  open -a "BlueBubbles" || die "could not launch BlueBubbles"
+  printf '  waiting for the API'
+  reachable="0"
+  for _ in $(seq 1 40); do
+    if curl -fsS "$api/server/info?password=$PASSWORD" >/dev/null 2>&1; then reachable="1"; break; fi
+    printf '.'; sleep 1
+  done
+  printf '\n'
+  [ "$reachable" = "1" ] && ok "API is up on port $PORT" || warn "API not reachable yet — check the server window / permissions."
 
-# Confirms Full Disk Access actually works (can read the Messages DB).
-if [ "$reachable" = "1" ]; then
-  if curl -fsS "$api/message/count?password=$PASSWORD" >/dev/null 2>&1; then
-    ok "Server can read the Messages database (Full Disk Access OK)"
-  else
-    warn "API up but can't read messages yet — re-check Full Disk Access for BlueBubbles."
+  # Confirms Full Disk Access actually works (can read the Messages DB).
+  if [ "$reachable" = "1" ]; then
+    if curl -fsS "$api/message/count?password=$PASSWORD" >/dev/null 2>&1; then
+      ok "Server can read the Messages database (Full Disk Access OK)"
+    else
+      warn "API up but can't read messages yet — re-check Full Disk Access for BlueBubbles."
+    fi
   fi
 fi
 
@@ -263,14 +288,19 @@ if [ "$INSTALL_CLIENT" = "1" ]; then
   else
     install_dmg "$CLIENT_URL" "Messages Desktop.app"
     step "Pre-filling the client's saved connection"
-    # Client and server run on the same Mac in this demo, so localhost is the
-    # most reliable target (no network-interface guessing).
-    CONN_JSON="$(python3 -c "import json,sys;print(json.dumps({'serverUrl':sys.argv[1],'password':sys.argv[2]}))" "http://localhost:$PORT" "$PASSWORD")"
-    security add-generic-password -U -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" -w "$CONN_JSON" 2>/dev/null \
-      && ok "Connection saved to keychain" \
-      || warn "Could not pre-seed keychain — enter the URL/password on first run instead."
-    warn "The client is unsigned: on first keychain read macOS may ask once — click \"Always Allow\"."
-    open -a "Messages Desktop" 2>/dev/null || true
+    if [ "$DRY_RUN" = "1" ]; then
+      would "save the http://localhost:$PORT connection to the keychain ($KEYCHAIN_SERVICE)"
+      would "launch Messages Desktop"
+    else
+      # Client and server run on the same Mac in this demo, so localhost is the
+      # most reliable target (no network-interface guessing).
+      CONN_JSON="$(python3 -c "import json,sys;print(json.dumps({'serverUrl':sys.argv[1],'password':sys.argv[2]}))" "http://localhost:$PORT" "$PASSWORD")"
+      security add-generic-password -U -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" -w "$CONN_JSON" 2>/dev/null \
+        && ok "Connection saved to keychain" \
+        || warn "Could not pre-seed keychain — enter the URL/password on first run instead."
+      warn "The client is unsigned: on first keychain read macOS may ask once — click \"Always Allow\"."
+      open -a "Messages Desktop" 2>/dev/null || true
+    fi
   fi
 fi
 
