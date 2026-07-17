@@ -89,6 +89,48 @@ function renderTextWithLinks(text: string, isMe: boolean, superlightMode: boolea
 const IMAGE_MIME = /^image\//;
 const VIDEO_MIME = /^video\//;
 
+// Inline thumbnail width. Covers retina at the ~320px display cap without
+// forcing the WebView to decode a full-resolution photo for every bubble.
+const THUMB_WIDTH = 1024;
+
+// Renders an inline image thumbnail, falling back to the full-resolution URL if
+// the downscaled request fails (e.g. an older server that rejects the params).
+function AttachmentImage({
+  thumbSrc,
+  fullSrc,
+  alt,
+  onOpen,
+}: {
+  thumbSrc: string;
+  fullSrc: string;
+  alt: string;
+  onOpen: (src: string, alt: string) => void;
+}) {
+  const [src, setSrc] = useState(thumbSrc);
+  return (
+    <button
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpen(fullSrc, alt);
+      }}
+      onDoubleClick={(event) => event.stopPropagation()}
+      className="-mx-1 mb-1 block cursor-zoom-in border-0 bg-transparent p-0"
+      aria-label="Open full image"
+    >
+      <img
+        src={src}
+        alt={alt}
+        loading="lazy"
+        onError={() => {
+          if (src !== fullSrc) setSrc(fullSrc);
+        }}
+        className="rounded-lg max-h-80 max-w-full object-cover"
+      />
+    </button>
+  );
+}
+
 // Stable per-sender colour for names in group chats (derived from the address
 // so the same person is always the same hue). Tuned to stay legible on both
 // the light and dark muted backgrounds.
@@ -224,7 +266,7 @@ export function MessageBubble({
               <div className="w-7 shrink-0" aria-hidden="true" />
             )
           )}
-          <div className={cn("relative group", superlightMode ? "max-w-[95%] w-full" : "max-w-[78%]")}>
+          <div className={cn("relative group min-w-0", superlightMode ? "max-w-[95%] w-full" : "max-w-[78%]")}>
           <div
             title={new Date(message.dateCreated).toLocaleString()}
             className={cn(
@@ -243,7 +285,8 @@ export function MessageBubble({
           >
             {message.attachments?.map((att) => {
               const mime = att.mimeType ?? "";
-              const src = att.url || getClient(serverUrl, password).getAttachmentUrl(att.guid);
+              const client = getClient(serverUrl, password);
+              const src = att.url || client.getAttachmentUrl(att.guid);
               if (superlightMode) {
                 return (
                   <a
@@ -259,25 +302,19 @@ export function MessageBubble({
               }
               if (IMAGE_MIME.test(mime)) {
                 const alt = att.transferName || "Image attachment";
+                // Prefer a downscaled thumbnail for the inline bubble; the zoom
+                // dialog (onOpen) gets the full-resolution source.
+                const thumbSrc = att.url
+                  ? att.url
+                  : client.getAttachmentUrl(att.guid, { width: THUMB_WIDTH, quality: "good" });
                 return (
-                  <button
+                  <AttachmentImage
                     key={att.guid}
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setFullImage({ src, alt });
-                    }}
-                    onDoubleClick={(event) => event.stopPropagation()}
-                    className="-mx-1 mb-1 block cursor-zoom-in border-0 bg-transparent p-0"
-                    aria-label="Open full image"
-                  >
-                    <img
-                      src={src}
-                      alt={alt}
-                      loading="lazy"
-                      className="rounded-lg max-h-80 object-cover"
-                    />
-                  </button>
+                    thumbSrc={thumbSrc}
+                    fullSrc={src}
+                    alt={alt}
+                    onOpen={(s, a) => setFullImage({ src: s, alt: a })}
+                  />
                 );
               }
               if (VIDEO_MIME.test(mime)) {
@@ -286,7 +323,7 @@ export function MessageBubble({
                     key={att.guid}
                     src={src}
                     controls
-                    className="rounded-lg max-h-80 -mx-1 mb-1"
+                    className="rounded-lg max-h-80 max-w-full -mx-1 mb-1"
                   />
                 );
               }
@@ -304,7 +341,7 @@ export function MessageBubble({
             })}
 
             {decodedText && (
-              <p className="whitespace-pre-wrap break-words">
+              <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
                 {renderTextWithLinks(decodedText, isMe, superlightMode)}
               </p>
             )}

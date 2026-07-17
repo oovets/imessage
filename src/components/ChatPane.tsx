@@ -173,7 +173,10 @@ export function ChatPane({ paneId, chatGUID, isActive, canClose, showMobileBack 
         </div>
       ) : (
         <>
-          <MessageList chatGUID={chatGUID!} />
+          {/* Remount per chat so first-load scroll + ready state start clean.
+              Reusing one instance across chats could leave a cached chat's
+              history stuck at opacity-0 until the next interaction. */}
+          <MessageList key={chatGUID} chatGUID={chatGUID!} />
           <MessageInput chatGUID={chatGUID!} />
         </>
       )}
