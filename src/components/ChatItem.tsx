@@ -109,7 +109,7 @@ function ChatItemComponent({ chat, isSelected, onSelect, compact = false }: Chat
           {isTyping ? (
             <p className="text-xs truncate text-primary italic">typing…</p>
           ) : (
-            <p className={cn("text-xs truncate text-muted-foreground", chat.unreadCount > 0 && "text-foreground")}>
+            <p className={cn("text-xs min-w-0 line-clamp-2 text-muted-foreground", chat.unreadCount > 0 && "text-foreground")}>
               {preview || " "}
             </p>
           )}
