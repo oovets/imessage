@@ -46,13 +46,26 @@ fn dev_config_path() -> Option<PathBuf> {
 /// Try to start the Telegram core. Returns state with `core: None` (and logs)
 /// if Telegram is not configured or fails to start — never panics the app.
 pub async fn init(app: &AppHandle) -> TelegramState {
-    let config = match AppConfig::load(dev_config_path().as_deref()) {
+    let mut config = match AppConfig::load(dev_config_path().as_deref()) {
         Ok(config) => config,
         Err(e) => {
             log::warn!("telegram: config load failed, disabling: {e}");
             return TelegramState { core: None };
         }
     };
+    // Compile-time baked credentials: set TG_API_ID / TG_API_HASH when building
+    // a release and they're embedded, so the bundled app works without any
+    // runtime environment variables. Nothing secret is committed to the repo.
+    if config.telegram.api_id == 0 {
+        if let Some(id) = option_env!("TG_API_ID").and_then(|s| s.trim().parse::<i32>().ok()) {
+            config.telegram.api_id = id;
+        }
+    }
+    if config.telegram.api_hash.is_empty() {
+        if let Some(hash) = option_env!("TG_API_HASH") {
+            config.telegram.api_hash = hash.trim().to_owned();
+        }
+    }
     if config.require_api_credentials().is_err() {
         log::info!("telegram: no API credentials (TG_API_ID/TG_API_HASH), disabling");
         return TelegramState { core: None };
@@ -348,6 +361,36 @@ fn media_tmp_dir() -> PathBuf {
 /// Best-effort clear of leftover decrypted media temp files (called on start).
 pub fn clear_media_tmp() {
     let _ = std::fs::remove_dir_all(media_tmp_dir());
+}
+
+fn sanitize_name(name: &str) -> String {
+    let safe: String = name
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') { c } else { '_' })
+        .collect();
+    if safe.is_empty() { "media.bin".to_owned() } else { safe }
+}
+
+/// Existing temp-file path for `name`, or `None`. Lets the frontend skip a
+/// re-download when a media temp file is already on disk.
+#[tauri::command]
+pub fn media_temp_path(name: String) -> Option<String> {
+    let path = media_tmp_dir().join(sanitize_name(&name));
+    path.exists().then(|| path.to_string_lossy().into_owned())
+}
+
+/// Write bytes to a media temp file (served via the asset protocol) and return
+/// its path. Used for iMessage attachments so a video streams from disk (range
+/// requests) instead of living fully in the JS heap during playback.
+#[tauri::command]
+pub fn save_media_temp(bytes: Vec<u8>, name: String) -> Result<String, String> {
+    let dir = media_tmp_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(sanitize_name(&name));
+    if !path.exists() {
+        std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
+    }
+    Ok(path.to_string_lossy().into_owned())
 }
 
 /// Decrypt a media blob to a plaintext temp file and return its path, so the

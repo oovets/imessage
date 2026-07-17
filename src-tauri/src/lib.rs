@@ -295,6 +295,8 @@ pub fn run() {
             telegram::tg_user_avatar_data_url,
             telegram::tg_media_data_url,
             telegram::tg_media_file,
+            telegram::media_temp_path,
+            telegram::save_media_temp,
             telegram::tg_send_message,
             telegram::tg_send_file,
             telegram::tg_edit_message,

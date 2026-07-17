@@ -1,11 +1,22 @@
-// Plays a BlueBubbles video attachment. A plain <video src={serverUrl}> often
-// won't play: the element uses the webview's own networking (not the Tauri
-// http plugin), so it hits CORS/cert/range issues reaching the server. We
-// fetch the bytes through the Tauri http plugin and play them from an
-// in-memory object URL, which the browser can seek natively.
+// Plays a BlueBubbles video attachment with low memory use.
+//
+// A plain <video src={serverUrl}> won't play (the webview's own networking
+// hits CORS/cert/range on the server). We fetch the bytes through the Tauri
+// http plugin *once*, write them to a temp file, and stream that file via the
+// asset protocol (convertFileSrc) — so playback seeks from disk with range
+// requests instead of holding the whole video in the JS heap. A cached temp
+// file is reused across mounts, avoiding re-downloads.
 
 import { useEffect, useState } from "react";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+
+// Stable, collision-resistant temp-file name from the source URL.
+function nameFor(src: string, ext: string): string {
+  let hash = 0;
+  for (let i = 0; i < src.length; i++) hash = (hash * 31 + src.charCodeAt(i)) | 0;
+  return `bb-${(hash >>> 0).toString(36)}.${ext}`;
+}
 
 export function StreamedVideo({
   src,
@@ -16,30 +27,34 @@ export function StreamedVideo({
   mime?: string;
   className?: string;
 }) {
-  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const [fileSrc, setFileSrc] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    let created: string | null = null;
     (async () => {
       try {
+        const ext = (mime?.split("/")[1] || "mp4").replace(/[^a-z0-9]/gi, "");
+        const name = nameFor(src, ext);
+        // Reuse an already-downloaded temp file if present (no re-fetch).
+        const existing = await invoke<string | null>("media_temp_path", { name });
+        if (cancelled) return;
+        if (existing) {
+          setFileSrc(convertFileSrc(existing));
+          return;
+        }
         const res = await tauriFetch(src);
         if (!res.ok) throw new Error(`http ${res.status}`);
-        const buffer = await res.arrayBuffer();
+        const bytes = new Uint8Array(await res.arrayBuffer());
         if (cancelled) return;
-        // The server often omits Content-Type, so a plain res.blob() has no
-        // type and the <video> can't pick a decoder. Force the known mime.
-        const blob = new Blob([buffer], { type: mime || "video/mp4" });
-        created = URL.createObjectURL(blob);
-        setObjectUrl(created);
+        const path = await invoke<string>("save_media_temp", { bytes, name });
+        if (!cancelled) setFileSrc(convertFileSrc(path));
       } catch {
         if (!cancelled) setFailed(true);
       }
     })();
     return () => {
       cancelled = true;
-      if (created) URL.revokeObjectURL(created);
     };
   }, [src, mime]);
 
@@ -50,7 +65,7 @@ export function StreamedVideo({
       </div>
     );
   }
-  if (!objectUrl) {
+  if (!fileSrc) {
     return (
       <div className="rounded-lg bg-muted/40 text-muted-foreground text-xs px-3 py-6 my-1 text-center min-w-32">
         Loading video…
@@ -59,11 +74,22 @@ export function StreamedVideo({
   }
   return (
     <video
-      src={objectUrl}
+      src={fileSrc}
       controls
       preload="metadata"
       className={className}
       onError={() => setFailed(true)}
+      // Nudge to the first frame so it shows as a poster instead of a black box.
+      onLoadedMetadata={(e) => {
+        const v = e.currentTarget;
+        if (v.currentTime === 0) {
+          try {
+            v.currentTime = 0.05;
+          } catch {
+            /* seeking not ready yet */
+          }
+        }
+      }}
     />
   );
 }

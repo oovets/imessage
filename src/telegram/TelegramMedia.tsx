@@ -66,6 +66,17 @@ export function TelegramMedia({ att }: { att: Attachment }) {
           controls
           preload="metadata"
           className="rounded-lg max-h-80 max-w-full -mx-1 mb-1"
+          onLoadedMetadata={(e) => {
+            // Show the first frame as a poster instead of a black box.
+            const v = e.currentTarget;
+            if (v.currentTime === 0) {
+              try {
+                v.currentTime = 0.05;
+              } catch {
+                /* seeking not ready yet */
+              }
+            }
+          }}
         />
       );
     }
