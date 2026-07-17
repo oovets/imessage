@@ -335,6 +335,30 @@ pub struct ServerCheck {
     can_read_db: bool,
 }
 
+/// Probe the API once. Ok(()) means HTTP 200; Err carries a human reason that
+/// distinguishes "not listening" (connection refused) from an HTTP status such
+/// as 401 (wrong password). The password rides in the query string, so the URL
+/// itself is never returned or logged.
+fn api_probe(url: &str) -> Result<(), String> {
+    let out = Command::new("curl")
+        .args(["-sS", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "5", url])
+        .output()
+        .map_err(|e| format!("failed to run curl: {e}"))?;
+    let code = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if code == "200" {
+        return Ok(());
+    }
+    if !out.status.success() || code == "000" {
+        // Transport-level failure (e.g. connection refused): server not listening.
+        return Err("connection refused (server not listening on this port)".to_string());
+    }
+    let hint = match code.as_str() {
+        "401" | "403" => " (password mismatch — stale server config?)",
+        _ => "",
+    };
+    Err(format!("HTTP {code}{hint}"))
+}
+
 fn start_and_check_blocking(password: String, port: u16, log: Log) -> ServerCheck {
     logln(&log, "Starting the BlueBubbles server…");
     if let Err(e) = open_bluebubbles() {
@@ -344,12 +368,16 @@ fn start_and_check_blocking(password: String, port: u16, log: Log) -> ServerChec
 
     // The password rides in the query string, so never log the full URL.
     logln(&log, format!("Checking the API on http://localhost:{port}…"));
+    let info_url = format!("{base}/server/info?password={password}");
     let mut reachable = false;
+    let mut last_reason = String::from("no response");
     for _ in 0..40 {
-        let url = format!("{base}/server/info?password={password}");
-        if run("curl", &["-fsS", &url]).is_ok() {
-            reachable = true;
-            break;
+        match api_probe(&info_url) {
+            Ok(()) => {
+                reachable = true;
+                break;
+            }
+            Err(reason) => last_reason = reason,
         }
         thread::sleep(Duration::from_secs(1));
     }
@@ -357,7 +385,7 @@ fn start_and_check_blocking(password: String, port: u16, log: Log) -> ServerChec
     if reachable {
         logln(&log, "Server is reachable.");
     } else {
-        logln(&log, "✗ Server not reachable yet — check the permissions.");
+        logln(&log, format!("✗ Server not reachable — {last_reason}"));
     }
 
     let can_read_db = reachable && {
