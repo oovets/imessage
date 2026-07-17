@@ -25,6 +25,9 @@ export function ChatPane({ paneId, chatGUID, isActive, canClose, showMobileBack 
   const presence = useAppStore((s) =>
     chatGUID ? s.telegramPresence[chatGUID] : undefined
   );
+  // Bumped when Telegram becomes ready / an account changes; re-runs the
+  // message load so a pane opened before the core was ready recovers.
+  const telegramReloadNonce = useAppStore((s) => s.telegramReloadNonce);
   const serverUrl = useAppStore((s) => s.serverUrl);
   const password = useAppStore((s) => s.password);
   const setMessages = useAppStore((s) => s.setMessages);
@@ -102,7 +105,7 @@ export function ChatPane({ paneId, chatGUID, isActive, canClose, showMobileBack 
     return () => {
       cancelled = true;
     };
-  }, [chatGUID, serverUrl, password]);
+  }, [chatGUID, serverUrl, password, telegramReloadNonce]);
 
   const empty = !chatGUID || !selectedChat;
 
