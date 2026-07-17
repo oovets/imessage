@@ -5,14 +5,20 @@ use std::sync::Mutex;
 
 use shared::secrets::{SecretError, SecretStore};
 
-/// Secret storage backed by the macOS Keychain (via the `keyring` crate,
-/// which uses the native Security framework on macOS).
+/// Name (account field) of the single Keychain item holding every secret.
+const BLOB_ITEM: &str = "secrets";
+
+/// Secret storage backed by the macOS Keychain (via the `keyring` crate).
 ///
-/// Each secret becomes a generic-password Keychain item with service name
-/// `dev.stefan.TelegramGui` and the secret name as the account field, so
-/// items are inspectable in Keychain Access.app.
+/// All secrets are stored inside **one** generic-password Keychain item
+/// (service `dev.stefan.TelegramGui`, account `secrets`) as a small
+/// `name<TAB>base64(value)` line map. A single item means a single ACL and
+/// therefore a single Keychain prompt for the whole app — instead of one per
+/// secret (session, cache key, …). An internal mutex serializes the
+/// read-modify-write cycle.
 pub struct KeychainSecretStore {
     service: String,
+    lock: Mutex<()>,
 }
 
 impl KeychainSecretStore {
@@ -20,12 +26,55 @@ impl KeychainSecretStore {
         let (qualifier, organization, application) = shared::AppConfig::APP_ID;
         Self {
             service: format!("{qualifier}.{organization}.{application}"),
+            lock: Mutex::new(()),
         }
     }
 
-    fn entry(&self, name: &str) -> Result<keyring::Entry, SecretError> {
-        keyring::Entry::new(&self.service, name)
+    fn entry(&self) -> Result<keyring::Entry, SecretError> {
+        keyring::Entry::new(&self.service, BLOB_ITEM)
             .map_err(|e| SecretError::Backend(e.to_string()))
+    }
+
+    fn read_blob(&self) -> Result<HashMap<String, Vec<u8>>, SecretError> {
+        let raw = match self.entry()?.get_secret() {
+            Ok(bytes) => bytes,
+            Err(keyring::Error::NoEntry) => return Ok(HashMap::new()),
+            Err(e) => return Err(SecretError::Backend(e.to_string())),
+        };
+        let text = String::from_utf8_lossy(&raw);
+        let mut map = HashMap::new();
+        for line in text.lines() {
+            if let Some((name, b64)) = line.split_once('\t') {
+                if let Ok(value) = base64::Engine::decode(
+                    &base64::engine::general_purpose::STANDARD,
+                    b64,
+                ) {
+                    map.insert(name.to_owned(), value);
+                }
+            }
+        }
+        Ok(map)
+    }
+
+    fn write_blob(&self, map: &HashMap<String, Vec<u8>>) -> Result<(), SecretError> {
+        let mut text = String::new();
+        for (name, value) in map {
+            let b64 =
+                base64::Engine::encode(&base64::engine::general_purpose::STANDARD, value);
+            text.push_str(name);
+            text.push('\t');
+            text.push_str(&b64);
+            text.push('\n');
+        }
+        self.entry()?
+            .set_secret(text.as_bytes())
+            .map_err(|e| SecretError::Backend(e.to_string()))
+    }
+
+    fn locked(&self) -> Result<std::sync::MutexGuard<'_, ()>, SecretError> {
+        self.lock
+            .lock()
+            .map_err(|_| SecretError::Backend("poisoned secret lock".into()))
     }
 }
 
@@ -37,24 +86,24 @@ impl Default for KeychainSecretStore {
 
 impl SecretStore for KeychainSecretStore {
     fn set(&self, name: &str, value: &[u8]) -> Result<(), SecretError> {
-        self.entry(name)?
-            .set_secret(value)
-            .map_err(|e| SecretError::Backend(e.to_string()))
+        let _guard = self.locked()?;
+        let mut map = self.read_blob()?;
+        map.insert(name.to_owned(), value.to_vec());
+        self.write_blob(&map)
     }
 
     fn get(&self, name: &str) -> Result<Option<Vec<u8>>, SecretError> {
-        match self.entry(name)?.get_secret() {
-            Ok(bytes) => Ok(Some(bytes)),
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(e) => Err(SecretError::Backend(e.to_string())),
-        }
+        let _guard = self.locked()?;
+        Ok(self.read_blob()?.get(name).cloned())
     }
 
     fn delete(&self, name: &str) -> Result<(), SecretError> {
-        match self.entry(name)?.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(e) => Err(SecretError::Backend(e.to_string())),
+        let _guard = self.locked()?;
+        let mut map = self.read_blob()?;
+        if map.remove(name).is_some() {
+            self.write_blob(&map)?;
         }
+        Ok(())
     }
 }
 

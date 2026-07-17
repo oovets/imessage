@@ -37,6 +37,10 @@ export interface Chat {
   lastMessage: Message | null;
   unreadCount: number;
   lastMessageText?: string;
+  // Single source of truth for chat-list ordering (ms epoch). Both iMessage
+  // (via enrichChatActivity) and Telegram (via the adapter) set this, since
+  // lastMessage.dateCreated isn't reliably populated on the iMessage side.
+  activityAt?: number;
 }
 
 export interface LinkPreview {

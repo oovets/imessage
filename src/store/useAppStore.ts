@@ -359,7 +359,7 @@ export function isTelegramChatGuid(guid: string): boolean {
   return guid.startsWith(TG_GUID_PREFIX);
 }
 function chatActivity(chat: Chat): number {
-  return chat.lastMessage?.dateCreated ?? 0;
+  return chat.activityAt ?? chat.lastMessage?.dateCreated ?? 0;
 }
 function sortChatsByRecency(list: Chat[]): Chat[] {
   // Stable sort keeps each source's incoming order among equal/unknown times.
@@ -682,13 +682,14 @@ export const useAppStore = create<AppState>()(
           let nextChats = s.chats;
           if (idx !== -1) {
             const chat = s.chats[idx];
-            const prevLatest = chat.lastMessage?.dateCreated ?? 0;
+            const prevLatest = chat.activityAt ?? chat.lastMessage?.dateCreated ?? 0;
             const isNewLatest = !!message.text && message.dateCreated > prevLatest;
             const updatedChat = isNewLatest
               ? {
                   ...chat,
                   lastMessageText: message.text,
                   lastMessage: message,
+                  activityAt: message.dateCreated,
                 }
               : message.text
               ? { ...chat, lastMessageText: message.text }

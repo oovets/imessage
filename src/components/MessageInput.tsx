@@ -5,6 +5,7 @@ import { getClient } from "@/api/clientFactory";
 import { tg } from "@/telegram/api";
 import { parseTgChatGuid } from "@/telegram/adapters";
 import { cn } from "@/lib/utils";
+import { autoConvertEmoticons } from "@/lib/emoticons";
 import type { Message } from "@/types";
 import { decodeEscapedUnicode } from "@/types";
 import { EmojiSuggestions } from "@/components/EmojiSuggestions";
@@ -54,9 +55,10 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
   const replyPreview = decodeEscapedUnicode(replyTarget?.text);
 
   function handleChange(value: string) {
-    // Convert a fully-typed `:shortcode:` straight to its emoji.
+    // Convert a fully-typed `:shortcode:` straight to its emoji, then convert
+    // common ASCII emoticons (":)", "<3", ":D", …) to emoji.
     const replaced = autoReplaceClosedShortcode(value);
-    setText(replaced ?? value);
+    setText(autoConvertEmoticons(replaced ?? value));
   }
 
   function insertEmoji(char: string) {

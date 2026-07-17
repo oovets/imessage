@@ -51,6 +51,7 @@ export function tgChatToChat(accountId: number, c: TgChat): Chat {
     participants: [],
     unreadCount: c.unread_count,
     lastMessageText: preview,
+    activityAt: ts,
     // A minimal last-message stub carries the timestamp used to sort the
     // unified chat list and the preview shown under the title.
     lastMessage: ts

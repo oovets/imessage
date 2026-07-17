@@ -177,6 +177,8 @@ export class BlueBubblesClient {
             if (msgs.length > 0) {
               entries[idx].lastMsgTime = msgs[0].dateCreated;
               entries[idx].chat.lastMessageText = msgs[0].text ?? "";
+              // Record the activity time used for unified chat-list ordering.
+              entries[idx].chat.activityAt = msgs[0].dateCreated;
             }
           } catch {}
         })
