@@ -65,6 +65,26 @@ node.js 24 + npm. the web build (development) needs only node.js 24 + npm.
 ```
 
 ```
+== try it in one command ==
+
+want to demo without the manual setup below? scripts/demo-setup.sh installs a bluebubbles
+server AND the messages desktop client, configures the server headless (no setup wizard),
+and pre-fills the client's connection. needs a mac signed into icloud with messages
+working; macos still asks you to grant three privacy toggles by hand (the script opens the
+right panes for you).
+
+  curl -fsSLO https://raw.githubusercontent.com/oovets/imessage/main/scripts/demo-setup.sh
+  bash demo-setup.sh                        # generated password, printed at the end
+  bash demo-setup.sh --login --headless     # server at login, no dock icon
+  bash demo-setup.sh --no-client            # only the server
+
+  bash demo-setup.sh --uninstall            # remove it all (add --purge to wipe data too)
+
+note: imessage cannot activate inside a macos vm (apple blocks it), so the end-to-end demo
+needs a physical mac; a vm is fine for testing the installer flow itself.
+```
+
+```
 == installing a bluebubbles server ==
 
 the bluebubbles server is a macos app that bridges imessage to an http/websocket api. it
