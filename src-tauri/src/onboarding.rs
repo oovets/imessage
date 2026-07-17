@@ -10,6 +10,15 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{thread, time::Duration};
+use tauri::ipc::Channel;
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Progress {
+    stage: String,
+    /// 0–100 when the total size is known, otherwise null (indeterminate).
+    pct: Option<f64>,
+}
 
 const BB_REPO: &str = "BlueBubblesApp/bluebubbles-server";
 const BB_APP: &str = "/Applications/BlueBubbles.app";
@@ -90,19 +99,68 @@ fn latest_bb_dmg_url() -> Result<String, String> {
     Err("no matching BlueBubbles dmg for this architecture".to_string())
 }
 
-fn install_blocking() -> Result<String, String> {
+/// Best-effort total download size, for the progress bar. Follows redirects.
+fn content_length(url: &str) -> Option<u64> {
+    let out = run("curl", &["-fsSLI", url]).ok()?;
+    out.lines()
+        .filter_map(|line| {
+            line.to_ascii_lowercase()
+                .strip_prefix("content-length:")
+                .map(|v| v.trim().to_string())
+        })
+        .next_back()
+        .and_then(|v| v.parse::<u64>().ok())
+}
+
+fn install_blocking(progress: Channel<Progress>) -> Result<String, String> {
+    let emit = |stage: &str, pct: Option<f64>| {
+        let _ = progress.send(Progress {
+            stage: stage.to_string(),
+            pct,
+        });
+    };
+
+    emit("resolving", None);
     let url = latest_bb_dmg_url()?;
     let tmp = std::env::temp_dir();
     let dmg = tmp.join("bluebubbles-setup.dmg");
     let mnt = tmp.join("bluebubbles-setup-mnt");
 
     let _ = std::fs::remove_dir_all(&mnt);
+    let _ = std::fs::remove_file(&dmg);
     std::fs::create_dir_all(&mnt).map_err(|e| format!("could not create mountpoint: {e}"))?;
 
     let dmg_s = path_str(&dmg)?;
     let mnt_s = path_str(&mnt)?;
 
-    run("curl", &["-fL", "-o", dmg_s, &url])?;
+    // Stream the download in the background and report progress by polling the
+    // output file size against Content-Length — robust, no output parsing.
+    let total = content_length(&url);
+    emit("downloading", Some(0.0));
+    let mut child = Command::new("curl")
+        .args(["-fL", "-o", dmg_s, &url])
+        .spawn()
+        .map_err(|e| format!("failed to start curl: {e}"))?;
+    loop {
+        match child.try_wait().map_err(|e| format!("download wait failed: {e}"))? {
+            Some(status) => {
+                if !status.success() {
+                    return Err("download failed".to_string());
+                }
+                break;
+            }
+            None => {
+                if let (Some(t), Ok(meta)) = (total, std::fs::metadata(&dmg)) {
+                    if t > 0 {
+                        emit("downloading", Some((meta.len() as f64 / t as f64 * 100.0).min(99.0)));
+                    }
+                }
+                thread::sleep(Duration::from_millis(300));
+            }
+        }
+    }
+
+    emit("installing", None);
     run(
         "hdiutil",
         &["attach", "-nobrowse", "-quiet", "-mountpoint", mnt_s, dmg_s],
@@ -128,12 +186,13 @@ fn install_blocking() -> Result<String, String> {
     // Clear quarantine so the (unsigned) server launches without the Gatekeeper
     // "app is damaged" block.
     let _ = run("xattr", &["-dr", "com.apple.quarantine", BB_APP]);
+    emit("done", Some(100.0));
     Ok(url)
 }
 
 #[tauri::command]
-pub async fn bb_install() -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(install_blocking)
+pub async fn bb_install(progress: Channel<Progress>) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || install_blocking(progress))
         .await
         .map_err(|e| format!("install task failed: {e}"))?
 }

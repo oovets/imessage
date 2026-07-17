@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, Channel } from "@tauri-apps/api/core";
 import { Check, Loader2, ServerCog, Wand2, ArrowLeft, ExternalLink, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,16 @@ type Phase = "form" | "installing" | "configuring" | "permissions" | "done" | "e
 interface ServerCheck {
   reachable: boolean;
   canReadDb: boolean;
+}
+
+interface BbStatus {
+  installed: boolean;
+  hasConfig: boolean;
+}
+
+interface Progress {
+  stage: string;
+  pct: number | null;
 }
 
 function generatePassword(): string {
@@ -45,6 +55,8 @@ export function OnboardingWizard() {
   const [busyMsg, setBusyMsg] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [check, setCheck] = useState<ServerCheck | null>(null);
+  const [progress, setProgress] = useState<Progress | null>(null);
+  const [reusedInstall, setReusedInstall] = useState(false);
 
   // --- manual flow state ---
   const [manualUrl, setManualUrl] = useState("");
@@ -56,12 +68,18 @@ export function OnboardingWizard() {
   async function runAutoSetup() {
     setError(null);
     try {
-      setPhase("installing");
-      setBusyMsg("Downloading and installing the BlueBubbles server…");
-      await invoke("bb_install");
+      const status = await invoke<BbStatus>("bb_status");
+      if (status.installed) {
+        setReusedInstall(true);
+      } else {
+        setPhase("installing");
+        setProgress({ stage: "resolving", pct: null });
+        const channel = new Channel<Progress>();
+        channel.onmessage = (p) => setProgress(p);
+        await invoke("bb_install", { progress: channel });
+      }
 
       setPhase("configuring");
-      setBusyMsg("Configuring the server (no setup wizard needed)…");
       await invoke("bb_configure", { password, port: portNum, headless: true, login });
 
       setPhase("permissions");
@@ -70,6 +88,17 @@ export function OnboardingWizard() {
       setPhase("error");
     }
   }
+
+  const workingLabel =
+    phase === "configuring"
+      ? "Configuring the server (no setup wizard needed)…"
+      : progress?.stage === "downloading"
+      ? `Downloading BlueBubbles…${progress.pct != null ? ` ${Math.round(progress.pct)}%` : ""}`
+      : progress?.stage === "installing"
+      ? "Installing BlueBubbles…"
+      : progress?.stage === "resolving"
+      ? "Finding the latest server release…"
+      : "Preparing…";
 
   async function verifyPermissions() {
     setError(null);
@@ -187,8 +216,16 @@ export function OnboardingWizard() {
         {mode === "auto" && busy && (
           <div className="flex flex-col items-center py-8 text-center">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="mt-4 text-sm">{busyMsg}</p>
-            <p className="mt-1 text-xs text-muted-foreground">This can take a minute — don't quit the app.</p>
+            <p className="mt-4 text-sm">{workingLabel}</p>
+            {phase === "installing" && progress?.pct != null && (
+              <div className="mt-4 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-primary transition-[width] duration-200"
+                  style={{ width: `${progress.pct}%` }}
+                />
+              </div>
+            )}
+            <p className="mt-2 text-xs text-muted-foreground">This can take a minute — don't quit the app.</p>
           </div>
         )}
 
@@ -199,6 +236,11 @@ export function OnboardingWizard() {
             <p className="mt-1 text-sm text-muted-foreground">
               macOS requires these by hand. Open each pane, enable <strong>BlueBubbles</strong>, then verify.
             </p>
+            {reusedInstall && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Reused the BlueBubbles server already installed on this Mac.
+              </p>
+            )}
             <div className="mt-4 space-y-2">
               {PERMISSIONS.map((p) => (
                 <button
