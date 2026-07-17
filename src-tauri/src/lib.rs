@@ -9,6 +9,8 @@ use tauri::{
 };
 use tauri::{tray::MouseButton, tray::MouseButtonState, tray::TrayIconBuilder, tray::TrayIconEvent};
 
+mod onboarding;
+
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 const KEYRING_SERVICE: &str = "com.oovets.messages";
 #[cfg(target_os = "macos")]
@@ -283,7 +285,12 @@ pub fn run() {
             load_secure_config,
             save_secure_config,
             clear_secure_config,
-            set_menubar_visible
+            set_menubar_visible,
+            onboarding::bb_status,
+            onboarding::bb_install,
+            onboarding::bb_configure,
+            onboarding::bb_open_privacy,
+            onboarding::bb_start_and_check
         ])
         .setup(|app| {
             let app_handle = app.handle();

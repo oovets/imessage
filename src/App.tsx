@@ -2,9 +2,11 @@ import { useEffect } from "react";
 import { ChatList } from "@/components/ChatList";
 import { ChatPane } from "@/components/ChatPane";
 import { PaneTreeRoot } from "@/components/PaneTree";
+import { OnboardingWizard } from "@/components/OnboardingWizard";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { usePollingFallback } from "@/hooks/usePollingFallback";
 import { useDesktopFeatures } from "@/hooks/useDesktopFeatures";
+import { isTauriRuntime } from "@/lib/tauriEnv";
 import { useAppStore, type PaneNode } from "@/store/useAppStore";
 import { useTheme } from "@/components/ThemeProvider";
 import { applyAppearance } from "@/lib/appearance";
@@ -34,6 +36,7 @@ export default function App() {
   const repairPaneState = useAppStore((s) => s.repairPaneState);
   const superlightMode = useAppStore((s) => s.superlightMode);
   const configLoaded = useAppStore((s) => s.configLoaded);
+  const isConfigured = useAppStore((s) => s.isConfigured);
   const active = findActiveLeaf(paneTree, activePaneId);
   const sidebarHidden = useAppStore((s) => s.sidebarHidden);
   const appearance = useAppStore((s) => s.appearance);
@@ -98,6 +101,12 @@ export default function App() {
         Loading app configuration…
       </div>
     );
+  }
+
+  // First-run in the desktop app: guide setup (install + configure BlueBubbles,
+  // or connect to an existing server) instead of dropping into the empty shell.
+  if (isTauriRuntime() && !isConfigured) {
+    return <OnboardingWizard />;
   }
 
   return (
