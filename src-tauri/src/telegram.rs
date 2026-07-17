@@ -172,6 +172,66 @@ pub async fn tg_user_avatar_data_url(
 
 // ----- write commands (Fas 2) ---------------------------------------------
 
+// ----- login / accounts (Fas 4) -------------------------------------------
+//
+// The interactive flows are event-driven: these commands kick off a step and
+// progress is reported to the webview via tg:core-event `login` stages
+// (code_sent / password_required / qr_code / complete).
+
+#[tauri::command]
+pub async fn tg_begin_code_login(
+    state: State<'_, TelegramState>,
+    phone: String,
+) -> Result<(), String> {
+    let core = state.core()?;
+    core.accounts
+        .begin_code_login(phone.trim())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn tg_submit_code(
+    state: State<'_, TelegramState>,
+    code: String,
+) -> Result<(), String> {
+    let core = state.core()?;
+    core.accounts
+        .submit_code(code.trim())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn tg_submit_password(
+    state: State<'_, TelegramState>,
+    password: String,
+) -> Result<(), String> {
+    let core = state.core()?;
+    core.accounts
+        .submit_password(&password)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn tg_begin_qr_login(state: State<'_, TelegramState>) -> Result<(), String> {
+    let core = state.core()?;
+    core.accounts.begin_qr_login().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn tg_sign_out(
+    state: State<'_, TelegramState>,
+    account_id: AccountId,
+) -> Result<(), String> {
+    let core = state.core()?;
+    core.accounts
+        .sign_out(account_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn tg_send_message(
     state: State<'_, TelegramState>,

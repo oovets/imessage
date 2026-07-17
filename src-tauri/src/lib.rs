@@ -300,6 +300,11 @@ pub fn run() {
             telegram::tg_react,
             telegram::tg_mark_read,
             telegram::tg_set_typing,
+            telegram::tg_begin_code_login,
+            telegram::tg_submit_code,
+            telegram::tg_submit_password,
+            telegram::tg_begin_qr_login,
+            telegram::tg_sign_out,
         ])
         .setup(|app| {
             let app_handle = app.handle();

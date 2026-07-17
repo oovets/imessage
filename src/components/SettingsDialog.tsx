@@ -14,6 +14,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { useAppStore } from "@/store/useAppStore";
+import { TelegramAccounts } from "@/components/TelegramAccounts";
 import { clearSecureConfig, saveSecureConfig } from "@/lib/secureConfig";
 import { isTauriRuntime } from "@/lib/tauriEnv";
 import { cn } from "@/lib/utils";
@@ -65,7 +66,9 @@ export function SettingsDialog(_props: SettingsDialogProps) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"server" | "general" | "appearance">("server");
+  const [tab, setTab] = useState<
+    "server" | "telegram" | "general" | "appearance"
+  >("server");
   const autoOpenedRef = useRef(false);
 
   useEffect(() => {
@@ -206,6 +209,7 @@ export function SettingsDialog(_props: SettingsDialogProps) {
           {(
             [
               ["server", "Server"],
+              ["telegram", "Telegram"],
               ["general", "General"],
               ["appearance", "Appearance"],
             ] as const
@@ -227,6 +231,7 @@ export function SettingsDialog(_props: SettingsDialogProps) {
         </div>
 
         <div className="grid gap-4 py-2">
+          {tab === "telegram" && <TelegramAccounts />}
           {tab === "server" && (
             <>
               <div className="grid gap-2">

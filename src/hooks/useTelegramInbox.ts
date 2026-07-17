@@ -10,6 +10,8 @@ import type { Chat } from "@/types";
 export function useTelegramInbox() {
   const setTelegramChats = useAppStore((s) => s.setTelegramChats);
   const setTelegramAvailable = useAppStore((s) => s.setTelegramAvailable);
+  // Re-runs when an account is added/removed (reloadTelegram bumps this).
+  const reloadNonce = useAppStore((s) => s.telegramReloadNonce);
 
   useEffect(() => {
     let cancelled = false;
@@ -36,5 +38,5 @@ export function useTelegramInbox() {
     return () => {
       cancelled = true;
     };
-  }, [setTelegramChats, setTelegramAvailable]);
+  }, [setTelegramChats, setTelegramAvailable, reloadNonce]);
 }

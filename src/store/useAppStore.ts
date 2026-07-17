@@ -285,6 +285,9 @@ interface AppState {
   setTelegramAvailable: (v: boolean) => void;
   setTelegramChats: (chats: Chat[]) => void;
   upsertChat: (chat: Chat) => void;
+  // Bumped to re-run the Telegram chat loader (e.g. after adding an account).
+  telegramReloadNonce: number;
+  reloadTelegram: () => void;
   // Presence keyed by the private-chat GUID (tg:<account>:<userId>).
   telegramPresence: Record<string, { online: boolean; lastSeen: number | null }>;
   setTelegramPresence: (
@@ -382,6 +385,7 @@ export const useAppStore = create<AppState>()(
       chats: [],
       telegramAvailable: false,
       telegramPresence: {},
+      telegramReloadNonce: 0,
       paneTree: EMPTY_LEAF,
       activePaneId: EMPTY_LEAF.id,
       paneLayouts: {},
@@ -623,6 +627,9 @@ export const useAppStore = create<AppState>()(
         })),
 
       setTelegramAvailable: (v) => set({ telegramAvailable: v }),
+
+      reloadTelegram: () =>
+        set((s) => ({ telegramReloadNonce: s.telegramReloadNonce + 1 })),
 
       setTelegramPresence: (guid, presence) =>
         set((s) => ({

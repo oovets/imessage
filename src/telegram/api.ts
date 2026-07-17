@@ -74,6 +74,14 @@ export const tg = {
     invoke<void>("tg_mark_read", { accountId, chatId }),
   setTyping: (accountId: number, chatId: number) =>
     invoke<void>("tg_set_typing", { accountId, chatId }),
+
+  // Login / accounts (Fas 4)
+  beginCodeLogin: (phone: string) => invoke<void>("tg_begin_code_login", { phone }),
+  submitCode: (code: string) => invoke<void>("tg_submit_code", { code }),
+  submitPassword: (password: string) =>
+    invoke<void>("tg_submit_password", { password }),
+  beginQrLogin: () => invoke<void>("tg_begin_qr_login"),
+  signOut: (accountId: number) => invoke<void>("tg_sign_out", { accountId }),
 };
 
 /** Subscribe to the Telegram core event stream. Returns the unlisten fn. */
