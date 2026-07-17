@@ -121,8 +121,10 @@ bash demo-setup.sh --no-client        # only the server
 bash demo-setup.sh --uninstall        # remove it all (add --purge to wipe data too)
 ```
 
-Note: iMessage cannot activate inside a macOS VM (Apple blocks it), so the end-to-end demo
-needs a physical Mac; a VM is fine for testing the installer flow itself.
+Note: iMessage activation validates the Mac's hardware identity, so it often fails in
+generic or Intel VMs (VMware, VirtualBox, QEMU) that present blank or fake identifiers. On
+Apple Silicon VMs running under Apple's Virtualization.framework — such as VirtualBuddy —
+it activates normally, so the full end-to-end demo works there too.
 
 ### Manual install
 
