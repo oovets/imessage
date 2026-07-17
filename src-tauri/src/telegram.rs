@@ -399,25 +399,40 @@ fn sanitize_name(name: &str) -> String {
 }
 
 /// Existing temp-file path for `name`, or `None`. Lets the frontend skip a
-/// re-download when a media temp file is already on disk.
+/// re-download when a media temp file is already on disk. Async + spawn_blocking
+/// so the filesystem stat never runs on the main thread.
 #[tauri::command]
-pub fn media_temp_path(name: String) -> Option<String> {
+pub async fn media_temp_path(name: String) -> Option<String> {
     let path = media_tmp_dir().join(sanitize_name(&name));
-    path.exists().then(|| path.to_string_lossy().into_owned())
+    tokio::task::spawn_blocking(move || {
+        path.exists().then(|| path.to_string_lossy().into_owned())
+    })
+    .await
+    .ok()
+    .flatten()
 }
 
 /// Write bytes to a media temp file (served via the asset protocol) and return
 /// its path. Used for iMessage attachments so a video streams from disk (range
 /// requests) instead of living fully in the JS heap during playback.
+///
+/// **Must be async**: a synchronous command runs on the main thread, and
+/// writing a large video there froze the UI (beachball). spawn_blocking moves
+/// the write to the blocking pool.
 #[tauri::command]
-pub fn save_media_temp(bytes: Vec<u8>, name: String) -> Result<String, String> {
+pub async fn save_media_temp(bytes: Vec<u8>, name: String) -> Result<String, String> {
     let dir = media_tmp_dir();
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let path = dir.join(sanitize_name(&name));
-    if !path.exists() {
-        std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
-    }
-    Ok(path.to_string_lossy().into_owned())
+    let file = sanitize_name(&name);
+    tokio::task::spawn_blocking(move || {
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let path = dir.join(file);
+        if !path.exists() {
+            std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
+        }
+        Ok(path.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Decrypt a media blob to a plaintext temp file and return its path, so the
