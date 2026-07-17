@@ -41,6 +41,7 @@ export default function App() {
   const superlightMode = useAppStore((s) => s.superlightMode);
   const configLoaded = useAppStore((s) => s.configLoaded);
   const isConfigured = useAppStore((s) => s.isConfigured);
+  const onboardingDismissed = useAppStore((s) => s.onboardingDismissed);
   const active = findActiveLeaf(paneTree, activePaneId);
   const sidebarHidden = useAppStore((s) => s.sidebarHidden);
   const appearance = useAppStore((s) => s.appearance);
@@ -109,7 +110,8 @@ export default function App() {
 
   // First-run in the desktop app: guide setup (install + configure BlueBubbles,
   // or connect to an existing server) instead of dropping into the empty shell.
-  if (isTauriRuntime() && !isConfigured) {
+  // Skipped once the user dismisses it (e.g. to run Telegram only).
+  if (isTauriRuntime() && !isConfigured && !onboardingDismissed) {
     return <OnboardingWizard />;
   }
 

@@ -251,6 +251,10 @@ interface AppState {
   password: string;
   isConfigured: boolean;
   configLoaded: boolean;
+  // Set when the user skips BlueBubbles setup (e.g. to run Telegram only), so
+  // the first-run wizard stops gating the app. Persisted.
+  onboardingDismissed: boolean;
+  dismissOnboarding: () => void;
   launchOnLogin: boolean;
   networkOnline: boolean;
   connectionNotice: string | null;
@@ -373,6 +377,7 @@ export const useAppStore = create<AppState>()(
       password: "",
       isConfigured: false,
       configLoaded: false,
+      onboardingDismissed: false,
       launchOnLogin: false,
       networkOnline: true,
       connectionNotice: null,
@@ -433,6 +438,8 @@ export const useAppStore = create<AppState>()(
           paneLayouts: {},
           selectedChatGUID: null,
         }),
+
+      dismissOnboarding: () => set({ onboardingDismissed: true }),
 
       setConfigLoaded: (v) => set({ configLoaded: v }),
       setLaunchOnLogin: (v) => set({ launchOnLogin: v }),
@@ -763,6 +770,7 @@ export const useAppStore = create<AppState>()(
       partialize: (s) => ({
         superlightMode: s.superlightMode,
         showTimestamps: s.showTimestamps,
+        onboardingDismissed: s.onboardingDismissed,
         sidebarHidden: s.sidebarHidden,
         appearance: s.appearance,
         linkPreviewsEnabled: s.linkPreviewsEnabled,

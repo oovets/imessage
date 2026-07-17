@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
-import { Check, Loader2, ServerCog, Wand2, ArrowLeft, ExternalLink, AlertTriangle } from "lucide-react";
+import { Check, Loader2, ServerCog, Wand2, ArrowLeft, ExternalLink, AlertTriangle, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAppStore } from "@/store/useAppStore";
@@ -44,6 +44,8 @@ const PERMISSIONS: Array<{ pane: string; label: string; why: string }> = [
 
 export function OnboardingWizard() {
   const setConfig = useAppStore((s) => s.setConfig);
+  const telegramAvailable = useAppStore((s) => s.telegramAvailable);
+  const dismissOnboarding = useAppStore((s) => s.dismissOnboarding);
 
   const [mode, setMode] = useState<Mode>("choose");
 
@@ -178,6 +180,19 @@ export function OnboardingWizard() {
                 </span>
               </button>
             </div>
+            {telegramAvailable && (
+              <div className="mt-6 border-t pt-4">
+                <p className="text-xs text-muted-foreground">
+                  Only want Telegram? You can skip BlueBubbles and set it up later in Settings.
+                </p>
+                <button
+                  onClick={dismissOnboarding}
+                  className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+                >
+                  <Send className="h-4 w-4" /> Just use Telegram
+                </button>
+              </div>
+            )}
           </div>
         )}
 
