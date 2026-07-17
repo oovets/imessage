@@ -5,7 +5,7 @@ import { MessageList } from "@/components/MessageList";
 import { MessageInput } from "@/components/MessageInput";
 import { useAppStore, isTelegramChatGuid } from "@/store/useAppStore";
 import { getClient } from "@/api/clientFactory";
-import { getChatDisplayName, getChatInitials } from "@/types";
+import { getChatDisplayName, getChatInitials, formatMessageTime } from "@/types";
 import { tg } from "@/telegram/api";
 import { parseTgChatGuid, tgMessageToMessage } from "@/telegram/adapters";
 import { cn } from "@/lib/utils";
@@ -21,6 +21,9 @@ interface ChatPaneProps {
 export function ChatPane({ paneId, chatGUID, isActive, canClose, showMobileBack }: ChatPaneProps) {
   const selectedChat = useAppStore((s) =>
     chatGUID ? s.chats.find((c) => c.guid === chatGUID) : undefined
+  );
+  const presence = useAppStore((s) =>
+    chatGUID ? s.telegramPresence[chatGUID] : undefined
   );
   const serverUrl = useAppStore((s) => s.serverUrl);
   const password = useAppStore((s) => s.password);
@@ -150,7 +153,22 @@ export function ChatPane({ paneId, chatGUID, isActive, canClose, showMobileBack 
             <div className="h-7 w-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-semibold shrink-0">
               {getChatInitials(selectedChat)}
             </div>
-            <span data-tauri-drag-region className="font-semibold text-sm truncate">{getChatDisplayName(selectedChat)}</span>
+            <div data-tauri-drag-region className="flex flex-col min-w-0 leading-tight">
+              <span data-tauri-drag-region className="font-semibold text-sm truncate">{getChatDisplayName(selectedChat)}</span>
+              {presence && (presence.online || presence.lastSeen) && (
+                <span
+                  data-tauri-drag-region
+                  className={cn(
+                    "text-[11px] truncate",
+                    presence.online ? "text-green-600 dark:text-green-400" : "text-muted-foreground"
+                  )}
+                >
+                  {presence.online
+                    ? "online"
+                    : `last seen ${formatMessageTime(presence.lastSeen as number)}`}
+                </span>
+              )}
+            </div>
           </div>
         )}
 

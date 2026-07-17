@@ -285,6 +285,12 @@ interface AppState {
   setTelegramAvailable: (v: boolean) => void;
   setTelegramChats: (chats: Chat[]) => void;
   upsertChat: (chat: Chat) => void;
+  // Presence keyed by the private-chat GUID (tg:<account>:<userId>).
+  telegramPresence: Record<string, { online: boolean; lastSeen: number | null }>;
+  setTelegramPresence: (
+    guid: string,
+    presence: { online: boolean; lastSeen: number | null },
+  ) => void;
 
   setConfig: (serverUrl: string, password: string) => void;
   clearConfig: () => void;
@@ -375,6 +381,7 @@ export const useAppStore = create<AppState>()(
 
       chats: [],
       telegramAvailable: false,
+      telegramPresence: {},
       paneTree: EMPTY_LEAF,
       activePaneId: EMPTY_LEAF.id,
       paneLayouts: {},
@@ -616,6 +623,11 @@ export const useAppStore = create<AppState>()(
         })),
 
       setTelegramAvailable: (v) => set({ telegramAvailable: v }),
+
+      setTelegramPresence: (guid, presence) =>
+        set((s) => ({
+          telegramPresence: { ...s.telegramPresence, [guid]: presence },
+        })),
 
       // Replace or insert a single chat (any source), keeping the list sorted.
       upsertChat: (chat) =>

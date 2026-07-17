@@ -19,6 +19,15 @@ type CoreEvent =
     }
   | { kind: "chat_updated"; chat: TgChat }
   | { kind: "typing"; account_id: number; chat_id: number; user_id: number }
+  | {
+      kind: "presence_changed";
+      account_id: number;
+      user_id: number;
+      presence:
+        | { status: "online" }
+        | { status: "offline"; last_seen: string | null }
+        | { status: "hidden" };
+    }
   | { kind: string };
 
 export function useTelegramEvents() {
@@ -57,6 +66,28 @@ export function useTelegramEvents() {
           // setTyping stores a future expiry timestamp; Telegram only signals
           // "started", so each event refreshes the window.
           store.setTyping(`tg:${e.account_id}:${e.chat_id}`, true);
+          break;
+        }
+
+        case "presence_changed": {
+          const e = event as {
+            account_id: number;
+            user_id: number;
+            presence:
+              | { status: "online" }
+              | { status: "offline"; last_seen: string | null }
+              | { status: "hidden" };
+          };
+          // A private chat's GUID is tg:<account>:<userId>, so presence keys
+          // straight onto the conversation.
+          const guid = `tg:${e.account_id}:${e.user_id}`;
+          store.setTelegramPresence(guid, {
+            online: e.presence.status === "online",
+            lastSeen:
+              e.presence.status === "offline" && e.presence.last_seen
+                ? Date.parse(e.presence.last_seen)
+                : null,
+          });
           break;
         }
 
