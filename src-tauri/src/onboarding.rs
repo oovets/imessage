@@ -22,6 +22,23 @@ pub struct Progress {
 
 const BB_REPO: &str = "BlueBubblesApp/bluebubbles-server";
 const BB_APP: &str = "/Applications/BlueBubbles.app";
+const LSREGISTER: &str = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
+
+/// A line-oriented log channel streamed to the onboarding wizard so the user can
+/// watch each step (and see the exact failure) as the installer runs.
+type Log = Channel<String>;
+
+fn logln(log: &Log, msg: impl Into<String>) {
+    let _ = log.send(msg.into());
+}
+
+/// Launch BlueBubbles by its full path rather than by name. `open -a BlueBubbles`
+/// resolves through Launch Services, which has not necessarily indexed a freshly
+/// copied .app yet ("Unable to find application named 'BlueBubbles'"); opening the
+/// bundle path directly does not depend on that registration.
+fn open_bluebubbles() -> Result<String, String> {
+    run("open", &[BB_APP])
+}
 
 fn home() -> Result<PathBuf, String> {
     std::env::var_os("HOME")
@@ -112,7 +129,7 @@ fn content_length(url: &str) -> Option<u64> {
         .and_then(|v| v.parse::<u64>().ok())
 }
 
-fn install_blocking(progress: Channel<Progress>) -> Result<String, String> {
+fn install_blocking(progress: Channel<Progress>, log: Log) -> Result<String, String> {
     let emit = |stage: &str, pct: Option<f64>| {
         let _ = progress.send(Progress {
             stage: stage.to_string(),
@@ -121,7 +138,9 @@ fn install_blocking(progress: Channel<Progress>) -> Result<String, String> {
     };
 
     emit("resolving", None);
-    let url = latest_bb_dmg_url()?;
+    logln(&log, "Resolving latest BlueBubbles release…");
+    let url = latest_bb_dmg_url().inspect_err(|e| logln(&log, format!("✗ {e}")))?;
+    logln(&log, format!("Latest server: {url}"));
     let tmp = std::env::temp_dir();
     let dmg = tmp.join("bluebubbles-setup.dmg");
     let mnt = tmp.join("bluebubbles-setup-mnt");
@@ -136,6 +155,13 @@ fn install_blocking(progress: Channel<Progress>) -> Result<String, String> {
     // Stream the download in the background and report progress by polling the
     // output file size against Content-Length — robust, no output parsing.
     let total = content_length(&url);
+    logln(
+        &log,
+        match total {
+            Some(t) => format!("Downloading… ({:.1} MB)", t as f64 / 1_048_576.0),
+            None => "Downloading… (size unknown)".to_string(),
+        },
+    );
     emit("downloading", Some(0.0));
     let mut child = Command::new("curl")
         .args(["-fL", "-o", dmg_s, &url])
@@ -161,10 +187,12 @@ fn install_blocking(progress: Channel<Progress>) -> Result<String, String> {
     }
 
     emit("installing", None);
+    logln(&log, "Mounting disk image…");
     run(
         "hdiutil",
         &["attach", "-nobrowse", "-quiet", "-mountpoint", mnt_s, dmg_s],
-    )?;
+    )
+    .inspect_err(|e| logln(&log, format!("✗ {e}")))?;
 
     // Copy the .app out, then always detach + clean up regardless of outcome.
     let copy_result = (|| -> Result<(), String> {
@@ -174,6 +202,7 @@ fn install_blocking(progress: Channel<Progress>) -> Result<String, String> {
             .map(|e| e.path())
             .find(|p| p.extension().map(|x| x == "app").unwrap_or(false))
             .ok_or_else(|| "no .app found inside the dmg".to_string())?;
+        logln(&log, "Copying BlueBubbles.app to /Applications…");
         let _ = std::fs::remove_dir_all(BB_APP);
         run("cp", &["-R", path_str(&app_src)?, BB_APP])?;
         Ok(())
@@ -181,18 +210,26 @@ fn install_blocking(progress: Channel<Progress>) -> Result<String, String> {
 
     let _ = run("hdiutil", &["detach", "-quiet", mnt_s]);
     let _ = std::fs::remove_file(&dmg);
-    copy_result?;
+    copy_result.inspect_err(|e| logln(&log, format!("✗ {e}")))?;
 
     // Clear quarantine so the (unsigned) server launches without the Gatekeeper
     // "app is damaged" block.
+    logln(&log, "Clearing quarantine flag…");
     let _ = run("xattr", &["-dr", "com.apple.quarantine", BB_APP]);
+
+    // Register with Launch Services so it can be launched by name and scripted
+    // via osascript immediately, without waiting for the periodic LS scan.
+    logln(&log, "Registering with Launch Services…");
+    let _ = run(LSREGISTER, &["-f", BB_APP]);
+
+    logln(&log, "Install complete.");
     emit("done", Some(100.0));
     Ok(url)
 }
 
 #[tauri::command]
-pub async fn bb_install(progress: Channel<Progress>) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || install_blocking(progress))
+pub async fn bb_install(progress: Channel<Progress>, log: Log) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || install_blocking(progress, log))
         .await
         .map_err(|e| format!("install task failed: {e}"))?
 }
@@ -213,10 +250,13 @@ fn configure_blocking(
     port: u16,
     headless: bool,
     login: bool,
+    log: Log,
 ) -> Result<(), String> {
     // First launch creates config.db via typeorm migrations; then quit to seed.
-    run("open", &["-a", "BlueBubbles"])?;
+    logln(&log, "Launching BlueBubbles to initialize its database…");
+    open_bluebubbles().inspect_err(|e| logln(&log, format!("✗ open failed: {e}")))?;
     let db = config_db_path()?;
+    logln(&log, "Waiting for the config database…");
     let mut created = false;
     for _ in 0..60 {
         if db.exists() {
@@ -226,12 +266,16 @@ fn configure_blocking(
         thread::sleep(Duration::from_secs(1));
     }
     if !created {
+        logln(&log, "✗ Timed out waiting for config.db");
         return Err("BlueBubbles did not create its config database in time".to_string());
     }
     thread::sleep(Duration::from_secs(2));
+    logln(&log, "Quitting BlueBubbles to write settings…");
     let _ = run("osascript", &["-e", "tell application \"BlueBubbles\" to quit"]);
+    let _ = run("pkill", &["-x", "BlueBubbles"]);
     thread::sleep(Duration::from_secs(2));
 
+    logln(&log, "Seeding server configuration…");
     let db_s = path_str(&db)?;
     seed(db_s, "password", &password)?;
     seed(db_s, "socket_port", &port.to_string())?;
@@ -244,6 +288,7 @@ fn configure_blocking(
     if headless {
         seed(db_s, "hide_dock_icon", "1")?;
     }
+    logln(&log, "Configuration written.");
     Ok(())
 }
 
@@ -253,10 +298,13 @@ pub async fn bb_configure(
     port: u16,
     headless: bool,
     login: bool,
+    log: Log,
 ) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || configure_blocking(password, port, headless, login))
-        .await
-        .map_err(|e| format!("configure task failed: {e}"))?
+    tauri::async_runtime::spawn_blocking(move || {
+        configure_blocking(password, port, headless, login, log)
+    })
+    .await
+    .map_err(|e| format!("configure task failed: {e}"))?
 }
 
 // --- permissions -----------------------------------------------------------
@@ -287,10 +335,15 @@ pub struct ServerCheck {
     can_read_db: bool,
 }
 
-fn start_and_check_blocking(password: String, port: u16) -> ServerCheck {
-    let _ = run("open", &["-a", "BlueBubbles"]);
+fn start_and_check_blocking(password: String, port: u16, log: Log) -> ServerCheck {
+    logln(&log, "Starting the BlueBubbles server…");
+    if let Err(e) = open_bluebubbles() {
+        logln(&log, format!("✗ open failed: {e}"));
+    }
     let base = format!("http://localhost:{port}/api/v1");
 
+    // The password rides in the query string, so never log the full URL.
+    logln(&log, format!("Checking the API on http://localhost:{port}…"));
     let mut reachable = false;
     for _ in 0..40 {
         let url = format!("{base}/server/info?password={password}");
@@ -301,10 +354,24 @@ fn start_and_check_blocking(password: String, port: u16) -> ServerCheck {
         thread::sleep(Duration::from_secs(1));
     }
 
+    if reachable {
+        logln(&log, "Server is reachable.");
+    } else {
+        logln(&log, "✗ Server not reachable yet — check the permissions.");
+    }
+
     let can_read_db = reachable && {
         let url = format!("{base}/message/count?password={password}");
         run("curl", &["-fsS", &url]).is_ok()
     };
+
+    if reachable {
+        if can_read_db {
+            logln(&log, "Server can read the Messages database.");
+        } else {
+            logln(&log, "✗ Server up but can't read Messages — grant Full Disk Access.");
+        }
+    }
 
     ServerCheck {
         reachable,
@@ -313,8 +380,8 @@ fn start_and_check_blocking(password: String, port: u16) -> ServerCheck {
 }
 
 #[tauri::command]
-pub async fn bb_start_and_check(password: String, port: u16) -> ServerCheck {
-    tauri::async_runtime::spawn_blocking(move || start_and_check_blocking(password, port))
+pub async fn bb_start_and_check(password: String, port: u16, log: Log) -> ServerCheck {
+    tauri::async_runtime::spawn_blocking(move || start_and_check_blocking(password, port, log))
         .await
         .unwrap_or(ServerCheck {
             reachable: false,
