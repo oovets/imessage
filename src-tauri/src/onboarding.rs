@@ -282,12 +282,13 @@ fn configure_blocking(
     seed(db_s, "tutorial_is_done", "1")?;
     seed(db_s, "check_for_updates", "0")?;
     seed(db_s, "auto_caffeinate", "1")?;
-    seed(db_s, "start_minimized", "1")?;
     seed(db_s, "auto_start", if login { "1" } else { "0" })?;
     seed(db_s, "headless", if headless { "1" } else { "0" })?;
-    if headless {
-        seed(db_s, "hide_dock_icon", "1")?;
-    }
+    // Only hide the window / dock icon in true headless mode. When the server is
+    // meant to be visible, keep start_minimized off too, so its window (and any
+    // first-run step that must be completed before the API starts) is shown.
+    seed(db_s, "start_minimized", if headless { "1" } else { "0" })?;
+    seed(db_s, "hide_dock_icon", if headless { "1" } else { "0" })?;
     logln(&log, "Configuration written.");
     Ok(())
 }

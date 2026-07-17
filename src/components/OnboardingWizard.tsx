@@ -98,10 +98,13 @@ export function OnboardingWizard() {
       }
 
       setPhase("configuring");
+      // Configure the server visibly rather than headless: a hidden first launch
+      // can silently stall on a setup step, so its HTTP server never starts. A
+      // visible window starts reliably and lets the user finish anything pending.
       await invoke("bb_configure", {
         password,
         port: portNum,
-        headless: true,
+        headless: false,
         login,
         log: logChannel(),
       });
