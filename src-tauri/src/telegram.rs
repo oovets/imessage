@@ -170,6 +170,73 @@ pub async fn tg_user_avatar_data_url(
     Ok(bytes.map(|b| data_url(&b, "image/jpeg")))
 }
 
+// ----- write commands (Fas 2) ---------------------------------------------
+
+#[tauri::command]
+pub async fn tg_send_message(
+    state: State<'_, TelegramState>,
+    account_id: AccountId,
+    chat_id: ChatId,
+    text: String,
+    reply_to: Option<MessageId>,
+) -> Result<Message, String> {
+    let core = state.core()?;
+    core.send_message(account_id, chat_id, text, reply_to)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn tg_edit_message(
+    state: State<'_, TelegramState>,
+    account_id: AccountId,
+    chat_id: ChatId,
+    message_id: MessageId,
+    text: String,
+) -> Result<(), String> {
+    let core = state.core()?;
+    core.edit_message(account_id, chat_id, message_id, &text)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn tg_delete_messages(
+    state: State<'_, TelegramState>,
+    account_id: AccountId,
+    chat_id: ChatId,
+    message_ids: Vec<MessageId>,
+) -> Result<(), String> {
+    let core = state.core()?;
+    core.delete_messages(account_id, chat_id, message_ids)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn tg_mark_read(
+    state: State<'_, TelegramState>,
+    account_id: AccountId,
+    chat_id: ChatId,
+) -> Result<(), String> {
+    let core = state.core()?;
+    core.mark_read(account_id, chat_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn tg_set_typing(
+    state: State<'_, TelegramState>,
+    account_id: AccountId,
+    chat_id: ChatId,
+) -> Result<(), String> {
+    let core = state.core()?;
+    core.set_typing(account_id, chat_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn tg_media_data_url(
     state: State<'_, TelegramState>,

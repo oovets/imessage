@@ -284,6 +284,7 @@ interface AppState {
   telegramAvailable: boolean;
   setTelegramAvailable: (v: boolean) => void;
   setTelegramChats: (chats: Chat[]) => void;
+  upsertChat: (chat: Chat) => void;
 
   setConfig: (serverUrl: string, password: string) => void;
   clearConfig: () => void;
@@ -615,6 +616,15 @@ export const useAppStore = create<AppState>()(
         })),
 
       setTelegramAvailable: (v) => set({ telegramAvailable: v }),
+
+      // Replace or insert a single chat (any source), keeping the list sorted.
+      upsertChat: (chat) =>
+        set((s) => ({
+          chats: sortChatsByRecency([
+            ...s.chats.filter((c) => c.guid !== chat.guid),
+            chat,
+          ]),
+        })),
 
       setMessages: (chatGUID, messages) => {
         const capped = capMessages(messages);

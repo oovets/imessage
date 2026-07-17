@@ -4,6 +4,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { TgAccount, TgChat, TgMessage } from "./types";
 
+type TgMessageId = number;
+
 export const tg = {
   /** Whether the Telegram backend is configured and running. */
   status: () => invoke<boolean>("tg_status"),
@@ -40,6 +42,32 @@ export const tg = {
       cacheKey,
       mimeType: mimeType ?? null,
     }),
+
+  // Writes (Fas 2)
+  sendMessage: (
+    accountId: number,
+    chatId: number,
+    text: string,
+    replyTo?: TgMessageId,
+  ) =>
+    invoke<TgMessage>("tg_send_message", {
+      accountId,
+      chatId,
+      text,
+      replyTo: replyTo ?? null,
+    }),
+  editMessage: (
+    accountId: number,
+    chatId: number,
+    messageId: TgMessageId,
+    text: string,
+  ) => invoke<void>("tg_edit_message", { accountId, chatId, messageId, text }),
+  deleteMessages: (accountId: number, chatId: number, messageIds: TgMessageId[]) =>
+    invoke<void>("tg_delete_messages", { accountId, chatId, messageIds }),
+  markRead: (accountId: number, chatId: number) =>
+    invoke<void>("tg_mark_read", { accountId, chatId }),
+  setTyping: (accountId: number, chatId: number) =>
+    invoke<void>("tg_set_typing", { accountId, chatId }),
 };
 
 /** Subscribe to the Telegram core event stream. Returns the unlisten fn. */

@@ -294,6 +294,11 @@ pub fn run() {
             telegram::tg_avatar_data_url,
             telegram::tg_user_avatar_data_url,
             telegram::tg_media_data_url,
+            telegram::tg_send_message,
+            telegram::tg_edit_message,
+            telegram::tg_delete_messages,
+            telegram::tg_mark_read,
+            telegram::tg_set_typing,
         ])
         .setup(|app| {
             let app_handle = app.handle();

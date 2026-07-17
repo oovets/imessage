@@ -1,7 +1,9 @@
 import { useState, useRef, type KeyboardEvent } from "react";
 import { ArrowUp, Paperclip, X, Reply, Smile } from "lucide-react";
-import { useAppStore } from "@/store/useAppStore";
+import { useAppStore, isTelegramChatGuid } from "@/store/useAppStore";
 import { getClient } from "@/api/clientFactory";
+import { tg } from "@/telegram/api";
+import { parseTgChatGuid } from "@/telegram/adapters";
 import { cn } from "@/lib/utils";
 import type { Message } from "@/types";
 import { decodeEscapedUnicode } from "@/types";
@@ -77,6 +79,29 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
   function send() {
     const trimmed = text.trim();
     if (!trimmed) return;
+
+    // Telegram: the core does its own optimistic-pending + reconcile and
+    // drives the UI via tg:core-event, so we just fire the send and clear
+    // the input (no frontend optimistic message — it would duplicate).
+    if (isTelegramChatGuid(chatGUID)) {
+      const { accountId, chatId } = parseTgChatGuid(chatGUID);
+      const replyId = replyTarget ? Number(replyTarget.guid.split(":").pop()) : NaN;
+      const replyTo = Number.isFinite(replyId) && replyId > 0 ? replyId : undefined;
+      setText("");
+      setReplyTarget(chatGUID, null);
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto";
+        textareaRef.current.focus();
+      }
+      void tg
+        .sendMessage(accountId, chatId, trimmed, replyTo)
+        .catch((err) =>
+          setConnectionNotice(
+            `Unable to send message: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
+      return;
+    }
 
     const optimistic = makeOptimisticMessage(chatGUID, trimmed, replyTarget?.guid ?? "");
     upsertMessage(optimistic);

@@ -54,6 +54,8 @@ export function ChatPane({ paneId, chatGUID, isActive, canClose, showMobileBack 
         .then((tgMsgs) => {
           if (cancelled) return;
           setMessages(chatGUID, tgMsgs.map(tgMessageToMessage));
+          // Opening a chat marks it read (server + local via tg:core-event).
+          void tg.markRead(accountId, chatId).catch(() => {});
         })
         .catch((e: unknown) => {
           if (!cancelled) setFetchError(String(e));
