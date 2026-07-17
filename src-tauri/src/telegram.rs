@@ -246,6 +246,35 @@ pub async fn tg_send_message(
         .map_err(|e| e.to_string())
 }
 
+/// Send a file (image/video/etc.) with an optional caption. The bytes are
+/// transferred efficiently over the IPC (Tauri passes typed arrays as raw
+/// buffers), written to a temp file, uploaded, then removed.
+#[tauri::command]
+pub async fn tg_send_file(
+    state: State<'_, TelegramState>,
+    account_id: AccountId,
+    chat_id: ChatId,
+    file_name: String,
+    bytes: Vec<u8>,
+    caption: Option<String>,
+) -> Result<Message, String> {
+    let core = state.core()?;
+    let dir = std::env::temp_dir().join("unified-inbox-upload");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let safe: String = file_name
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') { c } else { '_' })
+        .collect();
+    let path = dir.join(if safe.is_empty() { "upload".to_owned() } else { safe });
+    std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
+    let result = core
+        .send_file(account_id, chat_id, &path, caption.as_deref().unwrap_or(""))
+        .await
+        .map_err(|e| e.to_string());
+    let _ = std::fs::remove_file(&path);
+    result
+}
+
 #[tauri::command]
 pub async fn tg_edit_message(
     state: State<'_, TelegramState>,

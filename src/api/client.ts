@@ -284,6 +284,33 @@ export class BlueBubblesClient {
     }
   }
 
+  /** Send a file attachment. Uses the AppleScript method, which does not
+   *  require the BlueBubbles Private API (only replies/reactions do). */
+  async sendAttachment(
+    chatGUID: string,
+    file: Blob,
+    name: string,
+    tempGuid?: string
+  ): Promise<void> {
+    const url = `${this.baseUrl}/api/v1/message/attachment?${this.authParam()}`;
+    const form = new FormData();
+    form.append("chatGuid", chatGUID);
+    form.append("tempGuid", tempGuid ?? crypto.randomUUID());
+    form.append("name", name);
+    form.append("method", "apple-script");
+    form.append("attachment", file, name);
+    const res = await httpFetch(url, { method: "POST", body: form });
+    if (!res.ok) {
+      let detail = "";
+      try {
+        detail = await res.text();
+      } catch {}
+      throw new Error(
+        `sendAttachment failed: HTTP ${res.status}${detail ? ` - ${detail.slice(0, 160)}` : ""}`
+      );
+    }
+  }
+
   async sendReaction(
     chatGUID: string,
     selectedMessageGUID: string,

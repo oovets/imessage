@@ -71,6 +71,20 @@ export const tg = {
       text,
       replyTo: replyTo ?? null,
     }),
+  sendFile: (
+    accountId: number,
+    chatId: number,
+    fileName: string,
+    bytes: Uint8Array,
+    caption?: string,
+  ) =>
+    invoke<TgMessage>("tg_send_file", {
+      accountId,
+      chatId,
+      fileName,
+      bytes,
+      caption: caption ?? null,
+    }),
   editMessage: (
     accountId: number,
     chatId: number,

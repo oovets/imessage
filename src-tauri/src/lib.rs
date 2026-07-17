@@ -296,6 +296,7 @@ pub fn run() {
             telegram::tg_media_data_url,
             telegram::tg_media_file,
             telegram::tg_send_message,
+            telegram::tg_send_file,
             telegram::tg_edit_message,
             telegram::tg_delete_messages,
             telegram::tg_react,

@@ -48,8 +48,35 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
   const replaceMessage = useAppStore((s) => s.replaceMessage);
   const updateChatPreview = useAppStore((s) => s.updateChatPreview);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [attaching, setAttaching] = useState(false);
   const emoji = useEmojiAutocomplete(text, setText, textareaRef);
   const [pickerOpen, setPickerOpen] = useState(false);
+
+  async function sendFile(file: File) {
+    setAttaching(true);
+    try {
+      if (isTelegramChatGuid(chatGUID)) {
+        const { accountId, chatId } = parseTgChatGuid(chatGUID);
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        // The composer text (if any) rides along as the caption.
+        await tg.sendFile(accountId, chatId, file.name || "upload", bytes, text.trim() || undefined);
+        setText("");
+      } else {
+        await getClient(serverUrl, password).sendAttachment(
+          chatGUID,
+          file,
+          file.name || "upload",
+        );
+      }
+    } catch (err) {
+      setConnectionNotice(
+        `Unable to send attachment: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      setAttaching(false);
+    }
+  }
 
   const hasText = text.trim().length > 0;
   const replyPreview = decodeEscapedUnicode(replyTarget?.text);
@@ -197,10 +224,23 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
             !superlightMode && "rounded-full hover:bg-muted hover:text-foreground"
           )}
           aria-label="Attach file"
-          title="Attachments coming soon"
+          title="Attach photo or video"
+          disabled={attaching}
+          onClick={() => fileInputRef.current?.click()}
         >
           <Paperclip className="h-4 w-4" />
         </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*,video/*"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = ""; // allow re-selecting the same file
+            if (file) void sendFile(file);
+          }}
+        />
 
         <div className="relative shrink-0">
           <button

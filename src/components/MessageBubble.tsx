@@ -7,6 +7,7 @@ import { getClient } from "@/api/clientFactory";
 import { extractFirstUrl, fetchLinkPreview } from "@/lib/linkPreview";
 import { LinkPreviewCard } from "@/components/LinkPreviewCard";
 import { OrientedImage } from "@/components/OrientedImage";
+import { StreamedVideo } from "@/components/StreamedVideo";
 import { TelegramMedia } from "@/telegram/TelegramMedia";
 import {
   Dialog,
@@ -324,10 +325,9 @@ export function MessageBubble({
               }
               if (VIDEO_MIME.test(mime)) {
                 return (
-                  <video
+                  <StreamedVideo
                     key={att.guid}
                     src={src}
-                    controls
                     className="rounded-lg max-h-80 max-w-full -mx-1 mb-1"
                   />
                 );
