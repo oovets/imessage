@@ -21,6 +21,12 @@ export const sl = {
     invoke<SlMessage[]>("sl_history", { workspaceId, channelId, limit }),
   selfUserId: (workspaceId: string) =>
     invoke<string | null>("sl_self_user_id", { workspaceId }),
+  /** Known user id -> display name, for resolving `<@U123>` mentions. */
+  userNames: (workspaceId: string) =>
+    invoke<Record<string, string>>("sl_user_names", { workspaceId }),
+  /** Fetch an attachment with the workspace token; returns a local file path. */
+  downloadFile: (workspaceId: string, url: string, name: string) =>
+    invoke<string>("sl_download_file", { workspaceId, url, name }),
   send: (workspaceId: string, channelId: string, text: string, threadTs?: string) =>
     invoke<void>("sl_send", { workspaceId, channelId, text, threadTs: threadTs ?? null }),
 };

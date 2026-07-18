@@ -6,6 +6,7 @@
 // microseconds — so they convert to epoch millis rather than parse as dates.
 
 import type { Chat, Message } from "@/types";
+import { slackTextToPlain } from "./mrkdwn";
 import type { SlChat, SlChatSection, SlMessage } from "./types";
 
 export function slChatGuid(workspaceId: string, channelId: string): string {
@@ -56,24 +57,39 @@ export function slChatToChat(workspaceId: string, chat: SlChat): Chat {
   } as Chat;
 }
 
+/** Attachment guid that routes to <SlackMedia>, carrying what it needs to fetch. */
+export function slFileGuid(workspaceId: string, fileId: string): string {
+  return `slfile:${workspaceId}:${fileId}`;
+}
+
+export function parseSlFileGuid(guid: string): {
+  workspaceId: string;
+  fileId: string;
+} {
+  const [, workspaceId = "", fileId = ""] = guid.split(":");
+  return { workspaceId, fileId };
+}
+
 export function slMessageToMessage(
   workspaceId: string,
   channelId: string,
   m: SlMessage,
-  selfUserId: string | null
+  selfUserId: string | null,
+  userNames: Record<string, string> = {}
 ): Message {
-  // Slack file URLs need the workspace token to fetch, which the webview
-  // doesn't hold — so they render as named cards rather than inline media
-  // until a host-side fetch exists.
-  const attachments = (m.files ?? []).map((f) => ({
-    guid: f.id,
-    transferName: f.name,
-    mimeType: f.mimetype ?? "",
-    url: "",
-  }));
+  // Slack file URLs need the workspace token, which the webview doesn't hold —
+  // the url rides along on the attachment and SlackMedia fetches it host-side.
+  const attachments = (m.files ?? [])
+    .filter((f) => f.url_private)
+    .map((f) => ({
+      guid: slFileGuid(workspaceId, f.id),
+      transferName: f.name,
+      mimeType: f.mimetype ?? "",
+      url: f.url_private ?? "",
+    }));
   return {
     guid: slMessageGuid(workspaceId, channelId, m.ts),
-    text: m.text ?? "",
+    text: slackTextToPlain(m.text ?? "", userNames),
     isFromMe: !!selfUserId && m.user === selfUserId,
     dateCreated: slTsToMillis(m.ts),
     handle: m.user

@@ -75,7 +75,15 @@ export function ChatPane({ paneId, chatGUID, isActive, canClose, showMobileBack 
           // conversations.history returns newest-first; MessageList renders in
           // array order with the newest at the bottom.
           const ordered = slMsgs
-            .map((m) => slMessageToMessage(workspaceId, channelId, m, selfUserId))
+            .map((m) =>
+              slMessageToMessage(
+                workspaceId,
+                channelId,
+                m,
+                selfUserId,
+                useAppStore.getState().slackUserNames[workspaceId] ?? {}
+              )
+            )
             .sort((a, b) => a.dateCreated - b.dateCreated);
           setMessages(chatGUID, ordered);
         })

@@ -12,6 +12,7 @@ import { LinkPreviewCard } from "@/components/LinkPreviewCard";
 import { OrientedImage } from "@/components/OrientedImage";
 import { StreamedVideo } from "@/components/StreamedVideo";
 import { TelegramMedia } from "@/telegram/TelegramMedia";
+import { SlackMedia } from "@/slack/SlackMedia";
 import {
   Dialog,
   DialogContent,
@@ -315,6 +316,11 @@ export function MessageBubble({
               // Telegram media is fetched lazily via its own component.
               if (att.guid.startsWith("tgmedia:")) {
                 return <TelegramMedia key={att.guid} att={att} />;
+              }
+              // Slack files need the workspace token, so they go through the
+              // host rather than being loaded straight from url_private.
+              if (att.guid.startsWith("slfile:")) {
+                return <SlackMedia key={att.guid} att={att} />;
               }
               const mime = att.mimeType ?? "";
               const client = getClient(serverUrl, password);

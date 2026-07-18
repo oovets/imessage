@@ -266,6 +266,50 @@ async function slackApi(token, method, params = {}) {
 }
 
 /** Conversations from every workspace, with the user's own messages. */
+/**
+ * Slack user id -> display name for a whole workspace, in one paged call.
+ *
+ * Without it, DMs are named after the raw id ("Slack DM (U08846VMHT5)") and
+ * that id ends up in the prompt as "HOW I WRITE TO …", which teaches the model
+ * nothing. Prefers the @nickname, then the real name, then the handle.
+ */
+async function slackUserMap(token) {
+  const names = {};
+  let cursor;
+  do {
+    const res = await slackApi(token, "users.list", { limit: 200, ...(cursor ? { cursor } : {}) });
+    for (const u of res.members ?? []) {
+      names[u.id] =
+        u.profile?.display_name?.trim() || u.real_name?.trim() || u.name || u.id;
+    }
+    cursor = res.response_metadata?.next_cursor || "";
+  } while (cursor);
+  return names;
+}
+
+/**
+ * Strip Slack's mrkdwn entities so the corpus holds what a human would read.
+ * Mirrors src/slack/mrkdwn.ts — duplicated because this script is plain Node
+ * and cannot import the app's TypeScript.
+ */
+function stripSlackMrkdwn(text, userNames = {}) {
+  return text
+    .replace(/<@([UVW][A-Z0-9]+)(?:\|([^>]*))?>/g, (_m, id, label) => `@${label || userNames[id] || id}`)
+    .replace(/<#(C[A-Z0-9]+)(?:\|([^>]*))?>/g, (_m, id, name) => `#${name || id}`)
+    .replace(/<!([^>|]+)(?:\|([^>]*))?>/g, (_m, kind, label) => `@${label || kind.split("^")[0]}`)
+    .replace(/<((?:https?|mailto):[^>|]+)(?:\|([^>]*))?>/g, (_m, url, label) => label || url)
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}
+
+/** "mpdm-pelle--dev--stefan-1" is Slack's internal id for a group DM. */
+function prettyGroupDmName(raw) {
+  const m = /^mpdm-(.+?)-\d+$/.exec(raw);
+  if (!m) return `#${raw}`;
+  return m[1].split("--").join(", ");
+}
+
 async function slackConversations(perChannel = 400) {
   const workspaces = slackWorkspaces();
   if (workspaces.length === 0) return [];
@@ -281,6 +325,11 @@ async function slackConversations(perChannel = 400) {
       log(`  ! slack ${ws.name}: ${e.message}`);
       continue;
     }
+
+    const userNames = await slackUserMap(token).catch((e) => {
+      log(`  ! slack ${ws.name} users: ${e.message}`);
+      return {};
+    });
 
     let channels;
     try {
@@ -306,7 +355,7 @@ async function slackConversations(perChannel = 400) {
         for (const m of res.messages ?? []) {
           // Joins, leaves and other channel chatter aren't writing.
           if (m.subtype && m.subtype !== "thread_broadcast") continue;
-          const text = (m.text ?? "").trim();
+          const text = stripSlackMrkdwn((m.text ?? "").trim(), userNames);
           const at = Math.round(Number.parseFloat(m.ts) * 1000);
           if (m.user === me) {
             if (text) sent.push({ text, at });
@@ -316,8 +365,10 @@ async function slackConversations(perChannel = 400) {
         }
         if (sent.length === 0) continue;
         const name = ch.is_im
-          ? `Slack DM (${ch.user ?? ch.id})`
-          : `#${ch.name ?? ch.id}`;
+          ? (userNames[ch.user] ?? ch.user ?? ch.id)
+          : ch.is_mpim
+            ? prettyGroupDmName(ch.name ?? ch.id)
+            : `#${ch.name ?? ch.id}`;
         out.push({
           guid: `sl:${ws.name}:${ch.id}`,
           guids: [`sl:${ws.name}:${ch.id}`],

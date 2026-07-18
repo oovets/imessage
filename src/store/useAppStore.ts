@@ -347,6 +347,9 @@ interface AppState {
   /** workspace id -> our own Slack user id, for marking history as ours. */
   slackSelfUserIds: Record<string, string>;
   setSlackSelfUserId: (workspaceId: string, userId: string) => void;
+  /** workspace id -> (user id -> display name), for `<@U123>` mentions. */
+  slackUserNames: Record<string, Record<string, string>>;
+  setSlackUserNames: (workspaceId: string, names: Record<string, string>) => void;
   setTelegramAvailable: (v: boolean) => void;
 
   // Account grouping in the chat list. Labels come from whichever backend owns
@@ -537,6 +540,7 @@ export const useAppStore = create<AppState>()(
       collapsedAccounts: [],
       slackReloadNonce: 0,
       slackSelfUserIds: {},
+      slackUserNames: {},
       telegramPresence: {},
       telegramReloadNonce: 0,
       paneTree: EMPTY_LEAF,
@@ -811,6 +815,14 @@ export const useAppStore = create<AppState>()(
       reloadSlack: () => set((s) => ({ slackReloadNonce: s.slackReloadNonce + 1 })),
       setSlackSelfUserId: (workspaceId, userId) =>
         set((s) => ({ slackSelfUserIds: { ...s.slackSelfUserIds, [workspaceId]: userId } })),
+
+      setSlackUserNames: (workspaceId, names) =>
+        set((s) => ({
+          slackUserNames: {
+            ...s.slackUserNames,
+            [workspaceId]: { ...s.slackUserNames[workspaceId], ...names },
+          },
+        })),
 
       setAccountLabel: (key, label) =>
         set((s) =>

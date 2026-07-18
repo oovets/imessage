@@ -46,6 +46,10 @@ export function useSlackInbox() {
               const selfId = await sl.selfUserId(ws.id).catch(() => null);
               if (selfId) useAppStore.getState().setSlackSelfUserId(ws.id, selfId);
               const chats = await sl.conversations(ws.id);
+              // Listing conversations resolves most of the workspace's people;
+              // the map turns <@U123> mentions into names when history renders.
+              const names = await sl.userNames(ws.id).catch(() => null);
+              if (names) useAppStore.getState().setSlackUserNames(ws.id, names);
               return chats
                 .filter((c) => SHOWN_SECTIONS.has(c.section))
                 .map((c) => slChatToChat(ws.id, c));

@@ -309,6 +309,53 @@ pub async fn sl_self_user_id(
     Ok(with_client(&state, &workspace_id).await?.self_user_id().await)
 }
 
+/// Known user id -> display name for a workspace, so the UI can turn `<@U123>`
+/// mentions into readable names. Served from the client's cache — whoever has
+/// been resolved while listing conversations and loading history.
+#[tauri::command]
+pub async fn sl_user_names(
+    workspace_id: String,
+    state: State<'_, SlackState>,
+) -> Result<HashMap<String, String>, String> {
+    Ok(with_client(&state, &workspace_id)
+        .await?
+        .get_user_name_cache()
+        .await)
+}
+
+/// Download a Slack attachment to a temp file and return its path.
+///
+/// The bytes are written to disk rather than returned: a large image or video
+/// crossing the IPC boundary blocks the main thread (the same freeze the
+/// BlueBubbles video path had). The webview loads the result through the asset
+/// protocol, which also gives videos range requests and seeking.
+#[tauri::command]
+pub async fn sl_download_file(
+    workspace_id: String,
+    url: String,
+    name: String,
+    state: State<'_, SlackState>,
+) -> Result<String, String> {
+    // Never let a caller escape the temp dir with a crafted file name.
+    let safe_name: String = name
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' { c } else { '_' })
+        .collect();
+    let path = std::env::temp_dir().join(format!("slack-{safe_name}"));
+    if path.exists() {
+        return Ok(path.to_string_lossy().into_owned());
+    }
+
+    let bytes = with_client(&state, &workspace_id)
+        .await?
+        .fetch_file_bytes(&url)
+        .await
+        .map_err(|e| format!("slack file download failed: {e}"))?;
+
+    std::fs::write(&path, bytes).map_err(|e| format!("could not write {path:?}: {e}"))?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
 #[tauri::command]
 pub async fn sl_send(
     workspace_id: String,

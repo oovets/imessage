@@ -732,11 +732,15 @@ impl SlackClient {
         self.user_name_cache.lock().await.clone()
     }
 
+    /// Best human name for a user: the @nickname they chose, else their real
+    /// name, else the handle. Never the raw id — that is only reachable when
+    /// the API call itself fails.
     fn display_name_for_user(user: &User) -> String {
         user.profile
             .as_ref()
             .and_then(|p| p.display_name.as_ref())
             .filter(|n| !n.is_empty())
+            .or(user.real_name.as_ref().filter(|n| !n.is_empty()))
             .cloned()
             .unwrap_or_else(|| user.name.clone())
     }
@@ -1083,7 +1087,65 @@ impl SlackClient {
             }
         }
 
+        self.fill_user_names(&mut all_messages).await;
         Ok(all_messages)
+    }
+
+    /// Put a human name on every message.
+    ///
+    /// `conversations.history` identifies authors only by id (`U08846VMHT5`),
+    /// while realtime updates carry a name — so without this, loaded history
+    /// renders as raw ids while new messages in the same channel show names.
+    /// Ids are resolved in one batch through the shared cache.
+    async fn fill_user_names(&self, messages: &mut [SlackMessage]) {
+        let ids: Vec<String> = messages
+            .iter()
+            .filter(|m| m.username.is_none())
+            .filter_map(|m| m.user.clone())
+            .collect();
+        if ids.is_empty() {
+            return;
+        }
+        self.prefetch_user_infos(ids).await;
+        for message in messages.iter_mut() {
+            if message.username.is_some() {
+                continue;
+            }
+            if let Some(ref user_id) = message.user {
+                message.username = Some(self.resolve_user_name(user_id).await);
+            }
+        }
+    }
+
+    /// Fetch a file's bytes with the workspace token.
+    ///
+    /// Slack's `url_private` links are not public: without the bearer token
+    /// they return an HTML sign-in page, which is why attachments rendered as
+    /// broken images. The webview has no token, so the fetch happens here.
+    pub async fn fetch_file_bytes(&self, url: &str) -> Result<Vec<u8>> {
+        let response = self
+            .http
+            .get(url)
+            .bearer_auth(&self.token)
+            .send()
+            .await?
+            .error_for_status()?;
+
+        // A token that lacks `files:read` gets redirected to the login page
+        // with a 200, so trust the content type rather than the status.
+        let content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+        if content_type.starts_with("text/html") {
+            return Err(anyhow!(
+                "Slack returned a sign-in page for this file — the workspace token is missing the files:read scope"
+            ));
+        }
+
+        Ok(response.bytes().await?.to_vec())
     }
 
     pub async fn get_thread_replies(
