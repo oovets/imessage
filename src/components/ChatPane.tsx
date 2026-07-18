@@ -53,6 +53,31 @@ export function ChatPane({ paneId, chatGUID, isActive, canClose, showMobileBack 
   const [fetchError, setFetchError] = useState<string | null>(null);
   const paneRef = useRef<HTMLDivElement>(null);
 
+  // Focus counts as reading. A message landing in the chat this pane shows
+  // used to leave a red marker that only cleared by re-selecting the chat in
+  // the sidebar; now it clears as soon as this pane is active in a focused
+  // window — whether the message arrived just now or while the app was in
+  // the background (the once-listener catches the window refocus).
+  const unreadCount = selectedChat?.unreadCount ?? 0;
+  const markChatViewed = useAppStore((s) => s.markChatViewed);
+  useEffect(() => {
+    if (!isActive || !chatGUID || unreadCount === 0) return;
+    const view = () => {
+      markChatViewed(chatGUID);
+      // Telegram has a wired read receipt; mirror what opening the chat does.
+      if (isSource(chatGUID, "telegram")) {
+        const { accountId, chatId } = parseTgChatGuid(chatGUID);
+        void tg.markRead(accountId, chatId).catch(() => {});
+      }
+    };
+    if (document.hasFocus()) {
+      view();
+      return;
+    }
+    window.addEventListener("focus", view, { once: true });
+    return () => window.removeEventListener("focus", view);
+  }, [isActive, chatGUID, unreadCount, markChatViewed]);
+
   useEffect(() => {
     if (!chatGUID) return;
     let cancelled = false;

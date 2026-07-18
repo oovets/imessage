@@ -46,3 +46,22 @@ describe("markChatHasNewMessage", () => {
     expect(useAppStore.getState().chats[0].unreadCount).toBe(1);
   });
 });
+
+describe("markChatViewed", () => {
+  it("zeroes the unread count for the viewed chat only", () => {
+    useAppStore.setState({
+      chats: [chat("a", { unreadCount: 3 }), chat("b", { unreadCount: 2 })],
+    });
+    useAppStore.getState().markChatViewed("a");
+    const chats = useAppStore.getState().chats;
+    expect(chats.find((c) => c.guid === "a")?.unreadCount).toBe(0);
+    expect(chats.find((c) => c.guid === "b")?.unreadCount).toBe(2);
+  });
+
+  it("is a no-op when the chat is already read (no store churn)", () => {
+    useAppStore.setState({ chats: [chat("a", { unreadCount: 0 })] });
+    const before = useAppStore.getState().chats;
+    useAppStore.getState().markChatViewed("a");
+    expect(useAppStore.getState().chats).toBe(before);
+  });
+});

@@ -421,6 +421,8 @@ interface AppState {
   removeMessage: (chatGUID: string, guid: string) => void;
   replaceMessage: (chatGUID: string, oldGuid: string, message: Message) => void;
   markChatHasNewMessage: (chatGUID: string) => void;
+  /** Zero a chat's unread count (the pane showing it gained focus). */
+  markChatViewed: (chatGUID: string) => void;
   updateChatPreview: (chatGUID: string, text: string) => void;
   setReplyTarget: (chatGUID: string, message: Message | null) => void;
   setLoadingChats: (v: boolean) => void;
@@ -1019,6 +1021,19 @@ export const useAppStore = create<AppState>()(
               : c
           ),
         })),
+
+      // Focusing a pane that shows the chat counts as reading it — clearing
+      // must not require re-selecting the chat from the sidebar.
+      markChatViewed: (chatGUID) =>
+        set((s) =>
+          s.chats.some((c) => c.guid === chatGUID && c.unreadCount > 0)
+            ? {
+                chats: s.chats.map((c) =>
+                  c.guid === chatGUID ? { ...c, unreadCount: 0 } : c
+                ),
+              }
+            : s
+        ),
 
       updateChatPreview: (chatGUID, text) =>
         set((s) => ({
