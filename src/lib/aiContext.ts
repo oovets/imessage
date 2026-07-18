@@ -65,3 +65,57 @@ export async function retrieveContext(
   const oldestVisible = history.length > 0 ? history[0].dateCreated : 0;
   return episodes.filter((e) => e.at < oldestVisible - 60_000);
 }
+
+// ---------------------------------------------------------------- state
+//
+// Where the relationship stands right now (scripts/state-extractor.mjs).
+// Unlike retrieval this needs no query and is always present, which is why
+// it survives terse replies: it doesn't add words to an answer, it changes
+// which short answer is right.
+
+export interface ConversationState {
+  openQuestions?: { who: "me" | "them"; text: string }[];
+  plans?: { what: string; when: string; settled?: boolean }[];
+  promises?: { who: "me" | "them"; text: string }[];
+  threads?: string[];
+  mood?: string;
+}
+
+/** Stop trusting an extraction once it's older than this. */
+const STATE_MAX_AGE_MS = 7 * 24 * 3600_000;
+
+export async function loadConversationState(
+  chatGuid: string
+): Promise<ConversationState | null> {
+  if (!isTauriRuntime()) return null;
+  const raw = await invoke<string | null>("ai_conversation_state", { chatGuid }).catch(
+    () => null
+  );
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { extractedAt?: number; state?: ConversationState };
+    if (parsed.extractedAt && Date.now() - parsed.extractedAt > STATE_MAX_AGE_MS) return null;
+    return parsed.state ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Prompt lines for the state, or [] when nothing is actually open. */
+export function stateLines(state: ConversationState | null): string[] {
+  if (!state) return [];
+  const lines: string[] = [];
+  for (const q of state.openQuestions ?? []) {
+    lines.push(`${q.who === "me" ? "I asked and they never answered" : "They asked and I never answered"}: "${q.text}"`);
+  }
+  for (const p of state.plans ?? []) {
+    lines.push(`Plan${p.settled ? "" : " (not settled)"}: ${p.what}${p.when ? ` — ${p.when}` : ""}`);
+  }
+  for (const p of state.promises ?? []) {
+    lines.push(`${p.who === "me" ? "I promised" : "They promised"}: ${p.text}`);
+  }
+  const threads = (state.threads ?? []).slice(0, 6);
+  if (threads.length) lines.push(`Currently in play: ${threads.join(", ")}`);
+  if (state.mood) lines.push(`Tone between us lately: ${state.mood}`);
+  return lines;
+}

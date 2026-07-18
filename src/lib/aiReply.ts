@@ -6,7 +6,7 @@
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { isTauriRuntime } from "@/lib/tauriEnv";
 import type { Message } from "@/types";
-import type { RetrievedEpisode } from "@/lib/aiContext";
+import { stateLines, type ConversationState, type RetrievedEpisode } from "@/lib/aiContext";
 import type { AiProfiles, StyleCard, StyleStats } from "@/lib/aiProfiles";
 
 const httpFetch: typeof fetch = (input: RequestInfo | URL, init?: RequestInit) =>
@@ -223,7 +223,9 @@ export function buildSystemPrompt(
   /** Receives the policy so the caller can enforce it on the output. */
   onPolicy?: (p: EmojiPolicy) => void,
   /** Episodes retrieved from this conversation's embedding index. */
-  retrieved?: RetrievedEpisode[]
+  retrieved?: RetrievedEpisode[],
+  /** Where this relationship currently stands (open threads, plans, promises). */
+  state?: ConversationState | null
 ): string {
   const sections: string[] = [];
   sections.push(`${userPrompt.trim()}\n${HARD_RULES}`);
@@ -280,6 +282,17 @@ export function buildSystemPrompt(
   const policy = emojiPolicy(profiles, emojiMode);
   onPolicy?.(policy);
   if (policy.directive) sections.push(policy.directive);
+
+  const stateBullets = stateLines(state ?? null);
+  if (stateBullets.length > 0) {
+    // Always present when it exists, unlike retrieval — this is what lets a
+    // three-word reply still be the RIGHT three words.
+    sections.push(
+      "WHERE THINGS STAND with this person right now. Treat as current fact; " +
+        "don't re-ask what is already settled, don't promise again what I already promised:\n- " +
+        stateBullets.join("\n- ")
+    );
+  }
 
   if (retrieved && retrieved.length > 0) {
     // Dated excerpts from further back than the visible window. Facts and
@@ -411,7 +424,9 @@ export async function generateReply(
   /** Critique notes from a failed attempt, to steer the rewrite (§6). */
   rewriteNotes?: string,
   /** Past-context episodes from the conversation's embedding index. */
-  retrieved?: RetrievedEpisode[]
+  retrieved?: RetrievedEpisode[],
+  /** Where this relationship currently stands. */
+  state?: ConversationState | null
 ): Promise<GeneratedReply | null> {
   const base = cfg.endpoint.trim().replace(/\/$/, "");
   if (!base || !cfg.model.trim()) return null;
@@ -427,7 +442,8 @@ export async function generateReply(
     (p) => {
       policy = p;
     },
-    retrieved
+    retrieved,
+    state
   );
   const context = history
     .filter((m) => (m.text ?? "").trim().length > 0)

@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { useAppStore } from "@/store/useAppStore";
 import { generateReply, buildSystemPrompt, critiqueReply, critiqueFails, type Critique } from "@/lib/aiReply";
 import { loadAiProfiles, type AiProfiles } from "@/lib/aiProfiles";
-import { retrieveContext } from "@/lib/aiContext";
+import { loadConversationState, retrieveContext } from "@/lib/aiContext";
 import { loadSummary, type AiSummary } from "@/lib/aiTelemetry";
 import { cn } from "@/lib/utils";
 import type { Message } from "@/types";
@@ -105,19 +105,22 @@ export function AiSimulatorDialog() {
       // Retrieval runs against the REAL conversation index for the selected
       // relationship — the simulator's whole point is showing what the
       // autopilot would actually do, retrieved context included.
-      const retrieved =
+      const [retrieved, convState] =
         selected !== "global"
-          ? await retrieveContext(selected, history, aiReply).catch(() => [])
-          : [];
+          ? await Promise.all([
+              retrieveContext(selected, history, aiReply).catch(() => []),
+              loadConversationState(selected).catch(() => null),
+            ])
+          : [[], null];
       setLastPrompt(
         buildSystemPrompt(
           aiReply.systemPrompt, contactName, aiProfiles,
-          "unknown", undefined, "auto", undefined, retrieved
+          "unknown", undefined, "auto", undefined, retrieved, convState
         )
       );
       const t0 = performance.now();
       const first = await generateReply(
-        aiReply, history, contactName, aiProfiles, undefined, retrieved
+        aiReply, history, contactName, aiProfiles, undefined, retrieved, convState
       );
       if (!first) {
         setError("The model returned nothing usable.");
@@ -131,7 +134,7 @@ export function AiSimulatorDialog() {
         critique = await critiqueReply(aiReply, first.systemPrompt, history, first.text);
         if (critique && critiqueFails(critique)) {
           const second = await generateReply(
-            aiReply, history, contactName, aiProfiles, critique.notes, retrieved
+            aiReply, history, contactName, aiProfiles, critique.notes, retrieved, convState
           );
           if (second) {
             final = second.text;

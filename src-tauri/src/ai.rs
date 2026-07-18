@@ -242,3 +242,29 @@ mod tests {
         assert_eq!(cosine(&[1.0], &[1.0, 2.0]), 0.0); // dim mismatch -> harmless
     }
 }
+
+/// The extracted conversation state for a chat guid (scripts/state-extractor.mjs).
+///
+/// Separate from the relationship profile on purpose: the profile is HOW I
+/// write to someone and changes slowly; state is WHERE WE STAND and changes
+/// daily. Returns None when no extraction exists — every consumer treats
+/// missing state as "nothing open".
+#[tauri::command]
+pub async fn ai_conversation_state(app: tauri::AppHandle, chat_guid: String) -> Option<String> {
+    let dir = ai_dir(&app)?.join("state");
+    let index = tokio::fs::read_to_string(dir.join("index.json")).await.ok()?;
+    let index: serde_json::Value = serde_json::from_str(&index).ok()?;
+    for entry in index.get("conversations")?.as_array()? {
+        let matches = entry.get("guid").and_then(|v| v.as_str()) == Some(chat_guid.as_str())
+            || entry
+                .get("guids")
+                .and_then(|g| g.as_array())
+                .map(|gs| gs.iter().any(|v| v.as_str() == Some(chat_guid.as_str())))
+                .unwrap_or(false);
+        if matches {
+            let file = entry.get("file")?.as_str()?;
+            return tokio::fs::read_to_string(dir.join(file)).await.ok();
+        }
+    }
+    None
+}

@@ -36,6 +36,8 @@ const MODEL = arg("model", "gemma3:12b");
 const LABEL = arg("label", MODEL);
 const RUNS = parseInt(arg("runs", "1"), 10);
 const RETRIEVAL = has("retrieval");
+const STATE = has("state");
+const STATE_DIR = join(AI, "state");
 const EMBED_MODEL = arg("embed-model", "bge-m3");
 const EMB_DIR = join(AI, "embeddings");
 
@@ -197,7 +199,33 @@ if (cases.length === 0) {
 // ---------------------------------------------------------------- prompt
 // Mirrors src/lib/aiReply.ts closely enough to benchmark prompt changes; keep
 // the two in step when the runtime prompt changes shape.
-function buildPrompt(rel, retrieved = []) {
+/** Mirrors src/lib/aiContext.ts stateLines. */
+function stateLines(state) {
+  if (!state) return [];
+  const lines = [];
+  for (const q of state.openQuestions ?? [])
+    lines.push(`${q.who === "me" ? "I asked and they never answered" : "They asked and I never answered"}: "${q.text}"`);
+  for (const p of state.plans ?? [])
+    lines.push(`Plan${p.settled ? "" : " (not settled)"}: ${p.what}${p.when ? ` — ${p.when}` : ""}`);
+  for (const p of state.promises ?? [])
+    lines.push(`${p.who === "me" ? "I promised" : "They promised"}: ${p.text}`);
+  const threads = (state.threads ?? []).slice(0, 6);
+  if (threads.length) lines.push(`Currently in play: ${threads.join(", ")}`);
+  if (state.mood) lines.push(`Tone between us lately: ${state.mood}`);
+  return lines;
+}
+
+function loadState(guid) {
+  const index = readJson(join(STATE_DIR, "index.json"));
+  if (!index) return null;
+  const entry = index.conversations.find(
+    (c) => c.guid === guid || (c.guids ?? []).includes(guid)
+  );
+  if (!entry) return null;
+  return readJson(join(STATE_DIR, entry.file))?.state ?? null;
+}
+
+function buildPrompt(rel, retrieved = [], state = null) {
   const card = style.card ?? {};
   const st = style.stats ?? {};
   const sections = [
@@ -217,6 +245,14 @@ function buildPrompt(rel, retrieved = []) {
     sections.push(
       "EXAMPLES of messages I have sent this contact — style only, never copy facts:\n" +
         rel.examples.slice(0, 5).map((e) => `- ${e}`).join("\n")
+    );
+  }
+  const bullets = stateLines(state);
+  if (bullets.length > 0) {
+    sections.push(
+      "WHERE THINGS STAND with this person right now. Treat as current fact; " +
+        "don't re-ask what is already settled, don't promise again what I already promised:\n- " +
+        bullets.join("\n- ")
     );
   }
   if (retrieved.length > 0) {
@@ -262,10 +298,13 @@ async function judge(system, incoming, reply) {
 }
 
 /**
- * Memory probe judge. The style judge answers "does this sound like them",
- * which retrieval can improve without the reply using any recalled fact —
- * so measuring retrieval needs its own question, asked without the reply's
- * style in view.
+ * Memory probe judge.
+ *
+ * Deliberately NOT "how much of the fact did the reply contain". This user
+ * answers in one to five words; the first version of this judge measured
+ * verbosity and scored every reply ~1 whether or not retrieval was on. What
+ * matters is whether the reply is one only a person who remembers would send
+ * — "haha nej men älsklingsdorisen då" over "hahaha ja", both three words.
  */
 async function judgeMemory(incoming, reply, recalls) {
   const raw = await chat([
@@ -273,10 +312,14 @@ async function judgeMemory(incoming, reply, recalls) {
       role: "system",
       content:
         "A person was asked something that refers back to an earlier conversation. " +
-        "Judge ONLY whether their reply shows they remember the specific fact below. " +
-        "Short replies can still show recall; vague agreement ('ja visst', 'haha') does NOT. " +
+        "They write in a very terse style — one to five words is normal and correct for them. " +
+        "Judge whether the reply is the RIGHT reply given the fact below, not whether it " +
+        "restates it. A short reply that could only have been written by someone who " +
+        "remembers scores high; a generic reply that would fit any message scores low " +
+        "('hahaha ja', 'shit', 'nice' with nothing tying it to the fact). Restating the " +
+        "fact in full is NOT better than a knowing two-word reply. " +
         'Answer with ONLY minified JSON: {"showsRecall":0-10,"invented":true|false}. ' +
-        "invented = the reply asserts details that contradict or go beyond the fact.",
+        "invented = asserts details that contradict or go beyond the fact.",
     },
     {
       role: "user",
@@ -297,7 +340,8 @@ for (const c of cases) {
   const incoming0 = [...c.messages].reverse().find((m) => !m.fromMe)?.text ?? "";
   const retrieved =
     RETRIEVAL && c.profile ? await retrieve(c.profile, incoming0).catch(() => []) : [];
-  const system = buildPrompt(rel, retrieved);
+  const convState = STATE && c.profile ? loadState(c.profile) : null;
+  const system = buildPrompt(rel, retrieved, convState);
   const context = c.messages.map((m) => ({
     role: m.fromMe ? "assistant" : "user",
     content: m.text,
@@ -312,7 +356,7 @@ for (const c of cases) {
       const mem = c.recalls ? await judgeMemory(incoming, reply, c.recalls) : null;
       scores.push({ case: c.name, reply, ...s, ...(mem ?? {}) });
       const verdict = s.wouldSend ? "✓" : "✗";
-      const ctx = RETRIEVAL ? `ctx:${retrieved.length} ` : "";
+      const ctx = `${RETRIEVAL ? `ctx:${retrieved.length} ` : ""}${STATE && convState ? "st " : ""}`;
       const recall = mem ? `recall:${mem.showsRecall}${mem.invented ? "!" : ""} ` : "";
       console.log(
         `  ${verdict} ${c.name.padEnd(22)} ${ctx}${recall}me:${s.soundsLikeMe} ` +
@@ -335,6 +379,7 @@ const result = {
   label: LABEL,
   model: MODEL,
   retrieval: RETRIEVAL,
+  state: STATE,
   cases: cases.length,
   samples: scores.length,
   soundsLikeMe: avg((x) => x.soundsLikeMe),

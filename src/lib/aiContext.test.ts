@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { retrievalQuery } from "./aiContext";
+import { retrievalQuery, stateLines } from "./aiContext";
 import { buildSystemPrompt } from "./aiReply";
 import type { Message } from "@/types";
 
@@ -46,5 +46,40 @@ describe("prompt with retrieved context", () => {
   it("omits the section entirely when nothing was retrieved", () => {
     const prompt = buildSystemPrompt("Reply as me.", "Pelle", null);
     expect(prompt).not.toContain("RELEVANT PAST CONTEXT");
+  });
+});
+
+describe("stateLines", () => {
+  it("attributes questions and promises to the right side", () => {
+    const lines = stateLines({
+      openQuestions: [{ who: "them", text: "Har du det bra?" }],
+      promises: [{ who: "me", text: "ska kolla macbook-pris" }],
+    });
+    expect(lines[0]).toContain("They asked and I never answered");
+    expect(lines[1]).toContain("I promised");
+  });
+
+  it("marks unsettled plans so the model doesn't treat them as booked", () => {
+    const [line] = stateLines({
+      plans: [{ what: "köpa bäddsoffa", when: "framtiden", settled: false }],
+    });
+    expect(line).toContain("(not settled)");
+  });
+
+  it("is empty for an empty or missing state, so the section is omitted", () => {
+    expect(stateLines(null)).toEqual([]);
+    expect(stateLines({ openQuestions: [], plans: [], threads: [] })).toEqual([]);
+  });
+});
+
+describe("prompt with state", () => {
+  it("adds a current-standing section with anti-repeat instructions", () => {
+    const prompt = buildSystemPrompt(
+      "Reply as me.", "Sara", null, "unknown", undefined, "auto", undefined, undefined,
+      { plans: [{ what: "städa", when: "2026-07-20 9:30", settled: true }] }
+    );
+    expect(prompt).toContain("WHERE THINGS STAND");
+    expect(prompt).toContain("städa — 2026-07-20 9:30");
+    expect(prompt).toContain("don't re-ask what is already settled");
   });
 });
