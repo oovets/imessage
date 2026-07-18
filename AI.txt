@@ -1,3 +1,12 @@
+DESIGN PRINCIPLES
+=================
+
+- Personality is distilled, never inferred at runtime.
+- Relationships matter more than global style.
+- Deterministic rules beat probabilistic prompting.
+- Observability is mandatory.
+- Less data. More signal.
+
 MESSAGES DESKTOP — AI FEATURES
 ==============================
 
