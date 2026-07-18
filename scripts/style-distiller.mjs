@@ -335,7 +335,14 @@ const EMOJI_BY_NAME = (() => {
 
 function stripSlackMrkdwn(text, userNames = {}) {
   return text
-    .replace(/:([a-z0-9_+-]+):/g, (whole, name) => EMOJI_BY_NAME.get(name) ?? whole)
+    // ":skin-tone-2" is a modifier on the emoji before it, never text.
+    .replace(/:skin-tone-\d+:/g, "")
+    // Unlike the app, the corpus DROPS shortcodes the table doesn't know
+    // (":crossed_fingers:", or workspace-custom ones). Displaying them is
+    // right — Slack shows a custom image — but keeping them here would teach
+    // the model to type them literally, and enforceEmojiPolicy only strips
+    // emoji characters, so they would evade every emoji guardrail.
+    .replace(/:([a-z0-9_+-]+):/g, (whole, name) => EMOJI_BY_NAME.get(name) ?? "")
     .replace(/<@([UVW][A-Z0-9]+)(?:\|([^>]*))?>/g, (_m, id, label) => `@${label || userNames[id] || id}`)
     .replace(/<#(C[A-Z0-9]+)(?:\|([^>]*))?>/g, (_m, id, name) => `#${name || id}`)
     .replace(/<!([^>|]+)(?:\|([^>]*))?>/g, (_m, kind, label) => `@${label || kind.split("^")[0]}`)
@@ -394,6 +401,15 @@ async function slackConversations(perChannel = 400) {
         });
         const sent = [];
         const incomingTimes = [];
+
+        // Resolve any mentioned id users.list didn't return, before the text is
+        // rewritten — otherwise a raw "@U0B5S06ST5H" ends up in the corpus.
+        for (const m of res.messages ?? []) {
+          for (const [, id] of (m.text ?? "").matchAll(/<@([UVW][A-Z0-9]+)/g)) {
+            await slackUserName(token, id, userNames);
+          }
+        }
+
         for (const m of res.messages ?? []) {
           // Joins, leaves and other channel chatter aren't writing.
           if (m.subtype && m.subtype !== "thread_broadcast") continue;
