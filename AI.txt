@@ -1,0 +1,422 @@
+MESSAGES DESKTOP — AI FEATURES
+==============================
+
+Everything here runs against your own endpoint. Message history, style
+profiles and telemetry never leave your machines; the app talks to whatever
+OpenAI-compatible server you point it at (a GPU box on the LAN, or a hosted
+API if you choose one).
+
+The engine follows the AI Personality Engine spec (v1.1), and the section
+numbers below refer to it.
+
+
+-------------------------------------------------------------------------------
+1. WHAT IT IS
+-------------------------------------------------------------------------------
+
+A reply engine that writes as you, not as an assistant. The guiding idea from
+the spec:
+
+    "Memory is not personality."
+
+People recognise each other by writing rhythm, word choice, humour and how
+they adapt per relationship — not by recalling facts. So the engine separates
+WHAT to say (the live conversation) from HOW to say it (a profile distilled
+from your own sent messages), and spends its prompt budget on the latter.
+
+The difference is not subtle. Same incoming message, same model, with and
+without the profiles:
+
+    without:  "nice! 👌 låter toppen."
+    with:     "hahahahaha lillasyster 😂 fett!"
+
+
+-------------------------------------------------------------------------------
+2. THE PIPELINE
+-------------------------------------------------------------------------------
+
+    incoming message
+      → debounce 4s (let a burst of messages finish)
+      → load style profile + relationship profile   (cached 5 min)
+      → build layered prompt
+      → generate
+      → self-critique  → rewrite once if it doesn't sound like you
+      → enforce emoji policy
+      → draft appears in the composer (or auto-sends)
+      → you accept / edit / reject      ← recorded as training signal
+
+Every step is traceable (see §8 below).
+
+
+-------------------------------------------------------------------------------
+3. THE STYLE DISTILLER (offline)          scripts/style-distiller.mjs
+-------------------------------------------------------------------------------
+
+Reads every message YOU have sent — iMessage through the local BlueBubbles
+API, Telegram through the app's SQLite — and boils it down to compact profiles.
+Run it in batches, never per message: incremental updates make a personality
+drift and wobble (spec §8).
+
+    node scripts/style-distiller.mjs
+    node scripts/style-distiller.mjs --skip-llm        # refresh stats only
+    node scripts/style-distiller.mjs --max-contacts 40 --min-sent 20
+
+Current corpus: 15,772 sent messages across 169 conversations, 25 relationship
+profiles, about 3 minutes end to end.
+
+WHAT IT MEASURES (hard statistics — no model involved)
+
+    message length          median 3 words, mean 4.8
+    casing                  54% of messages start lowercase
+    punctuation             0.6% end with a period
+    emoji                   0.23 per message; 12% of messages end in one
+    laughter                typed "haha" 7% vs drawn 😂 3.6%
+    favourite expressions   recurring 2–3 word n-grams
+    reply latency           median seconds between their message and yours
+    vocabulary              unique-word count
+
+WHAT THE MODEL DISTILLES (qualitative cards)
+
+    summary, humour, energy, language notes
+    sarcasm / warmth / directness / formality, each 0–10
+    signature phrases (general expressions only — never nicknames)
+    do / don't lists
+
+Written to ~/Library/Application Support/com.oovets.messages/ai/
+    style_profile.json          you, globally
+    relationships/<guid>.json   you, per contact, with few-shot examples
+    index.json                  lookup table
+
+RELATIONSHIP PROFILES matter more than the global one. The same person writes
+differently to a best friend (sarcasm 7/10, warmth 8/10, formality 2/10) than
+to a parent or a colleague, and a reply in the wrong register is more jarring
+than a bland one.
+
+
+-------------------------------------------------------------------------------
+4. LAYERED PROMPT (spec §5)
+-------------------------------------------------------------------------------
+
+The layers are kept separate on purpose — mixing them is what makes replies
+generic:
+
+    RULES           hard rules, always present (§9)
+    STYLE           your global card + measured traits
+    RELATIONSHIP    how you write to THIS contact
+    EXAMPLES        3–5 of your real messages to them, style only
+    LANGUAGE        which language, and that idioms don't translate
+    DELIVERY        tone dials, if you moved any
+    EMOJI           this reply's emoji policy
+    CONTEXT         last 20 messages of the actual conversation
+
+HARD RULES (never negotiable)
+    never copy a previous message verbatim
+    never invent facts, plans or commitments
+    never mention being an AI, never explain itself
+    reply in the conversation's language
+    never use nicknames unless they appear in THIS contact's examples
+
+That last one is there because the engine once called the user's ex
+"lillasyster" — a term of address for his actual sister that had been
+promoted into the global profile. Terms of address are now relationship-bound
+at both distillation and generation time.
+
+
+-------------------------------------------------------------------------------
+5. DRAFT MODE, AUTO MODE           robot icon in the chat header
+-------------------------------------------------------------------------------
+
+Click it to cycle:
+
+    off (grey)  →  draft (blue)  →  auto-send (amber)  →  off
+
+DRAFT is the default and the one to use. The suggestion appears above the
+composer with Use / dismiss; Use puts it in the textbox so you can edit before
+sending. This is also what makes the engine improve — your edits are the
+training signal (§7).
+
+AUTO-SEND replies without asking. Guardrails, all configurable:
+    minimum seconds between replies (default 10)
+    maximum replies in a row before going quiet (default 10)
+    the counter resets whenever you send something yourself
+
+Set both to 0 and there are no brakes at all — two bots in one chat will then
+talk forever.
+
+
+-------------------------------------------------------------------------------
+6. SELF-CRITIQUE (spec §6)
+-------------------------------------------------------------------------------
+
+A second pass scores the draft against the same style layers — "would he
+actually send this?" — on four axes: sounds-like-me, fits-recipient,
+too-AI-like, too-verbose. If any falls short the reply is regenerated once
+with the critique as guidance.
+
+The thresholds are deliberately asymmetric. Models treat the problem axes as
+if the middle of the scale were neutral: a three-word reply scored 5/10
+"verbose" while the critic's own note praised its brevity. So a rewrite needs
+a clearly bad score there (>7), while the higher-is-better axes keep the
+strict bar (<8). Without that, self-critique made replies worse and doubled
+the wait.
+
+Verified on hand-written drafts:
+
+    "Thank you so much for the kind invitation!"   me 1/10, AI-like 9/10  → rewrite
+    polite, over-explaining, three sentences        me 2/10, verbose 9/10  → rewrite
+    "fett, vi kommer"                               me 8/10, fit 10/10     → kept
+
+Costs roughly double the latency. Toggle in Settings.
+
+
+-------------------------------------------------------------------------------
+7. EMOJI POLICY
+-------------------------------------------------------------------------------
+
+Worth its own section because it took three attempts.
+
+A model cannot hold a frequency across replies. Ask for "roughly one in five"
+and you get one in every reply; ban them and you get none. And listing your
+favourite emoji in the prompt reads as an invitation — measured on gemma3:12b,
+six generations of the same message:
+
+    listing favourites                        laughing emoji in 6 of 6 (stacked 😂😘)
+    no list + "I write laughter as text"      3 of 6
+    policy enforced after generation          0 — guaranteed
+
+So the measured rate is rolled per reply and the outcome is ENFORCED on the
+text afterwards, not requested: no emoji when the roll said none, laughter
+emoji removed for someone who types their laughter, never more than one.
+
+Settings → Emoji: "match how often I actually use them" or "never".
+
+
+-------------------------------------------------------------------------------
+8. OBSERVABILITY
+-------------------------------------------------------------------------------
+
+TELEMETRY (spec §14)          ai/telemetry.jsonl
+    Every draft and its fate: generated (latency, model, profile), accepted
+    (sent byte-identical), edited (word diff + seconds spent editing),
+    rejected, auto_sent. Every edit is training data.
+
+    Visible in the simulator's stats panel: accept rate as the headline
+    number, median latency, how much your edits actually change, accept rate
+    per relationship, and whether rewritten drafts do better than accepted-
+    as-is ones (the §18 A/B that says whether self-critique earns its wait).
+
+TRACING (spec §17)            OpenTelemetry → any collector
+    Settings → Trace collector: http://gpulab:4318
+
+    One trace per reply, deliberately outliving generation — a draft takes
+    seconds but the interesting number is the round trip to your verdict:
+
+        ai.reply
+        ├── profile.load
+        ├── llm.generate
+        ├── llm.critique      (all four scores as attributes)
+        ├── llm.rewrite       (only when the critique failed)
+        └── ai.outcome        accepted / edited / rejected / auto_sent
+
+    Jaeger runs on gpulab (http://gpulab:16686). Sort by duration to see
+    whether generation or critique costs more; compare rejected traces
+    against accepted ones to see what the bad ones scored.
+
+    The SDK only loads once an endpoint is set, so tracing costs nothing when
+    it's off.
+
+
+-------------------------------------------------------------------------------
+9. THE SIMULATOR              flask icon in the sidebar
+-------------------------------------------------------------------------------
+
+A sandboxed chat with your own autopilot: pick a relationship profile, write
+as that contact, and the engine answers as you — through the real pipeline,
+but nothing is ever sent to anyone.
+
+    per-reply latency and critique scores
+    prompt inspector — exactly what the model was given
+    stats panel — the telemetry summary
+
+This is where every personality bug so far was caught, before any real person
+received anything odd. Use it after re-distilling, after changing the persona
+prompt, and after switching models.
+
+
+-------------------------------------------------------------------------------
+10. BENCHMARK SUITE (spec §16)   scripts/personality-benchmark.mjs
+-------------------------------------------------------------------------------
+
+Personality as unit tests. Replays a fixed set of conversations and has the
+model judge each answer against your profile, then prints the delta against
+the previous run.
+
+    node scripts/personality-benchmark.mjs --label "gemma3-27b"
+    node scripts/personality-benchmark.mjs --seed        # rebuild cases
+
+Cases span a favour, bad news, banter, a pushy stranger and making plans, and
+seed themselves from your own relationship profiles. Edit
+ai/benchmark/cases.json to add your own.
+
+Baseline (gemma3:12b): wouldSend 100%, soundsLikeMe 8.14, fitsRecipient 9.43,
+tooAiLike 2.43, tooVerbose 3.71.
+
+Run it before and after any prompt or model change. It is the only honest way
+to know whether a change helped.
+
+
+-------------------------------------------------------------------------------
+11. DELIVERY DIALS (spec §10)
+-------------------------------------------------------------------------------
+
+Five sliders — humour, sarcasm, warmth, energy, formality — as OFFSETS from
+your profile, not absolute levels. Centred contributes nothing to the prompt,
+so your personality is preserved and only deliberate deviations reach the
+model: "be much more sarcastic than usual — same person, different mood".
+
+Useful when you're tired and terse, or dealing with someone you'd rather be
+warmer to than usual.
+
+
+-------------------------------------------------------------------------------
+12. CONTINUOUS LEARNING (spec §19)   scripts/schedule-distiller.sh
+-------------------------------------------------------------------------------
+
+    scripts/schedule-distiller.sh              # nightly at 04:15
+    scripts/schedule-distiller.sh --status
+    scripts/schedule-distiller.sh --uninstall
+
+launchd rather than cron: it survives reboots and catches up if the Mac was
+asleep. Profiles rebuild nightly, the app picks them up within five minutes.
+
+
+-------------------------------------------------------------------------------
+13. SETUP
+-------------------------------------------------------------------------------
+
+1.  A model. Ollama on a GPU box is enough:
+        ollama pull gemma3:12b
+    12B fits in 12GB VRAM and answers in a couple of seconds. It was chosen
+    over qwen3:8b (flat tone) and larger models (won't fit without spilling
+    to CPU). Ollama unloads after ~5 minutes idle, so the first reply after a
+    pause costs ~10s extra; OLLAMA_KEEP_ALIVE=-1 avoids that.
+
+2.  Settings → AI auto-reply
+        endpoint    http://gpulab:11434/v1
+        model       gemma3:12b
+        persona     defaults to "reply as me, short and natural, never
+                    mention being an AI" — edit to taste
+
+3.  Distil your profiles:
+        node scripts/style-distiller.mjs
+
+4.  Try it in the simulator before enabling it on a real chat.
+
+5.  Enable draft mode on one chat and see how it feels.
+
+
+-------------------------------------------------------------------------------
+14. FUTURE IDEAS
+-------------------------------------------------------------------------------
+
+Roughly in order of value per effort.
+
+NEAR TERM
+
+  Regenerate button on a draft
+      Currently a draft you dislike can only be dismissed. A regenerate that
+      records what you rejected would feed the telemetry a much stronger
+      signal than silence.
+
+  Learn from edits, not just measure them
+      The diff between draft and sent is already recorded. Feeding recent
+      edits back as corrective examples ("I changed X to Y") would close the
+      loop the spec hints at without retraining anything.
+
+  Per-relationship overrides
+      Draft mode for family, never for your boss, auto for the group chat
+      that only needs acknowledgements. Today the mode is per chat but the
+      settings are global.
+
+  Suggest, don't interrupt
+      Instead of generating on every incoming message, generate when you open
+      a chat you haven't replied to. Fewer wasted generations, and the draft
+      arrives when you're actually about to answer.
+
+  Time-aware replies
+      The profile already measures your median reply latency per contact. A
+      reply that would realistically have taken you four hours shouldn't
+      arrive in four seconds — auto mode could hold it.
+
+MEDIUM TERM
+
+  Conversation-context extraction (spec §1, only partly done)
+      Explicitly extract topic, open questions and whether a reply is even
+      expected. Right now the model infers all of it from raw context; making
+      it explicit would let the engine stay quiet when nothing is being asked.
+
+  Mood detection (spec §10, deferred)
+      Infer your current state from your recent outgoing messages and adapt
+      delivery. Deferred because it's easy to get wrong and the dials cover
+      the deliberate case — but the data is there.
+
+  Drift detection (spec §7)
+      Compare recent generations against the stored profile and flag when
+      output creeps toward AI clichés or excessive positivity. The benchmark
+      catches this between runs; continuous detection would catch it sooner.
+
+  Embedding similarity in the benchmark
+      Currently the judge is an LLM. Embedding your real replies and the
+      generated ones and comparing distances would add a cheaper, less
+      subjective axis.
+
+  Model comparison harness
+      The benchmark takes --model and --label already. A loop over several
+      models producing a comparison table would make "is 27B worth it?"
+      answerable in one command.
+
+LONGER TERM / SPECULATIVE
+
+  Thread-aware summarisation
+      For long-running conversations, a rolling summary layer so the engine
+      knows what you've already agreed to without carrying 50 messages.
+
+  Multi-source personality
+      The distiller already reads iMessage and Telegram. Slack, email or
+      anywhere else you write would sharpen the profile — and expose how
+      differently you write per medium, which is worth seeing on its own.
+
+  A "would I send this?" keyboard shortcut
+      Score any text you've written yourself against your profile. Useful
+      when you're about to send something at 2am.
+
+  Personality diffing over time
+      The distiller runs nightly and overwrites. Keeping versions would show
+      how your writing actually changes over months — the dashboard the spec
+      describes in §12, built from real history rather than estimates.
+
+  Shared benchmark cases
+      The scenarios are generic enough to be portable. A shared set would let
+      different people compare how well the engine captures them, without
+      sharing any message data.
+
+
+-------------------------------------------------------------------------------
+15. LIMITATIONS
+-------------------------------------------------------------------------------
+
+  It has no memory beyond the current conversation. It cannot know what you
+  agreed with someone last week unless it's in the last 20 messages.
+
+  It will confidently match your tone while saying something you wouldn't
+  commit to. The hard rules forbid inventing plans, but read before sending —
+  that is what draft mode is for.
+
+  Quality tracks corpus size. A contact with 40 messages gets a thin profile;
+  one with 1,400 gets an uncanny one.
+
+  Everything is measured on gemma3:12b. Other models will need the thresholds
+  in self-critique re-checked — run the benchmark.
+
+  Social engineering against a language model is a live sport. Don't leave
+  auto-send on in chats where sensitive history sits in the context window.

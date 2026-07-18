@@ -3,7 +3,7 @@ import { ArrowLeft, Bot, MessageCircleDashed, SplitSquareHorizontal, SplitSquare
 import { Button } from "@/components/ui/button";
 import { MessageList } from "@/components/MessageList";
 import { MessageInput } from "@/components/MessageInput";
-import { useAppStore, isTelegramChatGuid } from "@/store/useAppStore";
+import { useAppStore, isTelegramChatGuid, aiModeFor } from "@/store/useAppStore";
 import { getClient } from "@/api/clientFactory";
 import { getChatDisplayName, getChatInitials, formatMessageTime } from "@/types";
 import { tg } from "@/telegram/api";
@@ -41,8 +41,8 @@ export function ChatPane({ paneId, chatGUID, isActive, canClose, showMobileBack 
   const aiConfigured = useAppStore(
     (s) => s.aiReply.endpoint.trim().length > 0 && s.aiReply.model.trim().length > 0
   );
-  const aiEnabled = useAppStore((s) => (chatGUID ? !!s.aiReplyChats[chatGUID] : false));
-  const toggleAiReplyChat = useAppStore((s) => s.toggleAiReplyChat);
+  const aiMode = useAppStore((s) => (chatGUID ? aiModeFor(s.aiReplyChats, chatGUID) : "off"));
+  const cycleAiReplyChat = useAppStore((s) => s.cycleAiReplyChat);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const paneRef = useRef<HTMLDivElement>(null);
 
@@ -91,12 +91,13 @@ export function ChatPane({ paneId, chatGUID, isActive, canClose, showMobileBack 
       .getMessages(chatGUID, 50, after)
       .then(async (msgs) => {
         if (cancelled) return;
-        if (hasCached && msgs.length === 0) {
-          try {
-            msgs = await client.getMessages(chatGUID, 50);
-          } catch {}
-          if (cancelled) return;
-        }
+        // An empty delta means nothing arrived since lastFetchedAt — the normal
+        // answer when reopening a quiet chat. It used to trigger a second,
+        // full-window fetch (doubling every reopen) as a workaround for the
+        // cursor being poisoned by optimistic sends; that cause is fixed in
+        // upsertMessage, so trust the empty response. Real failures land in
+        // .catch below.
+        if (hasCached && msgs.length === 0) return;
         if (hasCached) mergeMessages(chatGUID, msgs);
         else setMessages(chatGUID, msgs);
       })
@@ -110,7 +111,15 @@ export function ChatPane({ paneId, chatGUID, isActive, canClose, showMobileBack 
     return () => {
       cancelled = true;
     };
-  }, [chatGUID, serverUrl, password, telegramReloadNonce]);
+    // The nonce is a Telegram-only signal. Keeping it unconditional re-ran this
+    // whole effect — including the BlueBubbles fetch — for every open iMessage
+    // pane each time Telegram reloaded.
+  }, [
+    chatGUID,
+    serverUrl,
+    password,
+    isTelegramChatGuid(chatGUID ?? "") ? telegramReloadNonce : 0,
+  ]);
 
   const empty = !chatGUID || !selectedChat;
 
@@ -187,11 +196,19 @@ export function ChatPane({ paneId, chatGUID, isActive, canClose, showMobileBack 
               size="icon"
               className={cn(
                 "h-7 w-7",
-                aiEnabled ? "text-primary" : "text-muted-foreground"
+                aiMode === "off" && "text-muted-foreground",
+                aiMode === "draft" && "text-primary",
+                aiMode === "auto" && "text-amber-500"
               )}
-              onClick={() => chatGUID && toggleAiReplyChat(chatGUID)}
-              aria-label={aiEnabled ? "Disable AI auto-reply" : "Enable AI auto-reply"}
-              title={aiEnabled ? "AI auto-reply is ON for this chat" : "Enable AI auto-reply for this chat"}
+              onClick={() => chatGUID && cycleAiReplyChat(chatGUID)}
+              aria-label="Cycle AI reply mode"
+              title={
+                aiMode === "off"
+                  ? "AI replies off — click for draft mode (suggestions in the composer)"
+                  : aiMode === "draft"
+                    ? "AI draft mode: suggestions land in the composer — click for auto-send"
+                    : "AI auto-send is ON for this chat — click to turn off"
+              }
             >
               <Bot className="h-4 w-4" />
             </Button>

@@ -7,6 +7,10 @@ import {
   notePreferredSendGuid,
 } from "@/lib/chatThreadMerge";
 
+// Re-check Private API availability at most this often; the helper can drop
+// out mid-session when Messages restarts.
+const PRIVATE_API_TTL_MS = 60_000;
+
 const CONTACT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 // Route API calls through the Tauri HTTP plugin (Rust-side) when running in the
@@ -27,6 +31,8 @@ export class BlueBubblesClient {
   private baseUrl: string;
   private password: string;
   private contactCache: Map<string, string> | null = null;
+  private privateApiOk = false;
+  private privateApiChecked: number | null = null;
 
   constructor(serverUrl: string, password: string) {
     this.baseUrl = serverUrl.replace(/\/$/, "");
@@ -160,7 +166,9 @@ export class BlueBubblesClient {
       res = await httpFetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        // Ask for the last message inline: without it every chat needed its
+        // own limit-1 probe afterwards (600+ requests on a real account).
+        body: JSON.stringify({ with: ["lastMessage"] }),
       });
     } catch (err) {
       throw new Error(`getChats network error for ${this.baseUrl}: ${String(err)}`);
@@ -180,31 +188,87 @@ export class BlueBubblesClient {
 
     const contactMap = await this.getContacts();
     for (const chat of chats) {
+      // The server response is cast, not validated. A missing unreadCount would
+      // otherwise become NaN on the first increment — and NaN is sticky, since
+      // the reset path only fires on `unreadCount > 0`.
+      if (typeof chat.unreadCount !== "number" || !Number.isFinite(chat.unreadCount)) {
+        chat.unreadCount = 0;
+      }
       for (const p of chat.participants ?? []) {
         if (!p.firstName) {
           const name = contactMap.get(p.address);
           if (name) p.firstName = name;
         }
       }
+      // Sort key + preview straight from the server's lastMessage, so the list
+      // is complete without any follow-up requests.
+      if (chat.lastMessage?.dateCreated) {
+        chat.activityAt = chat.lastMessage.dateCreated;
+        chat.lastMessageText ??= chat.lastMessage.text ?? "";
+      }
     }
 
     // Collapse split per-service DM threads (pre-macOS-26 hosts) into one
     // conversation per contact, like Apple's Messages app does.
-    return mergeChatThreads(chats);
+    const merged = mergeChatThreads(chats);
+
+    // Derive chat-list ordering and reply routing from the lastMessage the
+    // server just gave us. A merged conversation spans several threads, so pick
+    // whichever variant saw the newest traffic — the same decision
+    // enrichChatActivity used to make with one HTTP request per variant.
+    const rawByGuid = new Map(chats.map((c) => [c.guid, c]));
+    // If not a single chat came back with a lastMessage, the server most likely
+    // ignored `with` — leave activityAt unset so the fallback probes. If some
+    // chats have one, the server honoured it and the rest are genuinely empty.
+    const serverHonouredWith = chats.some((c) => c.lastMessage);
+    for (const chat of merged) {
+      let newest: Message | null = null;
+      let newestVariant = chat.guid;
+      for (const variant of chatGuidVariants(chat.guid)) {
+        const candidate = rawByGuid.get(variant)?.lastMessage;
+        if (candidate && (!newest || candidate.dateCreated > newest.dateCreated)) {
+          newest = candidate;
+          newestVariant = variant;
+        }
+      }
+      if (!newest) {
+        // Genuinely empty conversation: record that, so the fallback doesn't
+        // re-probe it on every single load.
+        if (serverHonouredWith) chat.activityAt = 0;
+        continue;
+      }
+      chat.activityAt = newest.dateCreated;
+      chat.lastMessageText = newest.text ?? "";
+      notePreferredSendGuid(newestVariant);
+    }
+    return merged;
   }
 
+  /**
+   * Fallback for servers that ignore `with: ["lastMessage"]` (older
+   * BlueBubbles): fill activityAt/preview for the chats that came back without
+   * one, probing only those and updating the list once when done. On a server
+   * that honours the flag this makes no requests at all.
+   */
+  /**
+   * Fallback for chats that came back without a lastMessage.
+   *
+   * getChats now derives activity and reply routing from the chat list itself,
+   * so this only probes what the server couldn't answer for. Chats it has
+   * already established are empty carry activityAt === 0 and are skipped, so a
+   * quiet conversation isn't re-probed on every load.
+   */
   async enrichChatActivity(
     chats: Chat[],
     onBatch: (sortedChats: Chat[]) => void
   ): Promise<void> {
-    type Entry = { chat: Chat; lastMsgTime: number };
-    const entries: Entry[] = chats.map((chat) => ({ chat, lastMsgTime: 0 }));
+    const stale = chats.filter((c) => c.activityAt === undefined);
+    if (stale.length === 0) return;
 
     const MAX_CONCURRENT = 5;
-    for (let i = 0; i < chats.length; i += MAX_CONCURRENT) {
+    for (let i = 0; i < stale.length; i += MAX_CONCURRENT) {
       await Promise.all(
-        chats.slice(i, i + MAX_CONCURRENT).map(async (chat, batchIdx) => {
-          const idx = i + batchIdx;
+        stale.slice(i, i + MAX_CONCURRENT).map(async (chat) => {
           try {
             // A merged conversation spans several underlying threads; the
             // preview must reflect whichever thread saw the latest message.
@@ -217,22 +281,19 @@ export class BlueBubblesClient {
                 newestVariant = variant;
               }
             }
+            chat.activityAt = newest?.dateCreated ?? 0;
             if (newest) {
-              entries[idx].lastMsgTime = newest.dateCreated;
-              entries[idx].chat.lastMessageText = newest.text ?? "";
-              // Record the activity time used for unified chat-list ordering.
-              entries[idx].chat.activityAt = newest.dateCreated;
+              chat.lastMessageText = newest.text ?? "";
               // Replies should go out on the service the contact last used.
               notePreferredSendGuid(newestVariant);
             }
           } catch {}
         })
       );
-      const sorted = [...entries]
-        .sort((a, b) => b.lastMsgTime - a.lastMsgTime)
-        .map((e) => e.chat);
-      onBatch(sorted);
     }
+    // One update at the end: emitting per batch replaced (and re-sorted) the
+    // whole chat list ceil(N/5) times, which made the list jump while loading.
+    onBatch([...chats].sort((a, b) => (b.activityAt ?? 0) - (a.activityAt ?? 0)));
   }
 
   private async _getMessages(
@@ -314,6 +375,38 @@ export class BlueBubblesClient {
     return url;
   }
 
+  /**
+   * Whether the server can send through the Private API right now.
+   *
+   * macOS 26 broke AppleScript sending in Messages, so on those hosts the
+   * Private API is the only working path. It is not a static property: the
+   * helper is a dylib injected into Messages and drops out whenever Messages or
+   * the server restarts (`private_api: true, helper_connected: false`). Hence a
+   * short TTL rather than a permanent cache — a stale "yes" would keep routing
+   * sends into a path that silently stopped working.
+   */
+  private async canUsePrivateApi(): Promise<boolean> {
+    const now = Date.now();
+    if (this.privateApiChecked !== null && now - this.privateApiChecked < PRIVATE_API_TTL_MS) {
+      return this.privateApiOk;
+    }
+    this.privateApiChecked = now;
+    try {
+      const res = await httpFetch(`${this.baseUrl}/api/v1/server/info?${this.authParam()}`);
+      if (!res.ok) {
+        this.privateApiOk = false;
+        return false;
+      }
+      const json = await res.json();
+      const info = json?.data ?? {};
+      this.privateApiOk = info.private_api === true && info.helper_connected === true;
+    } catch {
+      // Unreachable server: let the send itself produce the real error.
+      this.privateApiOk = false;
+    }
+    return this.privateApiOk;
+  }
+
   async sendMessage(
     chatGUID: string,
     text: string,
@@ -324,7 +417,10 @@ export class BlueBubblesClient {
     const payload: Record<string, unknown> = {
       chatGuid: chatGUID,
       message: text,
-      method: replyToGUID ? "private-api" : "apple-script",
+      // Replies require the Private API regardless (AppleScript can't thread).
+      // Plain messages prefer it when it's actually usable, and only fall back
+      // to AppleScript otherwise — which is what fails on macOS 26.
+      method: replyToGUID || (await this.canUsePrivateApi()) ? "private-api" : "apple-script",
       tempGuid: tempGuid ?? crypto.randomUUID(),
     };
     if (replyToGUID) {

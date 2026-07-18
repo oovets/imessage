@@ -1,4 +1,5 @@
 mod telegram;
+mod ai;
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use keyring::Entry;
@@ -316,6 +317,11 @@ pub fn run() {
             onboarding::bb_configure,
             onboarding::bb_open_privacy,
             onboarding::bb_start_and_check,
+            ai::ai_style_profile,
+            ai::ai_relationship_index,
+            ai::ai_relationship_profile,
+            ai::ai_log_event,
+            ai::ai_read_telemetry,
         ])
         .setup(|app| {
             let app_handle = app.handle();

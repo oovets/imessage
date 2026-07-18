@@ -1,7 +1,7 @@
 {
   "name": "messages",
   "private": true,
-  "version": "0.2.12",
+  "version": "0.3.0",
   "description": "Native macOS iMessage desktop client for BlueBubbles, built with Tauri, React, and TypeScript.",
   "license": "MIT",
   "type": "module",
@@ -33,6 +33,11 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.220.0",
+    "@opentelemetry/resources": "^2.9.0",
+    "@opentelemetry/sdk-trace-web": "^2.9.0",
+    "@opentelemetry/semantic-conventions": "^1.43.0",
     "@radix-ui/react-avatar": "^1.1.0",
     "@radix-ui/react-dialog": "^1.1.0",
     "@radix-ui/react-label": "^2.1.0",
@@ -59,6 +64,8 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@tauri-apps/cli": "^2.11.0",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^25.6.0",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^18.3.12",
@@ -67,6 +74,7 @@
     "autoprefixer": "^10.4.20",
     "eslint": "^10.3.0",
     "globals": "^17.6.0",
+    "jsdom": "^29.1.1",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.14",
     "typescript": "^5.6.2",

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
 import {
   DEFAULT_APPEARANCE,
   FONT_SCALE_STEP,
@@ -21,6 +21,19 @@ const MAX_CACHED_LINK_PREVIEWS = 200;
 const MAX_PANE_DEPTH = 20;
 const MAX_PANE_LEAVES = 20;
 const OUTGOING_DEDUP_WINDOW_MS = 30_000;
+
+/** A pending AI suggestion plus what we need to score it later. */
+export interface AiDraft {
+  text: string;
+  at: number;
+  latencyMs?: number;
+  profile?: string | null;
+  model: string;
+  /** Set when the user pulls it into the composer (edit-time measurement). */
+  usedAt?: number;
+  /** Open §17 trace, closed when the user accepts/edits/rejects. */
+  traceKey?: string;
+}
 
 export type PaneNode =
   | { type: "leaf"; id: string; chatGUID: string | null }
@@ -273,8 +286,31 @@ interface AppState {
     cooldownSeconds: number;
     /** Auto-replies in a row before going quiet until a manual message; 0 = no limit. */
     maxConsecutive: number;
+    /** Score each draft and rewrite once if it doesn't sound like the user (§6). */
+    selfCritique: boolean;
+    /**
+     * Delivery dials (§10), as offsets from the distilled profile rather than
+     * absolute levels — 0 means "however I normally am", so turning one up
+     * adapts the delivery without overwriting the personality.
+     */
+    /** OTLP/HTTP collector for pipeline traces (§17); empty disables tracing. */
+    otlpEndpoint: string;
+    /** "auto" matches the measured rate; "never" forbids emoji outright. */
+    emojiMode: "auto" | "never";
+    tone: {
+      humor: number;
+      sarcasm: number;
+      warmth: number;
+      energy: number;
+      formality: number;
+    };
   };
-  aiReplyChats: Record<string, true>;
+  // Per-chat AI mode: "draft" (suggestion lands in the composer, default) or
+  // "auto" (sends by itself). Legacy persisted `true` means "draft".
+  aiReplyChats: Record<string, "draft" | "auto" | true>;
+  // Transient AI suggestions per chat (not persisted). Metadata rides along so
+  // accept/edit/reject telemetry can attribute the outcome.
+  aiDrafts: Record<string, AiDraft>;
   sidebarHidden: boolean;
   appearance: AppearanceSettings;
   linkPreviewsEnabled: boolean;
@@ -324,7 +360,11 @@ interface AppState {
   setShowTimestamps: (v: boolean) => void;
   setShowAvatars: (v: boolean) => void;
   setAiReplyConfig: (patch: Partial<AppState["aiReply"]>) => void;
-  toggleAiReplyChat: (guid: string) => void;
+  cycleAiReplyChat: (guid: string) => void;
+  setAiDraft: (guid: string, draft: AiDraft) => void;
+  /** Marks a draft as taken into the composer; starts the edit timer. */
+  markAiDraftUsed: (guid: string) => void;
+  clearAiDraft: (guid: string) => void;
   setSidebarHidden: (v: boolean) => void;
   toggleSidebarHidden: () => void;
   setFontScale: (value: number) => void;
@@ -388,6 +428,49 @@ function sortChatsByRecency(list: Chat[]): Chat[] {
   return [...list].sort((a, b) => chatActivity(b) - chatActivity(a));
 }
 
+// localStorage wrapper that can never break app flows: a quota-exceeded write
+// evicts the secondary caches (avatars, contacts — both rebuildable) and
+// retries once; if it still fails the write is dropped and the app runs on.
+const safeLocalStorage = {
+  getItem: (name: string) => window.localStorage.getItem(name),
+  removeItem: (name: string) => window.localStorage.removeItem(name),
+  setItem: (name: string, value: string) => {
+    try {
+      window.localStorage.setItem(name, value);
+    } catch {
+      try {
+        for (const key of Object.keys(window.localStorage)) {
+          if (key.startsWith("bb-avatar-cache") || key.startsWith("bb-contact-cache")) {
+            window.localStorage.removeItem(key);
+          }
+        }
+        window.localStorage.setItem(name, value);
+      } catch {
+        /* still over quota — persist skipped, in-memory state unaffected */
+      }
+    }
+  },
+};
+
+/** Slim a chat for persistence — enough to render the list on cold start. */
+function slimChat(c: Chat): Chat {
+  return {
+    guid: c.guid,
+    displayName: c.displayName,
+    chatIdentifier: c.chatIdentifier,
+    participants: (c.participants ?? []).map((p) => ({
+      address: p.address,
+      firstName: p.firstName,
+    })),
+    lastMessage: c.lastMessage
+      ? ({ dateCreated: c.lastMessage.dateCreated, text: c.lastMessage.text } as Message)
+      : null,
+    unreadCount: c.unreadCount,
+    lastMessageText: c.lastMessageText,
+    activityAt: c.activityAt,
+  } as Chat;
+}
+
 export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
@@ -403,15 +486,22 @@ export const useAppStore = create<AppState>()(
       showTimestamps: true,
       showAvatars: true,
       aiReply: {
-        endpoint: "",
+        // Local-dev defaults (own GPU box) — harmless elsewhere: if the
+        // endpoint isn't reachable the AI features just stay silent.
+        endpoint: "http://gpulab:11434/v1",
         apiKey: "",
-        model: "",
+        model: "gemma3:12b",
         systemPrompt:
           "You are replying as me in a personal chat. Match my tone and language, keep replies short and natural, never mention being an AI.",
         cooldownSeconds: 10,
         maxConsecutive: 10,
+        selfCritique: true,
+        otlpEndpoint: "",
+        emojiMode: "auto",
+        tone: { humor: 0, sarcasm: 0, warmth: 0, energy: 0, formality: 0 },
       },
       aiReplyChats: {},
+      aiDrafts: {},
       sidebarHidden: false,
       appearance: DEFAULT_APPEARANCE,
       linkPreviewsEnabled: true,
@@ -478,12 +568,30 @@ export const useAppStore = create<AppState>()(
       setShowTimestamps: (v) => set({ showTimestamps: v }),
       setShowAvatars: (v) => set({ showAvatars: v }),
       setAiReplyConfig: (patch) => set((s) => ({ aiReply: { ...s.aiReply, ...patch } })),
-      toggleAiReplyChat: (guid) =>
+      // off -> draft -> auto -> off (legacy `true` counts as draft)
+      cycleAiReplyChat: (guid) =>
         set((s) => {
           const next = { ...s.aiReplyChats };
-          if (next[guid]) delete next[guid];
-          else next[guid] = true;
+          const cur = next[guid] === true ? "draft" : next[guid];
+          if (!cur) next[guid] = "draft";
+          else if (cur === "draft") next[guid] = "auto";
+          else delete next[guid];
           return { aiReplyChats: next };
+        }),
+      setAiDraft: (guid, draft) =>
+        set((s) => ({ aiDrafts: { ...s.aiDrafts, [guid]: draft } })),
+      markAiDraftUsed: (guid) =>
+        set((s) => {
+          const cur = s.aiDrafts[guid];
+          if (!cur) return {};
+          return { aiDrafts: { ...s.aiDrafts, [guid]: { ...cur, usedAt: Date.now() } } };
+        }),
+      clearAiDraft: (guid) =>
+        set((s) => {
+          if (!(guid in s.aiDrafts)) return {};
+          const next = { ...s.aiDrafts };
+          delete next[guid];
+          return { aiDrafts: next };
         }),
       setSidebarHidden: (v) => set({ sidebarHidden: v }),
       toggleSidebarHidden: () => set((s) => ({ sidebarHidden: !s.sidebarHidden })),
@@ -721,7 +829,18 @@ export const useAppStore = create<AppState>()(
         if (!chatGUID) return;
         const existing = get().messages[chatGUID] ?? [];
         const updated = mergeMessageList(existing, [message]);
-        const newest = updated[updated.length - 1]?.dateCreated ?? 0;
+        // messageFetchedAt doubles as the polling cursor (`after=`), and it only
+        // ever moves forward. Optimistic messages carry the *client* clock, so
+        // letting one set the cursor would — on a machine running ahead of the
+        // server — permanently hide every message that follows. Only
+        // server-acknowledged messages may advance it.
+        // Note: not isLocalOptimisticMessage — that counts any tempGuid as
+        // local, and the server's echo carries the tempGuid too (that is how it
+        // is matched). Only the unsent `local-` placeholder must be skipped.
+        const newest = updated.reduce(
+          (max, m) => (m.guid.startsWith("local-") ? max : Math.max(max, m.dateCreated)),
+          0
+        );
         set((s) => {
           const idx = s.chats.findIndex((c) => c.guid === chatGUID);
           let nextChats = s.chats;
@@ -778,7 +897,9 @@ export const useAppStore = create<AppState>()(
       markChatHasNewMessage: (chatGUID) =>
         set((s) => ({
           chats: s.chats.map((c) =>
-            c.guid === chatGUID ? { ...c, unreadCount: c.unreadCount + 1 } : c
+            c.guid === chatGUID
+              ? { ...c, unreadCount: (Number.isFinite(c.unreadCount) ? c.unreadCount : 0) + 1 }
+              : c
           ),
         })),
 
@@ -805,6 +926,21 @@ export const useAppStore = create<AppState>()(
         state?.repairPaneState();
         state?.setHydrated(true);
       },
+      // Shallow merge like the default, but backfill empty AI endpoint/model
+      // with the current defaults — stores persisted before those defaults
+      // existed would otherwise pin them to "" forever.
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<AppState>;
+        const merged = { ...current, ...p } as AppState;
+        merged.aiReply = {
+          ...current.aiReply,
+          ...(p.aiReply ?? {}),
+          endpoint: p.aiReply?.endpoint?.trim() ? p.aiReply.endpoint : current.aiReply.endpoint,
+          model: p.aiReply?.model?.trim() ? p.aiReply.model : current.aiReply.model,
+        };
+        return merged;
+      },
+      storage: createJSONStorage(() => safeLocalStorage),
       partialize: (s) => ({
         superlightMode: s.superlightMode,
         showTimestamps: s.showTimestamps,
@@ -816,7 +952,7 @@ export const useAppStore = create<AppState>()(
         appearance: s.appearance,
         linkPreviewsEnabled: s.linkPreviewsEnabled,
         linkPreviewCache: s.linkPreviewCache,
-        chats: s.chats,
+        chats: s.chats.map(slimChat),
         paneTree: s.paneTree,
         activePaneId: s.activePaneId,
         paneLayouts: s.paneLayouts,
@@ -829,3 +965,13 @@ export const useAppStore = create<AppState>()(
     }
   )
 );
+
+/** Normalized AI mode for a chat ("off" | "draft" | "auto"); legacy `true` = draft. */
+export function aiModeFor(
+  chats: Record<string, "draft" | "auto" | true>,
+  guid: string
+): "off" | "draft" | "auto" {
+  const v = chats[guid];
+  if (!v) return "off";
+  return v === true ? "draft" : v;
+}

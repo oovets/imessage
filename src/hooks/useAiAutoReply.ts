@@ -10,9 +10,12 @@
 //     from the user, the chat goes quiet until the user writes something
 
 import { useEffect, useRef } from "react";
-import { useAppStore, isTelegramChatGuid } from "@/store/useAppStore";
+import { useAppStore, isTelegramChatGuid, aiModeFor } from "@/store/useAppStore";
 import { getClient } from "@/api/clientFactory";
-import { generateReply } from "@/lib/aiReply";
+import { generateReply, critiqueReply, critiqueFails } from "@/lib/aiReply";
+import { loadAiProfiles } from "@/lib/aiProfiles";
+import { log as logAi } from "@/lib/aiTelemetry";
+import { startReplyTrace, childSpan, endReplyTrace } from "@/lib/aiTracing";
 import { preferredSendGuid } from "@/lib/chatThreadMerge";
 import { tg } from "@/telegram/api";
 import { parseTgChatGuid } from "@/telegram/adapters";
@@ -47,38 +50,139 @@ export function useAiAutoReply() {
       st.timer = null;
       if (!s.aiReplyChats[guid]) return;
 
+      const mode = aiModeFor(s.aiReplyChats, guid);
       const msgs = s.messages[guid] ?? [];
       const newest = msgs[msgs.length - 1];
       if (!newest || newest.isFromMe || newest.guid === st.lastHandled) return;
       st.lastHandled = newest.guid;
 
-      // User-configurable guardrails (0 = that limit is off).
+      // Guardrails apply to auto-send only — a draft sends nothing, so a fresh
+      // suggestion per incoming message is exactly what we want.
       const cooldownMs = Math.max(0, s.aiReply.cooldownSeconds ?? 10) * 1000;
       const maxConsecutive = Math.max(0, s.aiReply.maxConsecutive ?? 10);
-      if (cooldownMs > 0 && Date.now() < st.cooldownUntil) return;
-      if (maxConsecutive > 0 && st.consecutive >= maxConsecutive) return;
+      if (mode === "auto") {
+        if (cooldownMs > 0 && Date.now() < st.cooldownUntil) return;
+        if (maxConsecutive > 0 && st.consecutive >= maxConsecutive) return;
+      }
 
       const chat = s.chats.find((c) => c.guid === guid);
       const name = chat ? getChatDisplayName(chat) : "chat";
-      let text: string | null;
+
+      // §17: one trace per reply, spanning generation through the user's
+      // verdict — the interesting latency is the whole round trip.
+      const traceKey = `${guid}:${newest.guid}`;
+      startReplyTrace(traceKey, {
+        "ai.chat_guid": guid,
+        "ai.model": s.aiReply.model,
+        "ai.context_messages": msgs.length,
+        "ai.mode": mode,
+      });
+
+      // Layered personality prompt: global style + this relationship (cached).
+      const profiles = await childSpan(traceKey, "profile.load", undefined, () =>
+        loadAiProfiles(guid).catch(() => null)
+      );
+      const profileName = profiles?.relationship?.name ?? null;
+      const t0 = performance.now();
+      let text: string | null = null;
+      let critiqued = false;
+      let rewritten = false;
       try {
-        text = await generateReply(s.aiReply, msgs, name);
+        const first = await childSpan(
+          traceKey,
+          "llm.generate",
+          { "ai.profile": profileName ?? "none" },
+          () => generateReply(s.aiReply, msgs, name, profiles)
+        );
+        text = first?.text ?? null;
+
+        // §6: score the draft against the same personality layers and, if it
+        // falls short on any axis, rewrite once with the critique as guidance.
+        if (first && s.aiReply.selfCritique) {
+          const c = await childSpan(traceKey, "llm.critique", undefined, async (sp) => {
+            const res = await critiqueReply(s.aiReply, first.systemPrompt, msgs, first.text);
+            if (res && sp) {
+              sp.setAttribute("critique.sounds_like_me", res.soundsLikeMe);
+              sp.setAttribute("critique.fits_recipient", res.fitsRecipient);
+              sp.setAttribute("critique.too_ai_like", res.tooAiLike);
+              sp.setAttribute("critique.too_verbose", res.tooVerbose);
+            }
+            return res;
+          });
+          if (c) {
+            critiqued = true;
+            if (critiqueFails(c)) {
+              const second = await childSpan(
+                traceKey,
+                "llm.rewrite",
+                { "critique.notes": c.notes },
+                () => generateReply(s.aiReply, msgs, name, profiles, c.notes)
+              );
+              if (second) {
+                text = second.text;
+                rewritten = true;
+              }
+            }
+          }
+        }
       } catch (e) {
+        endReplyTrace(traceKey, "error");
         s.setConnectionNotice(
           `AI auto-reply failed: ${e instanceof Error ? e.message : String(e)}`
         );
         return;
       }
-      if (!text) return;
+      if (!text) {
+        endReplyTrace(traceKey, "empty");
+        return;
+      }
+      const latencyMs = Math.round(performance.now() - t0);
+      logAi({
+        kind: "generated",
+        chatGuid: guid,
+        model: s.aiReply.model,
+        profile: profileName,
+        latencyMs,
+        draftChars: text.length,
+        critiqued,
+        rewritten,
+      });
 
       // Re-check the toggle — it may have been turned off while generating.
       const now = useAppStore.getState();
-      if (!now.aiReplyChats[guid]) return;
+      const nowMode = aiModeFor(now.aiReplyChats, guid);
+      if (nowMode === "off") {
+        endReplyTrace(traceKey, "disabled_mid_generation");
+        return;
+      }
+
+      // Draft mode (the default): put the suggestion in the composer and stop.
+      if (nowMode === "draft") {
+        // The trace stays open until the composer reports the verdict.
+        now.setAiDraft(guid, {
+          text,
+          at: Date.now(),
+          latencyMs,
+          profile: profileName,
+          model: s.aiReply.model,
+          traceKey,
+        });
+        return;
+      }
 
       st.cooldownUntil = Date.now() + cooldownMs;
       st.consecutive += 1;
       st.aiTexts.add(text);
       if (st.aiTexts.size > 20) st.aiTexts.delete(st.aiTexts.values().next().value as string);
+
+      endReplyTrace(traceKey, "auto_sent", { "ai.rewritten": rewritten });
+      logAi({
+        kind: "auto_sent",
+        chatGuid: guid,
+        model: s.aiReply.model,
+        profile: profileName,
+        draftChars: text.length,
+      });
 
       try {
         if (isTelegramChatGuid(guid)) {

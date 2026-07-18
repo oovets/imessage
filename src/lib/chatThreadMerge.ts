@@ -67,6 +67,9 @@ export function mergeChatThreads(chats: Chat[]): Chat[] {
   const drop = new Set<string>();
   const extraUnread = new Map<string, number>();
 
+  const activity = new Map<string, { at: number; text: string; variant: string }>();
+  const chatActivityAt = (c: Chat) => c.activityAt ?? c.lastMessage?.dateCreated ?? 0;
+
   for (const group of byAddress.values()) {
     if (group.length < 2) continue;
     const canonical =
@@ -85,6 +88,19 @@ export function mergeChatThreads(chats: Chat[]): Chat[] {
       }
     }
     if (unread > 0) extraUnread.set(canonical.guid, unread);
+
+    // The merged conversation shows — and replies on — whichever underlying
+    // thread saw the newest message, straight from the server's lastMessage.
+    const newest = group.reduce((a, b) => (chatActivityAt(b) > chatActivityAt(a) ? b : a));
+    const at = chatActivityAt(newest);
+    if (at > 0) {
+      activity.set(canonical.guid, {
+        at,
+        text: newest.lastMessageText ?? newest.lastMessage?.text ?? "",
+        variant: newest.guid,
+      });
+      preferredSendByCanonical.set(canonical.guid, newest.guid);
+    }
   }
 
   aliasToCanonical = alias;
@@ -99,6 +115,12 @@ export function mergeChatThreads(chats: Chat[]): Chat[] {
     .filter((c) => !drop.has(c.guid))
     .map((c) => {
       const extra = extraUnread.get(c.guid);
-      return extra ? { ...c, unreadCount: (c.unreadCount ?? 0) + extra } : c;
+      const act = activity.get(c.guid);
+      if (!extra && !act) return c;
+      return {
+        ...c,
+        ...(extra ? { unreadCount: (c.unreadCount ?? 0) + extra } : {}),
+        ...(act ? { activityAt: act.at, lastMessageText: act.text } : {}),
+      };
     });
 }

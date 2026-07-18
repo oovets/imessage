@@ -361,9 +361,10 @@ export function SettingsDialog(_props: SettingsDialogProps) {
               <div className="grid gap-2 rounded-md border p-3">
                 <Label>AI auto-reply</Label>
                 <p className="text-xs text-muted-foreground">
-                  An OpenAI-compatible endpoint (vLLM, Ollama, …) answers as you in chats where
-                  you enable the robot icon in the chat header. Replies are capped and cool down
-                  automatically.
+                  An OpenAI-compatible endpoint (vLLM, Ollama, …) writes replies as you in chats
+                  where you enable the robot icon in the chat header. One click = draft mode
+                  (suggestions land in the composer for you to edit and send); another click =
+                  auto-send. The limits below apply to auto-send only.
                 </p>
                 <div className="grid gap-2 sm:grid-cols-2">
                   <div className="grid gap-1">
@@ -438,8 +439,91 @@ export function SettingsDialog(_props: SettingsDialogProps) {
                     />
                   </div>
                 </div>
+                <label
+                  htmlFor="ai-critique"
+                  className="inline-flex items-center gap-2 text-sm text-muted-foreground"
+                >
+                  <input
+                    id="ai-critique"
+                    type="checkbox"
+                    checked={aiReply.selfCritique ?? true}
+                    onChange={(e) => setAiReplyConfig({ selfCritique: e.target.checked })}
+                    className="h-4 w-4"
+                  />
+                  Self-critique — score each draft and rewrite once if it sounds off
+                </label>
+                <div className="grid gap-1">
+                  <Label htmlFor="ai-otlp" className="text-xs">
+                    Trace collector (optional)
+                  </Label>
+                  <Input
+                    id="ai-otlp"
+                    placeholder="http://gpulab:4318"
+                    value={aiReply.otlpEndpoint ?? ""}
+                    onChange={(e) => setAiReplyConfig({ otlpEndpoint: e.target.value })}
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    OpenTelemetry endpoint — sends a span per pipeline step (profile load,
+                    generation, critique, rewrite, your verdict) to Jaeger/Tempo/Grafana.
+                  </p>
+                </div>
+                <div className="grid gap-1">
+                  <Label htmlFor="ai-emoji" className="text-xs">Emoji</Label>
+                  <select
+                    id="ai-emoji"
+                    className="h-8 rounded-md border bg-transparent px-2 text-sm"
+                    value={aiReply.emojiMode ?? "auto"}
+                    onChange={(e) =>
+                      setAiReplyConfig({ emojiMode: e.target.value as "auto" | "never" })
+                    }
+                  >
+                    <option value="auto">Match how often I actually use them</option>
+                    <option value="never">Never use emoji</option>
+                  </select>
+                </div>
+                <div className="grid gap-1.5 rounded-md border p-2">
+                  <p className="text-xs font-medium">Delivery</p>
+                  <p className="text-[11px] text-muted-foreground -mt-1">
+                    Offsets from your own style — centre means “however I normally am”.
+                  </p>
+                  {(
+                    [
+                      ["humor", "serious", "playful"],
+                      ["sarcasm", "sincere", "sarcastic"],
+                      ["warmth", "cool", "warm"],
+                      ["energy", "calm", "energetic"],
+                      ["formality", "casual", "formal"],
+                    ] as const
+                  ).map(([key, low, high]) => (
+                    <div key={key} className="flex items-center gap-2">
+                      <span className="w-16 shrink-0 text-[11px] text-muted-foreground">{low}</span>
+                      <input
+                        type="range"
+                        min={-2}
+                        max={2}
+                        step={1}
+                        className="flex-1"
+                        value={aiReply.tone?.[key] ?? 0}
+                        onChange={(e) =>
+                          setAiReplyConfig({
+                            tone: {
+                              ...(aiReply.tone ?? {
+                                humor: 0, sarcasm: 0, warmth: 0, energy: 0, formality: 0,
+                              }),
+                              [key]: parseInt(e.target.value, 10),
+                            },
+                          })
+                        }
+                      />
+                      <span className="w-16 shrink-0 text-right text-[11px] text-muted-foreground">
+                        {high}
+                      </span>
+                    </div>
+                  ))}
+                </div>
                 <p className="text-[11px] text-muted-foreground">
-                  The cap resets whenever you send something yourself. Setting both to 0 removes
+                  Self-critique roughly doubles the wait for a reply. The cap resets whenever you
+                  send something yourself. Setting both to 0 removes
                   every brake — two bots in the same chat can then loop forever.
                 </p>
               </div>

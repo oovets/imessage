@@ -81,6 +81,10 @@ export function usePollingFallback() {
           if (!prev) return chat;
           return {
             ...chat,
+            // Carry forward what the server didn't send: a response without
+            // lastMessage would otherwise reset activityAt and sink every
+            // iMessage chat below every Telegram chat.
+            activityAt: chat.activityAt ?? prev.activityAt,
             lastMessageText:
               chat.lastMessageText ??
               chat.lastMessage?.text ??
