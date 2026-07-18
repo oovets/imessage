@@ -23,6 +23,38 @@ Cargo workspace of focused crates (`shared`, `database`, `cache`, `telegram-api`
 
 ---
 
+## TL;DR — from zero to unified inbox
+
+On a Mac signed into iCloud with Messages working:
+
+1. **Install the app.** Download the DMG for your architecture from the
+   [latest release](https://github.com/oovets/imessage/releases/latest), drag it to
+   `/Applications`, then clear the quarantine flag (builds are unsigned):
+
+   ```bash
+   xattr -dr com.apple.quarantine "/Applications/Messages Desktop.app"
+   ```
+
+2. **Run the first-launch wizard.** Open the app and pick **"Set it up for me"** — it
+   downloads, installs, and configures a local BlueBubbles server (localhost only, no
+   tunnels) and starts it.
+
+3. **Grant the macOS permissions** the wizard walks you through: Full Disk Access and
+   Local Network are the two the server needs to read and serve your messages
+   (Local Network is a toggle in the pane if no prompt appears). Hit
+   **verify** — it waits and restarts the server itself if needed.
+
+4. **Add Telegram (optional).** On the final wizard step, sign in with your phone number
+   or QR code. Done — one inbox, both services.
+
+5. **AI auto-reply (optional).** Point Settings → AI auto-reply at any OpenAI-compatible
+   endpoint (e.g. Ollama: `http://your-gpu-box:11434/v1` + a model like `gemma3:12b`),
+   then flip the robot icon in any chat you want answered for you.
+
+Reset everything for a fresh run with `scripts/reset-demo.sh --server`.
+
+---
+
 ## Download
 
 Grab the latest signed-for-your-own-machine build from the
