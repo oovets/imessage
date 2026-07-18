@@ -381,7 +381,11 @@ pub async fn tg_set_typing(
 }
 
 /// Directory for decrypted media temp files (streamed via the asset protocol).
-fn media_tmp_dir() -> PathBuf {
+///
+/// Shared with the Slack file cache: this path is what `assetProtocol.scope`
+/// in tauri.conf.json allows, so anything meant to be played or shown in the
+/// webview has to be written here.
+pub fn media_tmp_dir() -> PathBuf {
     std::env::temp_dir().join("unified-inbox-media")
 }
 

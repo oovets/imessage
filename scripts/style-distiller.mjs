@@ -288,6 +288,25 @@ async function slackUserMap(token) {
 }
 
 /**
+ * Resolve one id that `users.list` didn't return.
+ *
+ * The list is not exhaustive — external and shared-channel members can be
+ * missing from it while `users.info` still answers for them. Without this
+ * fallback the largest Slack relationship stayed keyed to a raw id.
+ */
+async function slackUserName(token, userId, names) {
+  if (names[userId]) return names[userId];
+  try {
+    const { user } = await slackApi(token, "users.info", { user: userId });
+    names[userId] =
+      user.profile?.display_name?.trim() || user.real_name?.trim() || user.name || userId;
+  } catch {
+    names[userId] = userId;
+  }
+  return names[userId];
+}
+
+/**
  * Strip Slack's mrkdwn entities so the corpus holds what a human would read.
  * Mirrors src/slack/mrkdwn.ts — duplicated because this script is plain Node
  * and cannot import the app's TypeScript.
@@ -365,7 +384,9 @@ async function slackConversations(perChannel = 400) {
         }
         if (sent.length === 0) continue;
         const name = ch.is_im
-          ? (userNames[ch.user] ?? ch.user ?? ch.id)
+          ? ch.user
+            ? await slackUserName(token, ch.user, userNames)
+            : ch.id
           : ch.is_mpim
             ? prettyGroupDmName(ch.name ?? ch.id)
             : `#${ch.name ?? ch.id}`;

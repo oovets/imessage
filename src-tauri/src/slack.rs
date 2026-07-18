@@ -336,12 +336,19 @@ pub async fn sl_download_file(
     name: String,
     state: State<'_, SlackState>,
 ) -> Result<String, String> {
-    // Never let a caller escape the temp dir with a crafted file name.
+    // Never let a caller escape the media dir with a crafted file name.
     let safe_name: String = name
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' { c } else { '_' })
         .collect();
-    let path = std::env::temp_dir().join(format!("slack-{safe_name}"));
+
+    // Must live under the media dir: the asset protocol's scope is
+    // $TEMP/unified-inbox-media/** and deliberately not all of $TEMP, so a
+    // file written straight to the temp root is fetched fine and then refused
+    // on playback.
+    let dir = crate::telegram::media_tmp_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| format!("could not create {dir:?}: {e}"))?;
+    let path = dir.join(format!("slack-{safe_name}"));
     if path.exists() {
         return Ok(path.to_string_lossy().into_owned());
     }
