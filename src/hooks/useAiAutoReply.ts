@@ -13,6 +13,7 @@ import { useEffect, useRef } from "react";
 import { useAppStore, isTelegramChatGuid, aiModeFor } from "@/store/useAppStore";
 import { getClient } from "@/api/clientFactory";
 import { generateReply } from "@/lib/aiReply";
+import { loadAiProfiles } from "@/lib/aiProfiles";
 import { preferredSendGuid } from "@/lib/chatThreadMerge";
 import { tg } from "@/telegram/api";
 import { parseTgChatGuid } from "@/telegram/adapters";
@@ -64,9 +65,11 @@ export function useAiAutoReply() {
 
       const chat = s.chats.find((c) => c.guid === guid);
       const name = chat ? getChatDisplayName(chat) : "chat";
+      // Layered personality prompt: global style + this relationship (cached).
+      const profiles = await loadAiProfiles(guid).catch(() => null);
       let text: string | null;
       try {
-        text = await generateReply(s.aiReply, msgs, name);
+        text = await generateReply(s.aiReply, msgs, name, profiles);
       } catch (e) {
         s.setConnectionNotice(
           `AI auto-reply failed: ${e instanceof Error ? e.message : String(e)}`
