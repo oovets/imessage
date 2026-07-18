@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { slackTextToPlain } from "./mrkdwn";
+import { parseSlackMarks, slackTextToPlain, stripSlackMarks } from "./mrkdwn";
 import { extractFirstUrl } from "@/lib/linkPreview";
 import { slFileToAttachment } from "./adapters";
 import type { SlFile } from "./types";
@@ -103,5 +103,42 @@ describe("emoji shortcodes", () => {
     // enforceEmojiPolicy strips emoji characters, not ":heart:" — so an
     // unconverted shortcode slips past every emoji guardrail.
     expect(slackTextToPlain("tack :heart:", {})).not.toContain(":heart:");
+  });
+});
+
+describe("full emoji set + marks (the alert-bot messages)", () => {
+  it("converts shortcodes outside the small autocomplete table", () => {
+    expect(slackTextToPlain(":rotating_light: nere", {})).toBe("🚨 nere");
+    expect(slackTextToPlain(":large_green_circle: ok", {})).toBe("🟢 ok");
+  });
+
+  it("composes skin tones onto the preceding emoji", () => {
+    expect(slackTextToPlain(":crossed_fingers::skin-tone-2:", {})).toBe("🤞🏻");
+  });
+
+  it("parses the alert message into styled spans", () => {
+    const text = slackTextToPlain(
+      ":rotating_light: ALERT TRIGGERED: *Analytics stale* — `aspace-prod-54`",
+      {}
+    );
+    const spans = parseSlackMarks(text);
+    expect(spans).toEqual([
+      { kind: "text", text: "🚨 ALERT TRIGGERED: " },
+      { kind: "bold", text: "Analytics stale" },
+      { kind: "text", text: " — " },
+      { kind: "code", text: "aspace-prod-54" },
+    ]);
+  });
+
+  it("leaves math and snake_case alone", () => {
+    expect(parseSlackMarks("5*3*2 och foo_bar_baz")).toEqual([
+      { kind: "text", text: "5*3*2 och foo_bar_baz" },
+    ]);
+  });
+
+  it("strips marks for previews and the corpus", () => {
+    expect(stripSlackMarks("*oplog-fönstret* är nere på `4h`")).toBe(
+      "oplog-fönstret är nere på 4h"
+    );
   });
 });

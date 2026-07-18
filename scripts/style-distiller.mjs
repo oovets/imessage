@@ -323,9 +323,12 @@ async function slackUserName(token, userId, names) {
 const EMOJI_BY_NAME = (() => {
   const map = new Map();
   try {
-    const src = readFileSync(join(import.meta.dirname, "../src/lib/emoji.ts"), "utf8");
-    for (const m of src.matchAll(/\{\s*char:\s*"([^"]+)",\s*name:\s*"([^"]+)"/g)) {
-      map.set(m[2], m[1]);
+    // The generated full Slack set (1900+ names), not the small autocomplete
+    // table — ":rotating_light:" and friends live only here.
+    const src = readFileSync(join(import.meta.dirname, "../src/slack/emojiMap.ts"), "utf8");
+    const body = src.split("SLACK_EMOJI")[1]?.split("};")[0] ?? "";
+    for (const m of body.matchAll(/"([^"]+)":\s*"([^"]*)"/g)) {
+      map.set(m[1], m[2]);
     }
   } catch {
     /* leave shortcodes as-is */
@@ -337,6 +340,11 @@ function stripSlackMrkdwn(text, userNames = {}) {
   return text
     // ":skin-tone-2" is a modifier on the emoji before it, never text.
     .replace(/:skin-tone-\d+:/g, "")
+    // Formatting marks: keep the words, drop the markers — the corpus should
+    // hold what a human reads, not "*Analytics stale*".
+    .replace(/```\n?([\s\S]*?)```/g, "$1")
+    .replace(/`([^`\n]+)`/g, "$1")
+    .replace(/(?<=^|[\s(.,;:!?])([*~_])(\S(?:[^*~_\n]*?\S)?)\1(?=$|[\s).,;:!?])/g, "$2")
     // Unlike the app, the corpus DROPS shortcodes the table doesn't know
     // (":crossed_fingers:", or workspace-custom ones). Displaying them is
     // right — Slack shows a custom image — but keeping them here would teach

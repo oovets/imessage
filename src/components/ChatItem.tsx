@@ -5,6 +5,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { useTelegramAvatar } from "@/telegram/useTelegramAvatar";
 import { useContactAvatar } from "@/lib/contactAvatars";
+import { isSource } from "@/lib/source";
+import { stripSlackMarks } from "@/slack/mrkdwn";
 import {
   decodeEscapedUnicode,
   getChatDisplayName,
@@ -47,7 +49,9 @@ function ChatItemComponent({
   const lastTime = chat.lastMessage?.dateCreated
     ? formatMessageTime(chat.lastMessage.dateCreated)
     : "";
-  const preview = decodeEscapedUnicode(chat.lastMessageText ?? chat.lastMessage?.text ?? "");
+  const rawPreview = decodeEscapedUnicode(chat.lastMessageText ?? chat.lastMessage?.text ?? "");
+  // Slack previews would otherwise show literal *bold* and `code` markers.
+  const preview = isSource(chat.guid, "slack") ? stripSlackMarks(rawPreview) : rawPreview;
 
   if (compact) {
     return (

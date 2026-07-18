@@ -3,9 +3,10 @@ import { Copy, Reply, Smile, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { type Message, decodeEscapedUnicode, formatMessageTime } from "@/types";
 import { useAppStore } from "@/store/useAppStore";
-import { supports } from "@/lib/source";
+import { isSource, supports } from "@/lib/source";
 import { useTelegramSenderAvatar } from "@/telegram/useTelegramAvatar";
 import { useSlackSenderAvatar } from "@/slack/useSlackAvatar";
+import { parseSlackMarks } from "@/slack/mrkdwn";
 import { useContactAvatarForAddress } from "@/lib/contactAvatars";
 import { getClient } from "@/api/clientFactory";
 import { extractFirstUrl, fetchLinkPreview } from "@/lib/linkPreview";
@@ -92,6 +93,50 @@ function renderTextWithLinks(text: string, isMe: boolean, superlightMode: boolea
       </a>
     )
   );
+}
+
+/**
+ * Slack text carries mrkdwn marks (*bold*, `code`, ```pre```). Render them as
+ * real styling; URLs inside styled runs still linkify.
+ */
+function renderSlackText(text: string, isMe: boolean, superlightMode: boolean) {
+  return parseSlackMarks(text).map((span, i) => {
+    const inner = renderTextWithLinks(span.text, isMe, superlightMode);
+    switch (span.kind) {
+      case "bold":
+        return <strong key={i} className="font-semibold">{inner}</strong>;
+      case "italic":
+        return <em key={i}>{inner}</em>;
+      case "strike":
+        return <s key={i}>{inner}</s>;
+      case "code":
+        return (
+          <code
+            key={i}
+            className={cn(
+              "rounded px-1 py-px font-mono text-[0.85em]",
+              isMe && !superlightMode ? "bg-white/20" : "bg-muted-foreground/15"
+            )}
+          >
+            {span.text}
+          </code>
+        );
+      case "pre":
+        return (
+          <pre
+            key={i}
+            className={cn(
+              "my-1 overflow-x-auto rounded-md px-2 py-1.5 font-mono text-[0.85em] whitespace-pre-wrap",
+              isMe && !superlightMode ? "bg-white/15" : "bg-muted-foreground/10"
+            )}
+          >
+            {span.text}
+          </pre>
+        );
+      default:
+        return <span key={i}>{inner}</span>;
+    }
+  });
 }
 
 const IMAGE_MIME = /^image\//;
@@ -382,7 +427,9 @@ export function MessageBubble({
 
             {decodedText && (
               <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                {renderTextWithLinks(decodedText, isMe, superlightMode)}
+                {isSource(chatGuid, "slack")
+                  ? renderSlackText(decodedText, isMe, superlightMode)
+                  : renderTextWithLinks(decodedText, isMe, superlightMode)}
               </p>
             )}
             {!superlightMode && linkPreviewsEnabled && previewUrl && (

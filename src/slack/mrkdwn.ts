@@ -11,7 +11,7 @@
  * already treats text as plain and that is how the other sources behave.
  */
 
-import { EMOJIS } from "@/lib/emoji";
+import { SLACK_EMOJI, SKIN_TONES } from "./emojiMap";
 
 /** `<@U123>` / `<@U123|name>` — the id is resolved against a name map. */
 const USER_MENTION = /<@([UVW][A-Z0-9]+)(?:\|([^>]*))?>/g;
@@ -23,19 +23,14 @@ const SPECIAL_MENTION = /<!([^>|]+)(?:\|([^>]*))?>/g;
 const LINK = /<((?:https?|mailto):[^>|]+)(?:\|([^>]*))?>/g;
 
 /** `:heart:` — Slack stores emoji as shortcodes, not characters. */
-const SHORTCODE = /:([a-z0-9_+-]+):/g;
-
-let byName: Map<string, string> | null = null;
-function emojiFor(name: string): string | null {
-  if (!byName) byName = new Map(EMOJIS.map((e) => [e.name, e.char]));
-  return byName.get(name) ?? null;
-}
+const SHORTCODE = /:([a-zA-Z0-9_+-]+):/g;
 
 /**
- * Turn `:heart:` into ❤️.
+ * Turn `:rotating_light:` into 🚨 (full Slack set, see emojiMap.ts) and
+ * compose skin tones: `🤞:skin-tone-2:` → 🤞🏻.
  *
- * Two reasons this is not cosmetic. It renders as literal text in the bubble,
- * and — more importantly — a shortcode that reaches the style corpus teaches
+ * Two reasons this is not cosmetic. Shortcodes render as literal text in the
+ * bubble, and — more importantly — one that reaches the style corpus teaches
  * the model to write ":heart:", which `enforceEmojiPolicy` cannot strip: that
  * filter matches emoji *characters*, so the shortcode would slip through every
  * emoji guardrail we have.
@@ -44,7 +39,11 @@ function emojiFor(name: string): string | null {
  * left as they are.
  */
 function replaceShortcodes(text: string): string {
-  return text.replace(SHORTCODE, (whole, name: string) => emojiFor(name) ?? whole);
+  return text.replace(SHORTCODE, (whole, name: string) => {
+    const tone = SKIN_TONES[name];
+    if (tone) return tone; // appended straight after its base emoji
+    return SLACK_EMOJI[name] ?? whole;
+  });
 }
 
 function unescapeEntities(text: string): string {
@@ -53,6 +52,73 @@ function unescapeEntities(text: string): string {
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&amp;/g, "&");
+}
+
+// ---------------------------------------------------------------- marks
+//
+// Slack formatting: *bold*, _italic_, ~strike~, `code`, ```pre```. These are
+// parsed to spans (not HTML) so the bubble can render real styling while the
+// chat-list preview and the training corpus get clean text without markers.
+
+export type SlackSpan = {
+  kind: "text" | "bold" | "italic" | "strike" | "code" | "pre";
+  text: string;
+};
+
+const PRE = /```\n?([\s\S]*?)```/g;
+const CODE = /`([^`\n]+)`/g;
+// Inline marks only take effect at word boundaries — "5*3*2" and snake_case
+// stay untouched, which is also how Slack itself parses.
+const BOUNDARY = String.raw`[\s(.,;:!?'"‘’“”]`;
+const inlineMark = (ch: string) =>
+  new RegExp(
+    `(?<=^|${BOUNDARY})\\${ch}(\\S(?:[^\\${ch}\\n]*?\\S)?)\\${ch}(?=$|${BOUNDARY})`,
+    "g"
+  );
+const BOLD = inlineMark("*");
+const ITALIC = inlineMark("_");
+const STRIKE = inlineMark("~");
+
+/** Split every `text` span that matches `re` into (text, styled, text, …). */
+function splitBy(
+  spans: SlackSpan[],
+  re: RegExp,
+  kind: SlackSpan["kind"]
+): SlackSpan[] {
+  const out: SlackSpan[] = [];
+  for (const span of spans) {
+    if (span.kind !== "text") {
+      out.push(span);
+      continue;
+    }
+    let last = 0;
+    re.lastIndex = 0;
+    for (let m = re.exec(span.text); m; m = re.exec(span.text)) {
+      if (m.index > last) out.push({ kind: "text", text: span.text.slice(last, m.index) });
+      out.push({ kind, text: m[1] });
+      last = m.index + m[0].length;
+    }
+    if (last < span.text.length) out.push({ kind: "text", text: span.text.slice(last) });
+  }
+  return out;
+}
+
+/** Parse one message's text into renderable spans. */
+export function parseSlackMarks(text: string): SlackSpan[] {
+  let spans: SlackSpan[] = [{ kind: "text", text }];
+  spans = splitBy(spans, PRE, "pre");
+  spans = splitBy(spans, CODE, "code");
+  spans = splitBy(spans, BOLD, "bold");
+  spans = splitBy(spans, ITALIC, "italic");
+  spans = splitBy(spans, STRIKE, "strike");
+  return spans;
+}
+
+/** "*Analytics stale* — `aspace-prod-54`" → "Analytics stale — aspace-prod-54". */
+export function stripSlackMarks(text: string): string {
+  return parseSlackMarks(text)
+    .map((s) => s.text)
+    .join("");
 }
 
 /**
