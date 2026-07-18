@@ -18,6 +18,7 @@ export interface AiReplyConfig {
   apiKey: string;
   model: string;
   systemPrompt: string;
+  selfCritique?: boolean;
 }
 
 const MAX_CONTEXT_MESSAGES = 20;
@@ -196,19 +197,129 @@ export function buildSystemPrompt(
   return sections.join("\n\n");
 }
 
+export interface Critique {
+  soundsLikeMe: number;
+  fitsRecipient: number;
+  tooAiLike: number;
+  tooVerbose: number;
+  notes: string;
+}
+
+// Two thresholds, because the axes aren't symmetric. Models treat the
+// "problem" scales (tooAiLike/tooVerbose) as if the middle were neutral — a
+// three-word reply scored 5/10 verbose while the notes praised its brevity —
+// so only a clearly bad score should trigger a rewrite. The "higher is better"
+// axes behave as documented and can keep the strict bar from §6.
+const GOOD_MIN = 8;
+const PROBLEM_MAX = 7;
+
+/**
+ * Score a draft against the personality (§6). Runs as a second pass on the
+ * same endpoint, given the same style layers — a model judging "would he
+ * actually send this?" catches the failures a generator can't see in itself
+ * (leaked idioms, AI politeness, three sentences where one would do).
+ * Returns null when the model doesn't answer usefully; the caller then keeps
+ * the draft as-is rather than blocking on a flaky judge.
+ */
+export async function critiqueReply(
+  cfg: AiReplyConfig,
+  systemPrompt: string,
+  history: Message[],
+  draft: string
+): Promise<Critique | null> {
+  const base = cfg.endpoint.trim().replace(/\/$/, "");
+  if (!base || !cfg.model.trim()) return null;
+
+  const lastIncoming = [...history].reverse().find((m) => !m.isFromMe)?.text ?? "";
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (cfg.apiKey.trim()) headers.Authorization = `Bearer ${cfg.apiKey.trim()}`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const res = await httpFetch(`${base}/chat/completions`, {
+      method: "POST",
+      headers,
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: cfg.model.trim(),
+        max_tokens: 200,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You judge whether a drafted reply sounds like the person described below. " +
+              "Answer with ONLY minified JSON: " +
+              '{"soundsLikeMe":0-10,"fitsRecipient":0-10,"tooAiLike":0-10,"tooVerbose":0-10,"notes":"one short sentence"}. ' +
+              "tooAiLike and tooVerbose are problems — higher is worse. Be strict: generic " +
+              "friendliness, over-explaining, or wording the person would never use should " +
+              "score badly.\n\n" +
+              systemPrompt,
+          },
+          {
+            role: "user",
+            content: `They received: "${lastIncoming}"\n\nDrafted reply: "${draft}"\n\nScore it.`,
+          },
+        ],
+      }),
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const raw: unknown = json?.choices?.[0]?.message?.content;
+    const match = typeof raw === "string" ? raw.match(/\{[\s\S]*\}/) : null;
+    if (!match) return null;
+    const parsed = JSON.parse(match[0]) as Partial<Critique>;
+    return {
+      soundsLikeMe: Number(parsed.soundsLikeMe ?? 10),
+      fitsRecipient: Number(parsed.fitsRecipient ?? 10),
+      tooAiLike: Number(parsed.tooAiLike ?? 0),
+      tooVerbose: Number(parsed.tooVerbose ?? 0),
+      notes: String(parsed.notes ?? ""),
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Does this critique warrant a rewrite? */
+export function critiqueFails(c: Critique): boolean {
+  return (
+    c.soundsLikeMe < GOOD_MIN ||
+    c.fitsRecipient < GOOD_MIN ||
+    c.tooAiLike > PROBLEM_MAX ||
+    c.tooVerbose > PROBLEM_MAX
+  );
+}
+
 /**
  * Ask the model for a reply to the conversation. Returns null when the model
  * has nothing usable to say (empty response) — the caller just skips replying.
  */
+export interface GeneratedReply {
+  text: string;
+  /** The system prompt used — reused verbatim by the critique pass. */
+  systemPrompt: string;
+}
+
 export async function generateReply(
   cfg: AiReplyConfig,
   history: Message[],
   chatName: string,
-  profiles: AiProfiles | null = null
-): Promise<string | null> {
+  profiles: AiProfiles | null = null,
+  /** Critique notes from a failed attempt, to steer the rewrite (§6). */
+  rewriteNotes?: string
+): Promise<GeneratedReply | null> {
   const base = cfg.endpoint.trim().replace(/\/$/, "");
   if (!base || !cfg.model.trim()) return null;
 
+  const systemPrompt = buildSystemPrompt(
+    cfg.systemPrompt,
+    chatName,
+    profiles,
+    conversationLang(history)
+  );
   const context = history
     .filter((m) => (m.text ?? "").trim().length > 0)
     .slice(-MAX_CONTEXT_MESSAGES)
@@ -234,12 +345,9 @@ export async function generateReply(
         messages: [
           {
             role: "system",
-            content: buildSystemPrompt(
-              cfg.systemPrompt,
-              chatName,
-              profiles,
-              conversationLang(history)
-            ),
+            content: rewriteNotes
+              ? `${systemPrompt}\n\nYour previous attempt was rejected: ${rewriteNotes} Write a different reply that fixes this. Do not apologise or explain — output only the reply.`
+              : systemPrompt,
           },
           ...context,
         ],
@@ -251,7 +359,7 @@ export async function generateReply(
     const json = await res.json();
     const text: unknown = json?.choices?.[0]?.message?.content;
     const reply = typeof text === "string" ? text.trim() : "";
-    return reply.length > 0 ? reply : null;
+    return reply.length > 0 ? { text: reply, systemPrompt } : null;
   } finally {
     clearTimeout(timer);
   }

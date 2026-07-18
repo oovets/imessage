@@ -32,6 +32,10 @@ export interface AiEvent {
   wordDiff?: number;
   /** Seconds between accepting a draft and sending it. */
   editSeconds?: number;
+  /** Self-critique ran on this draft (§6). */
+  critiqued?: boolean;
+  /** …and it failed, so this text is the rewrite. */
+  rewritten?: boolean;
 }
 
 export function log(event: Omit<AiEvent, "at">): void {
@@ -63,6 +67,8 @@ export interface AiSummary {
   medianLatencyMs: number;
   medianWordDiff: number;
   medianEditSeconds: number;
+  /** Accept rate split by whether the draft was rewritten (§18 A/B). */
+  rewriteEffect: { plain: { n: number; acceptRate: number }; rewritten: { n: number; acceptRate: number } } | null;
   byProfile: Array<{ profile: string; reviewed: number; acceptRate: number }>;
 }
 
@@ -105,8 +111,27 @@ export async function loadSummary(): Promise<AiSummary | null> {
     perProfile.set(key, cur);
   }
 
+  // Attribute outcomes back to their generation so we can compare rewritten
+  // drafts against plain ones (§18): match each reviewed event to the most
+  // recent "generated" for the same chat.
+  const gens = of("generated");
+  const genFor = (e: AiEvent) =>
+    [...gens]
+      .filter((g) => g.chatGuid === e.chatGuid && g.at <= e.at)
+      .sort((a, b) => b.at - a.at)[0] ?? null;
+
+  const bucket = { plain: { n: 0, ok: 0 }, rewritten: { n: 0, ok: 0 } };
+  for (const e of [...accepted, ...edited, ...rejected]) {
+    const g = genFor(e);
+    if (!g?.critiqued) continue;
+    const b = g.rewritten ? bucket.rewritten : bucket.plain;
+    b.n++;
+    if (e.kind === "accepted") b.ok++;
+  }
+  const rate = (b: { n: number; ok: number }) => (b.n > 0 ? b.ok / b.n : 0);
+
   return {
-    generated: of("generated").length,
+    generated: gens.length,
     accepted: accepted.length,
     edited: edited.length,
     rejected: rejected.length,
@@ -115,6 +140,13 @@ export async function loadSummary(): Promise<AiSummary | null> {
     medianLatencyMs: median(of("generated").map((e) => e.latencyMs ?? 0).filter(Boolean)),
     medianWordDiff: median(edited.map((e) => e.wordDiff ?? 0)),
     medianEditSeconds: median(edited.map((e) => e.editSeconds ?? 0).filter(Boolean)),
+    rewriteEffect:
+      bucket.plain.n + bucket.rewritten.n > 0
+        ? {
+            plain: { n: bucket.plain.n, acceptRate: rate(bucket.plain) },
+            rewritten: { n: bucket.rewritten.n, acceptRate: rate(bucket.rewritten) },
+          }
+        : null,
     byProfile: [...perProfile.entries()]
       .map(([profile, v]) => ({
         profile,

@@ -284,6 +284,8 @@ interface AppState {
     cooldownSeconds: number;
     /** Auto-replies in a row before going quiet until a manual message; 0 = no limit. */
     maxConsecutive: number;
+    /** Score each draft and rewrite once if it doesn't sound like the user (§6). */
+    selfCritique: boolean;
   };
   // Per-chat AI mode: "draft" (suggestion lands in the composer, default) or
   // "auto" (sends by itself). Legacy persisted `true` means "draft".
@@ -475,6 +477,7 @@ export const useAppStore = create<AppState>()(
           "You are replying as me in a personal chat. Match my tone and language, keep replies short and natural, never mention being an AI.",
         cooldownSeconds: 10,
         maxConsecutive: 10,
+        selfCritique: true,
       },
       aiReplyChats: {},
       aiDrafts: {},

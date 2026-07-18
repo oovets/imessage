@@ -439,8 +439,22 @@ export function SettingsDialog(_props: SettingsDialogProps) {
                     />
                   </div>
                 </div>
+                <label
+                  htmlFor="ai-critique"
+                  className="inline-flex items-center gap-2 text-sm text-muted-foreground"
+                >
+                  <input
+                    id="ai-critique"
+                    type="checkbox"
+                    checked={aiReply.selfCritique ?? true}
+                    onChange={(e) => setAiReplyConfig({ selfCritique: e.target.checked })}
+                    className="h-4 w-4"
+                  />
+                  Self-critique — score each draft and rewrite once if it sounds off
+                </label>
                 <p className="text-[11px] text-muted-foreground">
-                  The cap resets whenever you send something yourself. Setting both to 0 removes
+                  Self-critique roughly doubles the wait for a reply. The cap resets whenever you
+                  send something yourself. Setting both to 0 removes
                   every brake — two bots in the same chat can then loop forever.
                 </p>
               </div>

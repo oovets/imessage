@@ -12,7 +12,7 @@
 import { useEffect, useRef } from "react";
 import { useAppStore, isTelegramChatGuid, aiModeFor } from "@/store/useAppStore";
 import { getClient } from "@/api/clientFactory";
-import { generateReply } from "@/lib/aiReply";
+import { generateReply, critiqueReply, critiqueFails } from "@/lib/aiReply";
 import { loadAiProfiles } from "@/lib/aiProfiles";
 import { log as logAi } from "@/lib/aiTelemetry";
 import { preferredSendGuid } from "@/lib/chatThreadMerge";
@@ -70,9 +70,28 @@ export function useAiAutoReply() {
       const profiles = await loadAiProfiles(guid).catch(() => null);
       const profileName = profiles?.relationship?.name ?? null;
       const t0 = performance.now();
-      let text: string | null;
+      let text: string | null = null;
+      let critiqued = false;
+      let rewritten = false;
       try {
-        text = await generateReply(s.aiReply, msgs, name, profiles);
+        const first = await generateReply(s.aiReply, msgs, name, profiles);
+        text = first?.text ?? null;
+
+        // §6: score the draft against the same personality layers and, if it
+        // falls short on any axis, rewrite once with the critique as guidance.
+        if (first && s.aiReply.selfCritique) {
+          const c = await critiqueReply(s.aiReply, first.systemPrompt, msgs, first.text);
+          if (c) {
+            critiqued = true;
+            if (critiqueFails(c)) {
+              const second = await generateReply(s.aiReply, msgs, name, profiles, c.notes);
+              if (second) {
+                text = second.text;
+                rewritten = true;
+              }
+            }
+          }
+        }
       } catch (e) {
         s.setConnectionNotice(
           `AI auto-reply failed: ${e instanceof Error ? e.message : String(e)}`
@@ -88,6 +107,8 @@ export function useAiAutoReply() {
         profile: profileName,
         latencyMs,
         draftChars: text.length,
+        critiqued,
+        rewritten,
       });
 
       // Re-check the toggle — it may have been turned off while generating.

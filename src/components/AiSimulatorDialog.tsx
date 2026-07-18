@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useAppStore } from "@/store/useAppStore";
-import { generateReply, buildSystemPrompt } from "@/lib/aiReply";
+import { generateReply, buildSystemPrompt, critiqueReply, critiqueFails, type Critique } from "@/lib/aiReply";
 import { loadAiProfiles, type AiProfiles } from "@/lib/aiProfiles";
 import { loadSummary, type AiSummary } from "@/lib/aiTelemetry";
 import { cn } from "@/lib/utils";
@@ -33,6 +33,8 @@ interface SimMessage {
   text: string;
   at: number;
   latencyMs?: number;
+  critique?: Critique | null;
+  rewritten?: boolean;
 }
 
 export function AiSimulatorDialog() {
@@ -101,13 +103,32 @@ export function AiSimulatorDialog() {
       }));
       setLastPrompt(buildSystemPrompt(aiReply.systemPrompt, contactName, aiProfiles));
       const t0 = performance.now();
-      const reply = await generateReply(aiReply, history, contactName, aiProfiles);
-      const latencyMs = Math.round(performance.now() - t0);
-      if (reply) {
-        setMsgs((cur) => [...cur, { fromMe: true, text: reply, at: Date.now(), latencyMs }]);
-      } else {
+      const first = await generateReply(aiReply, history, contactName, aiProfiles);
+      if (!first) {
         setError("The model returned nothing usable.");
+        return;
       }
+      // Show what the critic thought — the simulator is where you tune it.
+      let final = first.text;
+      let critique: Critique | null = null;
+      let rewritten = false;
+      if (aiReply.selfCritique) {
+        critique = await critiqueReply(aiReply, first.systemPrompt, history, first.text);
+        if (critique && critiqueFails(critique)) {
+          const second = await generateReply(
+            aiReply, history, contactName, aiProfiles, critique.notes
+          );
+          if (second) {
+            final = second.text;
+            rewritten = true;
+          }
+        }
+      }
+      const latencyMs = Math.round(performance.now() - t0);
+      setMsgs((cur) => [
+        ...cur,
+        { fromMe: true, text: final, at: Date.now(), latencyMs, critique, rewritten },
+      ]);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -188,7 +209,15 @@ export function AiSimulatorDialog() {
                 {m.text}
               </div>
               {m.latencyMs !== undefined && (
-                <span className="mt-0.5 text-[10px] text-muted-foreground">{m.latencyMs} ms</span>
+                <span className="mt-0.5 text-[10px] text-muted-foreground">
+                  {m.latencyMs} ms
+                  {m.critique && (
+                    <>
+                      {" · "}me {m.critique.soundsLikeMe}/10 · fit {m.critique.fitsRecipient}/10
+                      {m.rewritten && " · rewritten"}
+                    </>
+                  )}
+                </span>
               )}
             </div>
           ))}
@@ -255,6 +284,14 @@ export function AiSimulatorDialog() {
                   </>
                 )}
               </p>
+              {summary.rewriteEffect && (
+                <p className="text-muted-foreground">
+                  self-critique: {Math.round(summary.rewriteEffect.plain.acceptRate * 100)}% accepted
+                  when it passed ({summary.rewriteEffect.plain.n}) vs{" "}
+                  {Math.round(summary.rewriteEffect.rewritten.acceptRate * 100)}% after a rewrite (
+                  {summary.rewriteEffect.rewritten.n})
+                </p>
+              )}
               {summary.byProfile.length > 0 && (
                 <div className="space-y-0.5">
                   {summary.byProfile.map((p) => (
