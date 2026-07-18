@@ -1,0 +1,1072 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://oovets.github.io/imessage/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>imessage</title>
+      
+    
+    
+      <link rel="stylesheet" href="assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="extra.css">
+    
+      <link rel="stylesheet" href="https://stevoo.net/theme.css">
+    
+      <link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css">
+    
+    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="green">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#messages" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="/" title="imessage" class="md-header__button md-logo" aria-label="imessage" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            imessage
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              readme
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="/" title="imessage" class="md-nav__button md-logo" aria-label="imessage" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    imessage
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    readme
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="." class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    readme
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#tldr-from-zero-to-unified-inbox" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TL;DR — from zero to unified inbox
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#download" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Download
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Features">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#unified-inbox" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unified inbox
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#imessage-via-bluebubbles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        iMessage (via BlueBubbles)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#telegram-via-mtproto" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Telegram (via MTProto)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#slack-via-web-api-socket-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Slack (via Web API + Socket Mode)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#desktop-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Desktop integration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ai-auto-reply-optional" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AI auto-reply (optional)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Requirements
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#setting-up-the-imessage-backend-bluebubbles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Setting up the iMessage backend (BlueBubbles)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Setting up the iMessage backend (BlueBubbles)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#in-app-first-run-wizard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        In-app first-run wizard
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#one-command" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One command
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#clean-reset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Clean reset
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#manual-install" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Manual install
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#setting-up-telegram" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Setting up Telegram
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#first-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        First run
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#building-from-source" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Building from source
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Building from source">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#npm-scripts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        npm scripts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#local-cross-architecture-builds" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Local cross-architecture builds
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#verification-before-shipping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verification before shipping
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#local-code-signing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Local code signing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#releases-and-ci" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Releases and CI
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#project-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Project structure
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-it-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How it works
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dev-diagnostics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dev diagnostics
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="messages">Messages<a class="headerlink" href="#messages" title="Permanent link">&para;</a></h1>
+<p><a href="https://github.com/oovets/imessage/releases/latest"><img alt="latest release" src="https://img.shields.io/github/v/release/oovets/imessage?label=latest%20release" /></a>
+<a href="https://github.com/oovets/imessage/releases/latest"><img alt="macOS" src="https://img.shields.io/badge/macOS-desktop-black" /></a>
+<a href="https://tauri.app/"><img alt="Tauri 2" src="https://img.shields.io/badge/Tauri-2-24C8D8" /></a>
+<a href="https://react.dev/"><img alt="React + TypeScript" src="https://img.shields.io/badge/React-TypeScript-3178C6" /></a></p>
+<p><img alt="Messages desktop app" src="docs/assets/messages-mockup.svg" /></p>
+<p>A native macOS desktop app that puts <strong>iMessage, Telegram and Slack in one unified
+inbox</strong>. Conversations from all three services live in a single chat list, sorted by time,
+with one clean Messages-style interface. iMessage runs through a self-hosted
+<a href="https://bluebubbles.app">BlueBubbles</a> server; Telegram connects directly over MTProto;
+Slack uses the Web API with Socket Mode for realtime.</p>
+<p>This is a real Tauri 2 application, not a webpage in a wrapper. It installs into
+<code>/Applications</code>, lives in the menu bar, launches at login, stores credentials in the macOS
+Keychain, and delivers native notifications and deep links. A browser-served web build
+exists for development, but the shipping product is the macOS desktop app.</p>
+<p><strong>Stack:</strong> Tauri 2, Rust, React, TypeScript, Vite, Tailwind, Zustand. The messaging
+backends are a Cargo workspace of focused crates (<code>shared</code>, <code>database</code>, <code>cache</code>,
+<code>telegram-api</code>, <code>telegram-core</code>, <code>slack-core</code>) compiled into the same binary.</p>
+<hr />
+<h2 id="tldr-from-zero-to-unified-inbox">TL;DR — from zero to unified inbox<a class="headerlink" href="#tldr-from-zero-to-unified-inbox" title="Permanent link">&para;</a></h2>
+<p>On a Mac signed into iCloud with Messages working:</p>
+<ol>
+<li><strong>Install the app.</strong> Download the DMG for your architecture from the
+   <a href="https://github.com/oovets/imessage/releases/latest">latest release</a>, drag it to
+   <code>/Applications</code>, then clear the quarantine flag (builds are unsigned):</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>xattr<span class="w"> </span>-dr<span class="w"> </span>com.apple.quarantine<span class="w"> </span><span class="s2">&quot;/Applications/Messages Desktop.app&quot;</span>
+</code></pre></div>
+<ol>
+<li>
+<p><strong>Run the first-launch wizard.</strong> Open the app and pick <strong>"Set it up for me"</strong> — it
+   downloads, installs, and configures a local BlueBubbles server (localhost only, no
+   tunnels) and starts it.</p>
+</li>
+<li>
+<p><strong>Grant the macOS permissions</strong> the wizard walks you through: Full Disk Access and
+   Local Network are the two the server needs to read and serve your messages
+   (Local Network is a toggle in the pane if no prompt appears). Hit
+   <strong>verify</strong> — it waits and restarts the server itself if needed.</p>
+</li>
+<li>
+<p><strong>Add Telegram (optional).</strong> On the final wizard step, sign in with your phone number
+   or QR code. Done — one inbox, both services.</p>
+</li>
+<li>
+<p><strong>AI auto-reply (optional).</strong> Point Settings → AI auto-reply at any OpenAI-compatible
+   endpoint (e.g. Ollama: <code>http://your-gpu-box:11434/v1</code> + a model like <code>gemma3:12b</code>),
+   then flip the robot icon in any chat you want answered for you.</p>
+</li>
+</ol>
+<p>Reset everything for a fresh run with <code>scripts/reset-demo.sh --server</code>.</p>
+<hr />
+<h2 id="download">Download<a class="headerlink" href="#download" title="Permanent link">&para;</a></h2>
+<p>Grab the latest signed-for-your-own-machine build from the
+<a href="https://github.com/oovets/imessage/releases/latest">releases page</a>. Pick the Apple Silicon
+DMG on M-series Macs and the Intel DMG on older ones.</p>
+<p>Release builds are currently unsigned. On first launch, see
+<a href="#first-run">First run</a> for clearing the Gatekeeper quarantine flag.</p>
+<hr />
+<h2 id="features">Features<a class="headerlink" href="#features" title="Permanent link">&para;</a></h2>
+<h3 id="unified-inbox">Unified inbox<a class="headerlink" href="#unified-inbox" title="Permanent link">&para;</a></h3>
+<ul>
+<li>One chat list interleaving iMessage, Telegram and Slack conversations, sorted by most
+  recent activity.</li>
+<li>Conversations are grouped by account — iMessage, each Telegram login, each Slack
+  workspace — under collapsible headers that keep an unread badge when collapsed. With a
+  single account the list stays flat.</li>
+<li>A consistent Messages-style interface across all three services — same bubbles, same
+  composer, same behavior.</li>
+<li>Split iMessage/SMS threads for the same contact (as served by pre-macOS-26 hosts) are
+  merged into one conversation, the way Apple's Messages app does — one list entry,
+  interleaved history, replies routed to the service the contact last used.</li>
+<li>Source-specific code stays cleanly separated internally, but the user sees one app.</li>
+</ul>
+<h3 id="imessage-via-bluebubbles">iMessage (via BlueBubbles)<a class="headerlink" href="#imessage-via-bluebubbles" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Send and receive texts, replies, tapbacks, and image/video/file attachments.</li>
+<li>Contact photos from the server's Contacts database (no Private API needed), shown in the
+  chat list and as mini avatars next to incoming messages; downscaled thumbnails keep
+  memory low, and a settings toggle switches all avatars off (initials only).</li>
+<li>Optimistic outgoing rendering, deduped against server echoes.</li>
+<li>Inline downscaled image thumbnails with a full-size preview dialog; video plays inline;
+  other attachments render as links.</li>
+<li>Rich link previews fetched locally through the Tauri HTTP plugin (no CORS workarounds).</li>
+</ul>
+<h3 id="telegram-via-mtproto">Telegram (via MTProto)<a class="headerlink" href="#telegram-via-mtproto" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Log in by phone number and code, or by QR, with two-factor password support.</li>
+<li>Multiple accounts.</li>
+<li>Messages, reactions, typing indicators, presence, and avatars — including sender photos
+  next to messages in group chats.</li>
+<li>Media (photos, stickers, video, documents) fetched through an encrypted local cache and
+  streamed from disk to keep memory low.</li>
+<li>Send messages and file attachments; edit, delete, and mark read.</li>
+</ul>
+<h3 id="slack-via-web-api-socket-mode">Slack (via Web API + Socket Mode)<a class="headerlink" href="#slack-via-web-api-socket-mode" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Multiple workspaces, each with its own tokens in the Keychain. Channels, private
+  channels, group DMs and DMs appear in the unified list; bots and Slack's own noise
+  sections are filtered out.</li>
+<li>Realtime messages, edits and deletes over Socket Mode. Replying to a message posts it
+  in that thread.</li>
+<li>Images and video render inline, fetched host-side with the workspace token and streamed
+  from disk; other files download on click.</li>
+<li>Slack's mrkdwn is unwrapped before display, so <code>&lt;@U123&gt;</code> mentions show names, emoji
+  shortcodes render as emoji, and links get title previews.</li>
+</ul>
+<h3 id="desktop-integration">Desktop integration<a class="headerlink" href="#desktop-integration" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Real macOS app bundle: native menu, tray icon, dock presence, <code>Cmd+Q</code>.</li>
+<li>macOS Keychain-backed credential storage in release builds.</li>
+<li>Native desktop notifications for incoming messages.</li>
+<li>Launch at login and <code>messages://</code> deep links to jump straight to a chat.</li>
+<li>App-wide font scaling (<code>Cmd +</code>, <code>Cmd -</code>, <code>Cmd 0</code>), theme color editing, light/dark modes.</li>
+<li>Native window vibrancy and an overlay titlebar — frosted and draggable from the top.</li>
+<li>Emoji autocomplete (type a plain word like <code>fire</code> or a <code>:shortcode</code>) plus a searchable
+  picker.</li>
+<li>Memory-conscious: bounded LRU message cache, downscaled image thumbnails, disk-streamed
+  video.</li>
+</ul>
+<h3 id="ai-auto-reply-optional">AI auto-reply (optional)<a class="headerlink" href="#ai-auto-reply-optional" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Point the app at any OpenAI-compatible chat-completions endpoint (vLLM, Ollama, or a
+  self-hosted GPU box) under Settings — endpoint, model, optional API key, and a
+  persona/system prompt.</li>
+<li>Enable the robot icon in a chat's header to let the model answer incoming messages
+  there as you, in your tone and language. Works across iMessage, Telegram and Slack, with
+  replies routed over the service the contact last used.</li>
+<li>Built-in guardrails: replies wait for message bursts to finish, are rate-limited per
+  chat, and stop after ten consecutive auto-replies until you write something yourself —
+  so two bots can never loop.</li>
+<li>Everything runs against your own endpoint; no messages leave your machines unless you
+  point it at a hosted API.</li>
+</ul>
+<hr />
+<h2 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h2>
+<p><strong>To run the app:</strong></p>
+<ul>
+<li>macOS (Apple Silicon or Intel).</li>
+<li>For iMessage: a reachable BlueBubbles server plus its URL and password/API key.</li>
+<li>For Telegram: nothing beyond your Telegram account — the app's API credentials are baked
+  into official release builds.</li>
+<li>For Slack: a user or bot token (<code>xoxp-</code>/<code>xoxb-</code>) and an app-level token (<code>xapp-</code>) per
+  workspace, created at api.slack.com/apps with Socket Mode enabled. The user token needs
+  <code>files:read</code> for attachments to load.</li>
+</ul>
+<p><strong>To build from source:</strong> Rust stable, the Tauri 2 macOS prerequisites, Xcode command line
+tools, and Node.js 24 with npm. The web build (development only) needs just Node.js 24 and
+npm.</p>
+<hr />
+<h2 id="setting-up-the-imessage-backend-bluebubbles">Setting up the iMessage backend (BlueBubbles)<a class="headerlink" href="#setting-up-the-imessage-backend-bluebubbles" title="Permanent link">&para;</a></h2>
+<p>The BlueBubbles server is a macOS app that bridges iMessage to an HTTP/WebSocket API. It
+must run on a Mac signed into iCloud with Messages working. There are three ways to set it
+up: the in-app wizard, the one-command script, or a manual install.</p>
+<h3 id="in-app-first-run-wizard">In-app first-run wizard<a class="headerlink" href="#in-app-first-run-wizard" title="Permanent link">&para;</a></h3>
+<p>On first launch in a desktop build, if no server is configured the app opens an onboarding
+wizard that installs and configures BlueBubbles for you and pre-fills the connection. This
+is the easiest path — just follow the steps and grant the privacy permissions it prompts
+for.</p>
+<h3 id="one-command">One command<a class="headerlink" href="#one-command" title="Permanent link">&para;</a></h3>
+<p><code>scripts/demo-setup.sh</code> does the same thing headlessly: it installs a BlueBubbles server
+and the Messages desktop client, configures the server without its own setup wizard, and
+pre-fills the client's connection. It needs a Mac signed into iCloud with Messages working;
+macOS still asks you to grant three privacy toggles by hand (the script opens the right
+panes for you).</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>curl<span class="w"> </span>-fsSLO<span class="w"> </span>https://raw.githubusercontent.com/oovets/imessage/main/scripts/demo-setup.sh
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>bash<span class="w"> </span>demo-setup.sh<span class="w"> </span>--dry-run<span class="w">          </span><span class="c1"># preview every step, change nothing</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>bash<span class="w"> </span>demo-setup.sh<span class="w">                    </span><span class="c1"># generated password, printed at the end</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>bash<span class="w"> </span>demo-setup.sh<span class="w"> </span>--login<span class="w"> </span>--headless<span class="w"> </span><span class="c1"># server at login, no dock icon</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>bash<span class="w"> </span>demo-setup.sh<span class="w"> </span>--no-client<span class="w">        </span><span class="c1"># only the server</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>bash<span class="w"> </span>demo-setup.sh<span class="w"> </span>--uninstall<span class="w">        </span><span class="c1"># remove it all (add --purge to wipe data too)</span>
+</code></pre></div>
+<p>Note: iMessage activation validates the Mac's hardware identity, so it often fails in
+generic or Intel VMs (VMware, VirtualBox, QEMU) that present blank or fake identifiers. On
+Apple Silicon VMs running under Apple's Virtualization.framework — such as VirtualBuddy —
+it activates normally, so the full end-to-end demo works there too.</p>
+<h3 id="clean-reset">Clean reset<a class="headerlink" href="#clean-reset" title="Permanent link">&para;</a></h3>
+<p>To wipe every trace of the client for a fresh first-run test (the app bundle plus its
+keychain entries, Application Support, caches, WebView storage and preferences — none of
+which deleting the <code>.app</code> alone removes), use <code>scripts/reset-demo.sh</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>bash<span class="w"> </span>scripts/reset-demo.sh<span class="w"> </span>--dry-run<span class="w">  </span><span class="c1"># preview what would be deleted</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>bash<span class="w"> </span>scripts/reset-demo.sh<span class="w">            </span><span class="c1"># remove the client + its data</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>bash<span class="w"> </span>scripts/reset-demo.sh<span class="w"> </span>--server<span class="w">   </span><span class="c1"># also remove the BlueBubbles server and its data</span>
+</code></pre></div>
+<h3 id="manual-install">Manual install<a class="headerlink" href="#manual-install" title="Permanent link">&para;</a></h3>
+<p><strong>Host requirements:</strong> a Mac on macOS 11+, signed into iCloud with iMessage enabled and a
+visible conversation; always-on power and network with sleep prevented; Full Disk Access
+granted (to read the Messages SQLite database); Accessibility and Automation granted (to
+send messages).</p>
+<p><strong>Install:</strong></p>
+<ol>
+<li>Download the latest server from <a href="https://bluebubbles.app/server">bluebubbles.app/server</a>
+   (or the GitHub releases).</li>
+<li>Move <code>BlueBubbles.app</code> to <code>/Applications</code> and launch it.</li>
+<li>Approve the prompts in System Settings → Privacy &amp; Security → Full Disk Access, then
+   Accessibility, then Automation (allow control of Messages and System Events).</li>
+<li>Set a strong server password — this is the API password the client uses.</li>
+<li>Choose a port (default <code>1234</code>) and start the server.</li>
+<li>Optional: enable launch on startup and disable App Nap so it survives reboots.</li>
+</ol>
+<p><strong>Exposing the server:</strong> LAN-only use is <code>http://&lt;mac-ip&gt;:1234</code>. For remote access, use a
+Cloudflare Tunnel (recommended; the server can publish a <code>*.trycloudflare.com</code> URL), ngrok
+(from the server UI), or manual port-forwarding with dynamic DNS and TLS in front.</p>
+<p><strong>Verify:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>curl<span class="w"> </span>-k<span class="w"> </span><span class="s2">&quot;https://your-server/api/v1/server/info?password=YOUR_PASSWORD&quot;</span>
+</code></pre></div>
+<p>A JSON metadata payload confirms the API is reachable. Use that URL and password on first
+run.</p>
+<p><strong>Common pitfalls:</strong> Messages must have launched and synced at least one iMessage chat;
+"Messages in iCloud" should be on or old history is missing; macOS upgrades can reset
+permissions (re-grant Full Disk Access and restart); prefer a real TLS certificate via
+Cloudflare Tunnel for remote use.</p>
+<hr />
+<h2 id="setting-up-telegram">Setting up Telegram<a class="headerlink" href="#setting-up-telegram" title="Permanent link">&para;</a></h2>
+<p>Telegram requires an app-level <code>api_id</code> and <code>api_hash</code> (from
+<a href="https://my.telegram.org">my.telegram.org</a>) to connect over MTProto. These identify the
+application, not your account.</p>
+<p><strong>In official release builds</strong> the credentials are baked into the binary at build time and
+you can just log in — no setup required.</p>
+<p><strong>When building from source or in CI</strong>, supply them yourself. They are read at compile time
+via <code>option_env!</code> and are never committed to the repository:</p>
+<ul>
+<li>For a local build, export them before building:</li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">TG_API_ID</span><span class="o">=</span><span class="m">1234567</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">TG_API_HASH</span><span class="o">=</span>your32characterapihashfromtelegram
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>npm<span class="w"> </span>run<span class="w"> </span>tauri:build
+</code></pre></div>
+<ul>
+<li>For GitHub Actions releases, add them as repository secrets named <code>TG_API_ID</code> and
+  <code>TG_API_HASH</code> (Settings → Secrets and variables → Actions). The release workflow reads
+  them as environment variables. If they are unset the app still builds and runs — just
+  without Telegram.</li>
+</ul>
+<p><strong>Logging in:</strong> open Settings → Telegram and choose phone-number or QR login. Two-factor
+passwords are supported, and you can add multiple accounts.</p>
+<hr />
+<h2 id="first-run">First run<a class="headerlink" href="#first-run" title="Permanent link">&para;</a></h2>
+<p>With no saved settings, the settings dialog opens automatically. Enter the BlueBubbles
+server URL (for example <code>https://your-bluebubbles-server</code>) and its password/API key, and
+optionally log in to Telegram.</p>
+<p>Credential storage depends on the build:</p>
+<ul>
+<li><strong>Web / Tauri dev:</strong> local dev storage, to avoid Keychain trust prompts from unsigned dev
+  binaries.</li>
+<li><strong>macOS release:</strong> the macOS Keychain, under the app's service identity, as a single
+  consolidated entry. Clearing settings removes the current and legacy Keychain entries.</li>
+</ul>
+<p><strong>Unsigned builds:</strong> if macOS says the app "is damaged and can't be opened", move it to
+<code>/Applications</code> and clear the quarantine flag:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>xattr<span class="w"> </span>-dr<span class="w"> </span>com.apple.quarantine<span class="w"> </span><span class="s2">&quot;/Applications/Messages Desktop.app&quot;</span>
+</code></pre></div>
+<hr />
+<h2 id="building-from-source">Building from source<a class="headerlink" href="#building-from-source" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>npm<span class="w"> </span>install<span class="w"> </span>--legacy-peer-deps
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>npm<span class="w"> </span>run<span class="w"> </span>tauri:dev<span class="w">      </span><span class="c1"># run the desktop app in development</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>npm<span class="w"> </span>run<span class="w"> </span>tauri:build<span class="w">    </span><span class="c1"># produce a local .app and .dmg</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="c1"># frontend-only (browser, no Rust shell rebuild)</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>npm<span class="w"> </span>run<span class="w"> </span>dev<span class="w">            </span><span class="c1"># Vite dev server</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>npm<span class="w"> </span>run<span class="w"> </span>build<span class="w">          </span><span class="c1"># type-check and build the frontend</span>
+</code></pre></div>
+<h3 id="npm-scripts">npm scripts<a class="headerlink" href="#npm-scripts" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>npm<span class="w"> </span>run<span class="w"> </span>dev<span class="w">          </span>start<span class="w"> </span>the<span class="w"> </span>Vite<span class="w"> </span>dev<span class="w"> </span>server
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>npm<span class="w"> </span>run<span class="w"> </span>build<span class="w">        </span>type-check<span class="w"> </span>and<span class="w"> </span>build<span class="w"> </span>the<span class="w"> </span>frontend
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>npm<span class="w"> </span>run<span class="w"> </span>lint<span class="w">         </span>ESLint<span class="w"> </span>flat<span class="w"> </span>config
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>npm<span class="w"> </span>run<span class="w"> </span><span class="nb">test</span><span class="w">         </span>Vitest<span class="w"> </span>unit<span class="w"> </span>tests
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>npm<span class="w"> </span>run<span class="w"> </span>preview<span class="w">      </span>preview<span class="w"> </span>the<span class="w"> </span>built<span class="w"> </span>frontend
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>npm<span class="w"> </span>run<span class="w"> </span>tauri:dev<span class="w">    </span>run<span class="w"> </span>the<span class="w"> </span>desktop<span class="w"> </span>app<span class="w"> </span><span class="k">in</span><span class="w"> </span>development
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>npm<span class="w"> </span>run<span class="w"> </span>tauri:build<span class="w">  </span>build<span class="w"> </span><span class="nb">local</span><span class="w"> </span>desktop<span class="w"> </span>bundles
+</code></pre></div>
+<h3 id="local-cross-architecture-builds">Local cross-architecture builds<a class="headerlink" href="#local-cross-architecture-builds" title="Permanent link">&para;</a></h3>
+<p>On Apple Silicon, add the Intel target first:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>rustup<span class="w"> </span>target<span class="w"> </span>add<span class="w"> </span>x86_64-apple-darwin
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>npm<span class="w"> </span>run<span class="w"> </span>tauri:build<span class="w"> </span>--<span class="w"> </span>--target<span class="w"> </span>x86_64-apple-darwin<span class="w"> </span>--bundles<span class="w"> </span>app,dmg<span class="w">   </span><span class="c1"># Intel</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>npm<span class="w"> </span>run<span class="w"> </span>tauri:build<span class="w"> </span>--<span class="w"> </span>--target<span class="w"> </span>aarch64-apple-darwin<span class="w"> </span>--bundles<span class="w"> </span>app,dmg<span class="w">  </span><span class="c1"># Apple Silicon</span>
+</code></pre></div>
+<h3 id="verification-before-shipping">Verification before shipping<a class="headerlink" href="#verification-before-shipping" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>npm<span class="w"> </span>run<span class="w"> </span>lint
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>npm<span class="w"> </span>run<span class="w"> </span><span class="nb">test</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>npm<span class="w"> </span>run<span class="w"> </span>build
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="nb">cd</span><span class="w"> </span>src-tauri<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cargo<span class="w"> </span>check
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>npm<span class="w"> </span>run<span class="w"> </span>tauri:build<span class="w">     </span><span class="c1"># for desktop packaging changes</span>
+</code></pre></div>
+<hr />
+<h2 id="local-code-signing">Local code signing<a class="headerlink" href="#local-code-signing" title="Permanent link">&para;</a></h2>
+<p>Unsigned local builds re-trigger the macOS Keychain trust prompt on every launch — the
+Keychain cannot remember "always allow" without a stable code signature. <code>npm run
+tauri:build</code> signs the bundle with a stable identity to silence this.</p>
+<p>Create the signing certificate once:</p>
+<ul>
+<li>Keychain Access → Certificate Assistant → Create a Certificate</li>
+<li>Name: <code>Messages Desktop Signing</code>, identity type: self-signed root, type: code signing</li>
+</ul>
+<p>The <code>tauri:build</code> script reads <code>APPLE_SIGNING_IDENTITY</code> and defaults to
+<code>Messages Desktop Signing</code>. Override it with your own certificate name, or use <code>-</code> for an
+ad-hoc (unsigned) build:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nv">APPLE_SIGNING_IDENTITY</span><span class="o">=</span><span class="s2">&quot;Apple Development: you@example.com&quot;</span><span class="w"> </span>npm<span class="w"> </span>run<span class="w"> </span>tauri:build
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="nv">APPLE_SIGNING_IDENTITY</span><span class="o">=</span><span class="s2">&quot;-&quot;</span><span class="w"> </span>npm<span class="w"> </span>run<span class="w"> </span>tauri:build
+</code></pre></div>
+<p>After the first launch of a signed build, click "always allow" once; the stable signature
+means it will not ask again, even after future rebuilds. GitHub Actions release builds are
+independent of this.</p>
+<hr />
+<h2 id="releases-and-ci">Releases and CI<a class="headerlink" href="#releases-and-ci" title="Permanent link">&para;</a></h2>
+<p>macOS releases are built by GitHub Actions from <code>v*</code> tags:</p>
+<ul>
+<li><strong>Apple Silicon:</strong> <code>aarch64-apple-darwin</code> on <code>macos-latest</code></li>
+<li><strong>Intel:</strong> <code>x86_64-apple-darwin</code> on <code>macos-13</code></li>
+</ul>
+<p>Tag a release and push it:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>git<span class="w"> </span>tag<span class="w"> </span>v0.2.1
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </span>v0.2.1
+</code></pre></div>
+<p>The workflow builds both architectures, bakes in the Telegram credentials from the
+<code>TG_API_ID</code> / <code>TG_API_HASH</code> secrets, and publishes the <code>.dmg</code> and <code>.app</code> to a GitHub
+Release.</p>
+<p>Release builds are unsigned unless Apple signing and notarization secrets (a Developer ID
+certificate, <code>APPLE_ID</code>, an app-specific password, and <code>APPLE_TEAM_ID</code>) are added to the
+repository. Without them, other users must clear the quarantine flag manually — see
+<a href="#first-run">First run</a>.</p>
+<hr />
+<h2 id="project-structure">Project structure<a class="headerlink" href="#project-structure" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>.github/workflows/<span class="w">   </span>GitHub<span class="w"> </span>Actions<span class="w"> </span>release<span class="w"> </span>workflow
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>src/<span class="w">                 </span>React<span class="w"> </span>application
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="w">  </span>api/<span class="w">               </span>BlueBubbles<span class="w"> </span>API<span class="w"> </span>client
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="w">  </span>components/<span class="w">        </span>UI<span class="w"> </span>and<span class="w"> </span>chat<span class="w"> </span>components
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="w">  </span>hooks/<span class="w">             </span>realtime,<span class="w"> </span>polling,<span class="w"> </span>desktop,<span class="w"> </span>and<span class="w"> </span>Telegram<span class="w"> </span>hooks
+<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="w">  </span>lib/<span class="w">               </span>utilities,<span class="w"> </span>appearance,<span class="w"> </span>secure<span class="w"> </span>config,<span class="w"> </span>previews,<span class="w"> </span>WS<span class="w"> </span>transport
+<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a><span class="w">  </span>store/<span class="w">             </span>Zustand<span class="w"> </span>app<span class="w"> </span>state<span class="w"> </span><span class="o">(</span>unified<span class="w"> </span>chat<span class="w"> </span>list,<span class="w"> </span>bounded<span class="w"> </span>message<span class="w"> </span>cache<span class="o">)</span>
+<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="w">  </span>telegram/<span class="w">          </span>Telegram<span class="w"> </span>types,<span class="w"> </span>API<span class="w"> </span>bindings,<span class="w"> </span>adapters,<span class="w"> </span>media<span class="w"> </span>components
+<a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="w">  </span>types/<span class="w">             </span>shared<span class="w"> </span>TypeScript<span class="w"> </span>types
+<a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a>crates/<span class="w">              </span>Telegram<span class="w"> </span>Rust<span class="w"> </span>workspace
+<a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a><span class="w">  </span>shared/<span class="w">            </span>domain<span class="w"> </span>model,<span class="w"> </span>events,<span class="w"> </span>config,<span class="w"> </span>ids
+<a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a><span class="w">  </span>database/<span class="w">          </span>SQLite<span class="w"> </span>persistence<span class="w"> </span>and<span class="w"> </span>migrations
+<a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a><span class="w">  </span>cache/<span class="w">             </span>encrypted<span class="w"> </span>blob<span class="w"> </span>cache<span class="w"> </span>and<span class="w"> </span>Keychain<span class="w"> </span>secret<span class="w"> </span>store
+<a id="__codelineno-12-14" name="__codelineno-12-14" href="#__codelineno-12-14"></a><span class="w">  </span>telegram-api/<span class="w">      </span>MTProto<span class="w"> </span>boundary
+<a id="__codelineno-12-15" name="__codelineno-12-15" href="#__codelineno-12-15"></a><span class="w">  </span>telegram-core/<span class="w">     </span>sync<span class="w"> </span>engine<span class="w"> </span>and<span class="w"> </span>services
+<a id="__codelineno-12-16" name="__codelineno-12-16" href="#__codelineno-12-16"></a>src-tauri/<span class="w">           </span>Tauri<span class="w"> </span><span class="m">2</span><span class="w"> </span>desktop<span class="w"> </span>shell<span class="w"> </span><span class="o">(</span>Rust<span class="w"> </span>commands,<span class="w"> </span>capabilities,<span class="w"> </span>icons<span class="o">)</span>
+<a id="__codelineno-12-17" name="__codelineno-12-17" href="#__codelineno-12-17"></a>scripts/<span class="w">             </span>dev<span class="w"> </span>helpers
+</code></pre></div>
+<hr />
+<h2 id="how-it-works">How it works<a class="headerlink" href="#how-it-works" title="Permanent link">&para;</a></h2>
+<p><strong>Unified chat list.</strong> Both sources write into a single <code>chats</code> array in the Zustand store,
+each updating only its own slice, and the list is sorted by a shared activity timestamp. The
+UI never renders directly from network responses — data lands in the store (and, for
+Telegram, SQLite) first, then the list re-reads.</p>
+<p><strong>iMessage realtime and sync.</strong> Connects to the BlueBubbles socket.io-compatible WebSocket
+and falls back to HTTP polling. HTTP and WebSocket both go through the Tauri plugins on the
+Rust side, so development reaches a cleartext LAN server without webview ATS/CORS blocks.</p>
+<p><strong>Telegram sync.</strong> SQLite is the source of truth for the UI. The sync engine writes network
+data into the database and emits a domain event, which the webview receives as a
+<code>tg:core-event</code>; the UI re-reads from state. Cold start renders from disk; the network only
+updates state. Core initialization runs off the main thread, emitting <code>tg:ready</code> when done.</p>
+<p><strong>Media handling.</strong> Attachments are fetched on the Rust side and streamed from a temp file
+via the asset protocol, so large videos never cross the IPC boundary or sit in memory.
+Telegram media is decrypted from a local encrypted cache; downloads are throttled by a
+shared semaphore to avoid rate limits.</p>
+<p><strong>Credentials.</strong> All secrets live in the macOS Keychain as a single consolidated entry in
+release builds; the web and Tauri dev builds use in-memory or local dev storage.</p>
+<p><strong>Deep links.</strong> <code>messages://chat/&lt;guid&gt;</code> and <code>messages://open?chat=&lt;guid&gt;</code> open a specific
+conversation.</p>
+<hr />
+<h2 id="dev-diagnostics">Dev diagnostics<a class="headerlink" href="#dev-diagnostics" title="Permanent link">&para;</a></h2>
+<p>Memory work has two dev-only helpers. In a dev build, the web inspector console exposes
+<code>window.__mem()</code> (JS heap, DOM nodes, cached message counts) and <code>window.__memRec</code>
+(start / mark / stop / dump a scenario walkthrough as a table and CSV).
+<code>scripts/mem-snapshot.sh</code> prints the matching RSS for the Rust process and its WKWebView
+content process — diff before and after launch to find the app's renderer PID:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>scripts/mem-snapshot.sh<span class="w"> </span>before<span class="w">   </span><span class="c1"># before launching the app</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>scripts/mem-snapshot.sh<span class="w"> </span>after<span class="w">    </span><span class="c1"># the new WebContent pid is the app&#39;s</span>
+</code></pre></div>
+<hr />
+<h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
+<p><strong>Keychain prompts.</strong> Dev builds avoid the Keychain (dev storage). Unsigned release builds
+re-prompt every launch; sign locally so "always allow" sticks — see
+<a href="#local-code-signing">Local code signing</a>.</p>
+<p><strong>DMG build "resource busy".</strong> A temp app from a mounted DMG blocks <code>hdiutil detach</code>. Quit
+it, eject the temp volume, and rerun <code>npm run tauri:build</code>.</p>
+<p><strong>HTTP vs HTTPS.</strong> For a server on the same machine or LAN, use plain <code>http://</code> (for example
+<code>http://localhost:1234</code>) — no certificate is involved, and that is what the automatic setup
+saves. HTTPS only matters when you expose the server over the internet; there, prefer a real
+certificate via a Cloudflare Tunnel rather than a self-signed one. The desktop app routes
+requests through the Rust HTTP plugin, so it is not subject to the WebView's cleartext/CORS
+restrictions. If you do front the server with a self-signed certificate, open its URL in a
+browser once and accept the certificate.</p>
+<p><strong>Unsigned release warning.</strong> Gatekeeper may require manual approval; add Apple signing and
+notarization secrets to GitHub Actions before wider distribution.</p>
+<p><strong>Telegram won't connect.</strong> Confirm the build has <code>TG_API_ID</code> / <code>TG_API_HASH</code> baked in
+(official releases do; source builds need them exported or set as CI secrets — see
+<a href="#setting-up-telegram">Setting up Telegram</a>).</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>last updated: 2026-07-18 (commit f177509)
+</code></pre></div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["navigation.top", "navigation.sections", "content.code.copy", "toc.integrate"], "search": "assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
+      
+        <script src="https://stevoo.net/map.js"></script>
+      
+    
+  </body>
+</html>
