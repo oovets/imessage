@@ -14,6 +14,7 @@ import { useAppStore, aiModeFor } from "@/store/useAppStore";
 import { isSource } from "@/lib/source";
 import { getClient } from "@/api/clientFactory";
 import { generateReply, critiqueReply, critiqueFails } from "@/lib/aiReply";
+import { retrieveContext } from "@/lib/aiContext";
 import { loadAiProfiles } from "@/lib/aiProfiles";
 import { log as logAi } from "@/lib/aiTelemetry";
 import { startReplyTrace, childSpan, endReplyTrace } from "@/lib/aiTracing";
@@ -79,10 +80,17 @@ export function useAiAutoReply() {
         "ai.mode": mode,
       });
 
-      // Layered personality prompt: global style + this relationship (cached).
-      const profiles = await childSpan(traceKey, "profile.load", undefined, () =>
-        loadAiProfiles(guid).catch(() => null)
-      );
+      // Layered personality prompt: global style + this relationship (cached),
+      // and past-context retrieval from the conversation's embedding index —
+      // fetched in parallel, since neither depends on the other.
+      const [profiles, retrieved] = await Promise.all([
+        childSpan(traceKey, "profile.load", undefined, () =>
+          loadAiProfiles(guid).catch(() => null)
+        ),
+        childSpan(traceKey, "context.retrieve", undefined, () =>
+          retrieveContext(guid, msgs, s.aiReply).catch(() => [])
+        ),
+      ]);
       const profileName = profiles?.relationship?.name ?? null;
       const t0 = performance.now();
       let text: string | null;
@@ -92,8 +100,8 @@ export function useAiAutoReply() {
         const first = await childSpan(
           traceKey,
           "llm.generate",
-          { "ai.profile": profileName ?? "none" },
-          () => generateReply(s.aiReply, msgs, name, profiles)
+          { "ai.profile": profileName ?? "none", "ai.retrieved": retrieved.length },
+          () => generateReply(s.aiReply, msgs, name, profiles, undefined, retrieved)
         );
         text = first?.text ?? null;
 
@@ -117,7 +125,7 @@ export function useAiAutoReply() {
                 traceKey,
                 "llm.rewrite",
                 { "critique.notes": c.notes },
-                () => generateReply(s.aiReply, msgs, name, profiles, c.notes)
+                () => generateReply(s.aiReply, msgs, name, profiles, c.notes, retrieved)
               );
               if (second) {
                 text = second.text;

@@ -6,6 +6,7 @@
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { isTauriRuntime } from "@/lib/tauriEnv";
 import type { Message } from "@/types";
+import type { RetrievedEpisode } from "@/lib/aiContext";
 import type { AiProfiles, StyleCard, StyleStats } from "@/lib/aiProfiles";
 
 const httpFetch: typeof fetch = (input: RequestInfo | URL, init?: RequestInit) =>
@@ -21,6 +22,8 @@ export interface AiReplyConfig {
   selfCritique?: boolean;
   tone?: { humor: number; sarcasm: number; warmth: number; energy: number; formality: number };
   emojiMode?: "auto" | "never";
+  /** Embedding model for reply-time retrieval; must match the index. */
+  embedModel?: string;
 }
 
 const MAX_CONTEXT_MESSAGES = 20;
@@ -218,7 +221,9 @@ export function buildSystemPrompt(
   tone?: AiReplyConfig["tone"],
   emojiMode: "auto" | "never" = "auto",
   /** Receives the policy so the caller can enforce it on the output. */
-  onPolicy?: (p: EmojiPolicy) => void
+  onPolicy?: (p: EmojiPolicy) => void,
+  /** Episodes retrieved from this conversation's embedding index. */
+  retrieved?: RetrievedEpisode[]
 ): string {
   const sections: string[] = [];
   sections.push(`${userPrompt.trim()}\n${HARD_RULES}`);
@@ -275,6 +280,18 @@ export function buildSystemPrompt(
   const policy = emojiPolicy(profiles, emojiMode);
   onPolicy?.(policy);
   if (policy.directive) sections.push(policy.directive);
+
+  if (retrieved && retrieved.length > 0) {
+    // Dated excerpts from further back than the visible window. Facts and
+    // continuity only — the examples section owns style, and copying old
+    // lines verbatim is exactly what the hard rules forbid.
+    sections.push(
+      "RELEVANT PAST CONTEXT — dated excerpts from earlier in this conversation. " +
+        "Use them for facts, plans and continuity (\"as we said\", follow-ups); " +
+        "never quote or copy them, never treat old plans as current without checking dates:\n" +
+        retrieved.map((e) => `---\n${e.text.slice(0, 700)}`).join("\n")
+    );
+  }
 
   sections.push(`Conversation: "${chatName}".`);
   return sections.join("\n\n");
@@ -392,7 +409,9 @@ export async function generateReply(
   chatName: string,
   profiles: AiProfiles | null = null,
   /** Critique notes from a failed attempt, to steer the rewrite (§6). */
-  rewriteNotes?: string
+  rewriteNotes?: string,
+  /** Past-context episodes from the conversation's embedding index. */
+  retrieved?: RetrievedEpisode[]
 ): Promise<GeneratedReply | null> {
   const base = cfg.endpoint.trim().replace(/\/$/, "");
   if (!base || !cfg.model.trim()) return null;
@@ -407,7 +426,8 @@ export async function generateReply(
     cfg.emojiMode ?? "auto",
     (p) => {
       policy = p;
-    }
+    },
+    retrieved
   );
   const context = history
     .filter((m) => (m.text ?? "").trim().length > 0)
