@@ -320,6 +320,7 @@ pub fn bb_open_privacy(pane: String) -> Result<(), String> {
         "fulldisk" => "Privacy_AllFiles",
         "accessibility" => "Privacy_Accessibility",
         "automation" => "Privacy_Automation",
+        "localnetwork" => "Privacy_LocalNetwork",
         _ => return Err(format!("unknown privacy pane: {pane}")),
     };
     run(
@@ -365,7 +366,15 @@ fn api_probe(url: &str) -> Result<(), String> {
 }
 
 fn start_and_check_blocking(password: String, port: u16, log: Log) -> ServerCheck {
-    logln(&log, "Starting the BlueBubbles server…");
+    // Restart, don't just foreground. BlueBubbles binds its HTTP port once at
+    // launch and does NOT re-bind when the macOS Local Network permission is
+    // granted at runtime — so the instance started before the user granted
+    // permissions is stuck not listening. `open -a` on an already-running app is
+    // a no-op, so quit and relaunch to get a fresh process that binds the port.
+    logln(&log, "Restarting the server to apply the granted permissions…");
+    let _ = run("osascript", &["-e", "tell application \"BlueBubbles\" to quit"]);
+    let _ = run("pkill", &["-x", "BlueBubbles"]);
+    thread::sleep(Duration::from_secs(2));
     if let Err(e) = open_bluebubbles() {
         logln(&log, format!("✗ open failed: {e}"));
     }

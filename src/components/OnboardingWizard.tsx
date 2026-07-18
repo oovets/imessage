@@ -39,6 +39,7 @@ async function persistConnection(serverUrl: string, password: string, setConfig:
 
 const PERMISSIONS: Array<{ pane: string; label: string; why: string }> = [
   { pane: "fulldisk", label: "Full Disk Access", why: "read the Messages database" },
+  { pane: "localnetwork", label: "Local Network", why: "let the server accept connections" },
   { pane: "accessibility", label: "Accessibility", why: "send messages" },
   { pane: "automation", label: "Automation", why: "control Messages & System Events" },
 ];
@@ -303,12 +304,14 @@ export function OnboardingWizard() {
           <div>
             <h2 className="text-base font-semibold">Grant macOS permissions</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Open each pane and enable <strong>BlueBubbles</strong>. Full Disk Access is the one
-              verify needs; Automation appears on its own the first time the server sends.
+              Open each pane and turn <strong>BlueBubbles</strong> on. <strong>Full Disk Access</strong>{" "}
+              and <strong>Local Network</strong> are required for the server to read messages and
+              listen; Automation appears on its own the first time it sends.
             </p>
             <p className="mt-2 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
-              When the server starts, macOS may ask to let BlueBubbles find devices on your local
-              network — click <strong>Allow</strong>. Without it the server can't listen.
+              <strong>Local Network</strong> is a toggle, not a popup — if no prompt appears, open the
+              pane and switch BlueBubbles on. Then hit verify: the server is restarted so it picks up
+              what you just granted.
             </p>
             {reusedInstall && (
               <p className="mt-2 text-xs text-muted-foreground">
