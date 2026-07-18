@@ -36,7 +36,7 @@ describe("ChatItem star", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it("shows a filled, always-visible star when pinned", () => {
+  it("shows a filled amber star when pinned", () => {
     const { getByLabelText } = render(
       <ChatItem
         chat={chat()}
@@ -46,8 +46,19 @@ describe("ChatItem star", () => {
         onToggleStar={() => {}}
       />
     );
-    const star = getByLabelText("Unstar chat");
-    expect(star.className).toContain("text-amber-500");
-    expect(star.className).not.toContain("opacity-0");
+    expect(getByLabelText("Unstar chat").className).toContain("text-amber-500");
+  });
+
+  it("keeps the unpinned star always visible — hover-reveal proved missable", () => {
+    const { getByLabelText } = render(
+      <ChatItem
+        chat={chat()}
+        isSelected={false}
+        onSelect={() => {}}
+        starred={false}
+        onToggleStar={() => {}}
+      />
+    );
+    expect(getByLabelText("Star chat").className).not.toContain("opacity-0");
   });
 });

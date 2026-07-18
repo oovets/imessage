@@ -366,9 +366,9 @@ export function ChatList() {
                   ))
                 ) : (
                   <p className="flex items-center gap-1.5 px-4 pb-2 pt-0.5 text-xs text-muted-foreground">
-                    Hover a chat and click its
+                    Click the
                     <Star className="inline h-3 w-3 shrink-0" />
-                    to pin it here.
+                    on a chat to pin it here.
                   </p>
                 )}
               </div>

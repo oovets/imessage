@@ -142,10 +142,11 @@ function ChatItemComponent({
                   onToggleStar(chat.guid);
                 }}
                 className={cn(
-                  "rounded p-0.5 hover:bg-muted",
-                  starred
-                    ? "text-amber-500"
-                    : "text-muted-foreground/60 opacity-0 group-hover:opacity-100"
+                  // Always visible: the hover-reveal version proved invisible
+                  // in practice. Unpinned is a faint outline that sharpens
+                  // under the pointer; pinned is filled amber.
+                  "rounded p-0.5 hover:bg-muted hover:text-foreground",
+                  starred ? "text-amber-500" : "text-muted-foreground/40"
                 )}
               >
                 <Star className={cn("h-3.5 w-3.5", starred && "fill-current")} />
