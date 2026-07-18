@@ -42,11 +42,17 @@ Release builds are currently unsigned. On first launch, see
   activity.
 - A consistent Messages-style interface across both services — same bubbles, same
   composer, same behavior.
+- Split iMessage/SMS threads for the same contact (as served by pre-macOS-26 hosts) are
+  merged into one conversation, the way Apple's Messages app does — one list entry,
+  interleaved history, replies routed to the service the contact last used.
 - Source-specific code stays cleanly separated internally, but the user sees one app.
 
 ### iMessage (via BlueBubbles)
 
 - Send and receive texts, replies, tapbacks, and image/video/file attachments.
+- Contact photos from the server's Contacts database (no Private API needed), shown in the
+  chat list and as mini avatars next to incoming messages; downscaled thumbnails keep
+  memory low, and a settings toggle switches all avatars off (initials only).
 - Optimistic outgoing rendering, deduped against server echoes.
 - Inline downscaled image thumbnails with a full-size preview dialog; video plays inline;
   other attachments render as links.
@@ -56,7 +62,8 @@ Release builds are currently unsigned. On first launch, see
 
 - Log in by phone number and code, or by QR, with two-factor password support.
 - Multiple accounts.
-- Messages, reactions, typing indicators, presence, and avatars.
+- Messages, reactions, typing indicators, presence, and avatars — including sender photos
+  next to messages in group chats.
 - Media (photos, stickers, video, documents) fetched through an encrypted local cache and
   streamed from disk to keep memory low.
 - Send messages and file attachments; edit, delete, and mark read.
