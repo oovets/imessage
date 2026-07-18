@@ -45,11 +45,20 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-# rm a path (file or dir); log it; honour --dry-run.
+# rm a path (file or dir); log it; honour --dry-run. Never aborts the script:
+# a path we can't delete (e.g. a running app, or one owned by root) is reported
+# with a sudo hint and recorded, so cleanup always continues to the next step.
+SURVIVORS=""
 wipe() {
   local path="$1"
-  if [ -e "$path" ] || ls "$path" >/dev/null 2>&1; then
-    if [ "$DRY_RUN" = "1" ]; then would "delete $path"; else rm -rf "$path" && ok "deleted $path"; fi
+  [ -e "$path" ] || return 0
+  if [ "$DRY_RUN" = "1" ]; then would "delete $path"; return 0; fi
+  rm -rf "$path" 2>/dev/null || true
+  if [ -e "$path" ]; then
+    warn "could NOT remove $path"
+    SURVIVORS="$SURVIVORS$path"$'\n'
+  else
+    ok "deleted $path"
   fi
 }
 
@@ -65,11 +74,14 @@ wipe_keychain() {
   [ "$n" -gt 0 ] && ok "removed $n keychain item(s) for $svc"
 }
 
-quit_app() { # quit by name, then force if needed
+quit_app() { # quit gracefully, then force-kill so its .app isn't busy on removal
   local name="$1"
-  [ "$DRY_RUN" = "1" ] && { would "quit $name"; return; }
+  [ "$DRY_RUN" = "1" ] && { would "quit $name"; return 0; }
   osascript -e "tell application \"$name\" to quit" >/dev/null 2>&1 || true
-  pkill -f "$name" >/dev/null 2>&1 || true
+  sleep 1
+  pkill -x "$name" >/dev/null 2>&1 || true
+  killall -9 "$name" >/dev/null 2>&1 || true
+  sleep 1
 }
 
 # --- confirm ---------------------------------------------------------------
@@ -118,6 +130,18 @@ if [ "$INCLUDE_SERVER" = "1" ]; then
   done
 fi
 
+step "Verifying a clean slate"
+if [ "$DRY_RUN" = "1" ]; then
+  warn "dry run — nothing was actually deleted."
+elif [ -n "$SURVIVORS" ]; then
+  warn "Some items could not be removed (likely a running app or root-owned):"
+  printf '%s' "$SURVIVORS" | sed '/^$/d;s/^/    /'
+  echo
+  echo "Re-run after quitting the apps, or force-remove with sudo, e.g.:"
+  printf '%s' "$SURVIVORS" | sed '/^$/d' | while IFS= read -r p; do echo "    sudo rm -rf \"$p\""; done
+else
+  ok "No traces left — the reuse path is gone."
+fi
+
 step "Done"
-[ "$DRY_RUN" = "1" ] && warn "dry run — nothing was actually deleted."
 echo "Next launch of Messages Desktop will start from a clean first-run state."
