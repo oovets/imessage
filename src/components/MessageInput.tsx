@@ -413,7 +413,7 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
               "scrollbar-autohide w-full resize-none text-sm caret-foreground",
               superlightMode
                 ? "block bg-background p-0 m-0 leading-tight placeholder:text-muted-foreground focus:outline-none min-h-0 max-h-[140px] overflow-y-auto"
-                : "border border-input rounded-2xl bg-muted/40 pl-4 py-2 pr-11 placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring min-h-9 max-h-[140px] overflow-y-auto transition-shadow"
+                : "border border-input rounded-2xl bg-muted/40 pl-4 py-[7px] pr-11 placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring min-h-9 max-h-[140px] overflow-y-auto transition-shadow"
             )}
           />
           <button
