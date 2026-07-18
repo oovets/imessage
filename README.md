@@ -81,6 +81,20 @@ Release builds are currently unsigned. On first launch, see
 - Memory-conscious: bounded LRU message cache, downscaled image thumbnails, disk-streamed
   video.
 
+### AI auto-reply (optional)
+
+- Point the app at any OpenAI-compatible chat-completions endpoint (vLLM, Ollama, or a
+  self-hosted GPU box) under Settings — endpoint, model, optional API key, and a
+  persona/system prompt.
+- Enable the robot icon in a chat's header to let the model answer incoming messages
+  there as you, in your tone and language. Works for both iMessage and Telegram, with
+  replies routed over the service the contact last used.
+- Built-in guardrails: replies wait for message bursts to finish, are rate-limited per
+  chat, and stop after ten consecutive auto-replies until you write something yourself —
+  so two bots can never loop.
+- Everything runs against your own endpoint; no messages leave your machines unless you
+  point it at a hosted API.
+
 ---
 
 ## Requirements
