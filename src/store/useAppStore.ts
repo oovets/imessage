@@ -826,6 +826,20 @@ export const useAppStore = create<AppState>()(
         state?.repairPaneState();
         state?.setHydrated(true);
       },
+      // Shallow merge like the default, but backfill empty AI endpoint/model
+      // with the current defaults — stores persisted before those defaults
+      // existed would otherwise pin them to "" forever.
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<AppState>;
+        const merged = { ...current, ...p } as AppState;
+        merged.aiReply = {
+          ...current.aiReply,
+          ...(p.aiReply ?? {}),
+          endpoint: p.aiReply?.endpoint?.trim() ? p.aiReply.endpoint : current.aiReply.endpoint,
+          model: p.aiReply?.model?.trim() ? p.aiReply.model : current.aiReply.model,
+        };
+        return merged;
+      },
       partialize: (s) => ({
         superlightMode: s.superlightMode,
         showTimestamps: s.showTimestamps,
