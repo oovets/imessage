@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
 import {
   DEFAULT_APPEARANCE,
   FONT_SCALE_STEP,
@@ -392,6 +392,49 @@ function chatActivity(chat: Chat): number {
 function sortChatsByRecency(list: Chat[]): Chat[] {
   // Stable sort keeps each source's incoming order among equal/unknown times.
   return [...list].sort((a, b) => chatActivity(b) - chatActivity(a));
+}
+
+// localStorage wrapper that can never break app flows: a quota-exceeded write
+// evicts the secondary caches (avatars, contacts — both rebuildable) and
+// retries once; if it still fails the write is dropped and the app runs on.
+const safeLocalStorage = {
+  getItem: (name: string) => window.localStorage.getItem(name),
+  removeItem: (name: string) => window.localStorage.removeItem(name),
+  setItem: (name: string, value: string) => {
+    try {
+      window.localStorage.setItem(name, value);
+    } catch {
+      try {
+        for (const key of Object.keys(window.localStorage)) {
+          if (key.startsWith("bb-avatar-cache") || key.startsWith("bb-contact-cache")) {
+            window.localStorage.removeItem(key);
+          }
+        }
+        window.localStorage.setItem(name, value);
+      } catch {
+        /* still over quota — persist skipped, in-memory state unaffected */
+      }
+    }
+  },
+};
+
+/** Slim a chat for persistence — enough to render the list on cold start. */
+function slimChat(c: Chat): Chat {
+  return {
+    guid: c.guid,
+    displayName: c.displayName,
+    chatIdentifier: c.chatIdentifier,
+    participants: (c.participants ?? []).map((p) => ({
+      address: p.address,
+      firstName: p.firstName,
+    })),
+    lastMessage: c.lastMessage
+      ? ({ dateCreated: c.lastMessage.dateCreated, text: c.lastMessage.text } as Message)
+      : null,
+    unreadCount: c.unreadCount,
+    lastMessageText: c.lastMessageText,
+    activityAt: c.activityAt,
+  } as Chat;
 }
 
 export const useAppStore = create<AppState>()(
@@ -840,6 +883,7 @@ export const useAppStore = create<AppState>()(
         };
         return merged;
       },
+      storage: createJSONStorage(() => safeLocalStorage),
       partialize: (s) => ({
         superlightMode: s.superlightMode,
         showTimestamps: s.showTimestamps,
@@ -851,7 +895,7 @@ export const useAppStore = create<AppState>()(
         appearance: s.appearance,
         linkPreviewsEnabled: s.linkPreviewsEnabled,
         linkPreviewCache: s.linkPreviewCache,
-        chats: s.chats,
+        chats: s.chats.map(slimChat),
         paneTree: s.paneTree,
         activePaneId: s.activePaneId,
         paneLayouts: s.paneLayouts,
