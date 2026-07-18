@@ -7,19 +7,20 @@
 
 ![Messages desktop app](docs/assets/messages-mockup.svg)
 
-A native macOS desktop app that puts **iMessage and Telegram in one unified inbox**.
-Conversations from both services live in a single chat list, sorted by time, with one
-clean Messages-style interface. iMessage runs through a self-hosted
-[BlueBubbles](https://bluebubbles.app) server; Telegram connects directly over MTProto.
+A native macOS desktop app that puts **iMessage, Telegram and Slack in one unified
+inbox**. Conversations from all three services live in a single chat list, sorted by time,
+with one clean Messages-style interface. iMessage runs through a self-hosted
+[BlueBubbles](https://bluebubbles.app) server; Telegram connects directly over MTProto;
+Slack uses the Web API with Socket Mode for realtime.
 
 This is a real Tauri 2 application, not a webpage in a wrapper. It installs into
 `/Applications`, lives in the menu bar, launches at login, stores credentials in the macOS
 Keychain, and delivers native notifications and deep links. A browser-served web build
 exists for development, but the shipping product is the macOS desktop app.
 
-**Stack:** Tauri 2, Rust, React, TypeScript, Vite, Tailwind, Zustand. The Telegram side is a
-Cargo workspace of focused crates (`shared`, `database`, `cache`, `telegram-api`,
-`telegram-core`) compiled into the same binary.
+**Stack:** Tauri 2, Rust, React, TypeScript, Vite, Tailwind, Zustand. The messaging
+backends are a Cargo workspace of focused crates (`shared`, `database`, `cache`,
+`telegram-api`, `telegram-core`, `slack-core`) compiled into the same binary.
 
 ---
 
@@ -70,9 +71,12 @@ Release builds are currently unsigned. On first launch, see
 
 ### Unified inbox
 
-- One chat list interleaving iMessage and Telegram conversations, sorted by most recent
-  activity.
-- A consistent Messages-style interface across both services — same bubbles, same
+- One chat list interleaving iMessage, Telegram and Slack conversations, sorted by most
+  recent activity.
+- Conversations are grouped by account — iMessage, each Telegram login, each Slack
+  workspace — under collapsible headers that keep an unread badge when collapsed. With a
+  single account the list stays flat.
+- A consistent Messages-style interface across all three services — same bubbles, same
   composer, same behavior.
 - Split iMessage/SMS threads for the same contact (as served by pre-macOS-26 hosts) are
   merged into one conversation, the way Apple's Messages app does — one list entry,
@@ -100,6 +104,18 @@ Release builds are currently unsigned. On first launch, see
   streamed from disk to keep memory low.
 - Send messages and file attachments; edit, delete, and mark read.
 
+### Slack (via Web API + Socket Mode)
+
+- Multiple workspaces, each with its own tokens in the Keychain. Channels, private
+  channels, group DMs and DMs appear in the unified list; bots and Slack's own noise
+  sections are filtered out.
+- Realtime messages, edits and deletes over Socket Mode. Replying to a message posts it
+  in that thread.
+- Images and video render inline, fetched host-side with the workspace token and streamed
+  from disk; other files download on click.
+- Slack's mrkdwn is unwrapped before display, so `<@U123>` mentions show names, emoji
+  shortcodes render as emoji, and links get title previews.
+
 ### Desktop integration
 
 - Real macOS app bundle: native menu, tray icon, dock presence, `Cmd+Q`.
@@ -119,7 +135,7 @@ Release builds are currently unsigned. On first launch, see
   self-hosted GPU box) under Settings — endpoint, model, optional API key, and a
   persona/system prompt.
 - Enable the robot icon in a chat's header to let the model answer incoming messages
-  there as you, in your tone and language. Works for both iMessage and Telegram, with
+  there as you, in your tone and language. Works across iMessage, Telegram and Slack, with
   replies routed over the service the contact last used.
 - Built-in guardrails: replies wait for message bursts to finish, are rate-limited per
   chat, and stop after ten consecutive auto-replies until you write something yourself —
@@ -137,6 +153,9 @@ Release builds are currently unsigned. On first launch, see
 - For iMessage: a reachable BlueBubbles server plus its URL and password/API key.
 - For Telegram: nothing beyond your Telegram account — the app's API credentials are baked
   into official release builds.
+- For Slack: a user or bot token (`xoxp-`/`xoxb-`) and an app-level token (`xapp-`) per
+  workspace, created at api.slack.com/apps with Socket Mode enabled. The user token needs
+  `files:read` for attachments to load.
 
 **To build from source:** Rust stable, the Tauri 2 macOS prerequisites, Xcode command line
 tools, and Node.js 24 with npm. The web build (development only) needs just Node.js 24 and
