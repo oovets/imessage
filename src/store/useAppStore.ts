@@ -262,6 +262,15 @@ interface AppState {
   showTimestamps: boolean;
   // Show contact/Telegram profile photos; off = initials only.
   showAvatars: boolean;
+  // AI auto-reply: an OpenAI-compatible endpoint answers on the user's behalf
+  // in explicitly enabled chats.
+  aiReply: {
+    endpoint: string;
+    apiKey: string;
+    model: string;
+    systemPrompt: string;
+  };
+  aiReplyChats: Record<string, true>;
   sidebarHidden: boolean;
   appearance: AppearanceSettings;
   linkPreviewsEnabled: boolean;
@@ -310,6 +319,8 @@ interface AppState {
   setSuperlightMode: (v: boolean) => void;
   setShowTimestamps: (v: boolean) => void;
   setShowAvatars: (v: boolean) => void;
+  setAiReplyConfig: (patch: Partial<AppState["aiReply"]>) => void;
+  toggleAiReplyChat: (guid: string) => void;
   setSidebarHidden: (v: boolean) => void;
   toggleSidebarHidden: () => void;
   setFontScale: (value: number) => void;
@@ -387,6 +398,14 @@ export const useAppStore = create<AppState>()(
       superlightMode: false,
       showTimestamps: true,
       showAvatars: true,
+      aiReply: {
+        endpoint: "",
+        apiKey: "",
+        model: "",
+        systemPrompt:
+          "You are replying as me in a personal chat. Match my tone and language, keep replies short and natural, never mention being an AI.",
+      },
+      aiReplyChats: {},
       sidebarHidden: false,
       appearance: DEFAULT_APPEARANCE,
       linkPreviewsEnabled: true,
@@ -452,6 +471,14 @@ export const useAppStore = create<AppState>()(
       setSuperlightMode: (v) => set({ superlightMode: v }),
       setShowTimestamps: (v) => set({ showTimestamps: v }),
       setShowAvatars: (v) => set({ showAvatars: v }),
+      setAiReplyConfig: (patch) => set((s) => ({ aiReply: { ...s.aiReply, ...patch } })),
+      toggleAiReplyChat: (guid) =>
+        set((s) => {
+          const next = { ...s.aiReplyChats };
+          if (next[guid]) delete next[guid];
+          else next[guid] = true;
+          return { aiReplyChats: next };
+        }),
       setSidebarHidden: (v) => set({ sidebarHidden: v }),
       toggleSidebarHidden: () => set((s) => ({ sidebarHidden: !s.sidebarHidden })),
       setFontScale: (value) =>
@@ -776,6 +803,8 @@ export const useAppStore = create<AppState>()(
         superlightMode: s.superlightMode,
         showTimestamps: s.showTimestamps,
         showAvatars: s.showAvatars,
+        aiReply: s.aiReply,
+        aiReplyChats: s.aiReplyChats,
         onboardingDismissed: s.onboardingDismissed,
         sidebarHidden: s.sidebarHidden,
         appearance: s.appearance,

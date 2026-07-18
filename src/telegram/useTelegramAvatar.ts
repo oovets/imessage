@@ -69,7 +69,6 @@ export function useTelegramSenderAvatar(
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eligible, key]);
 
   return eligible ? url : null;

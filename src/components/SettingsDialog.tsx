@@ -52,6 +52,8 @@ export function SettingsDialog(_props: SettingsDialogProps) {
     setShowTimestamps,
     showAvatars,
     setShowAvatars,
+    aiReply,
+    setAiReplyConfig,
     linkPreviewsEnabled,
     setLinkPreviewsEnabled,
     clearLinkPreviewCache,
@@ -354,6 +356,53 @@ export function SettingsDialog(_props: SettingsDialogProps) {
                   >
                     Clear cache
                   </Button>
+                </div>
+              </div>
+              <div className="grid gap-2 rounded-md border p-3">
+                <Label>AI auto-reply</Label>
+                <p className="text-xs text-muted-foreground">
+                  An OpenAI-compatible endpoint (vLLM, Ollama, …) answers as you in chats where
+                  you enable the robot icon in the chat header. Replies are capped and cool down
+                  automatically.
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="grid gap-1">
+                    <Label htmlFor="ai-endpoint" className="text-xs">Endpoint</Label>
+                    <Input
+                      id="ai-endpoint"
+                      placeholder="http://gpulab:8000/v1"
+                      value={aiReply.endpoint}
+                      onChange={(e) => setAiReplyConfig({ endpoint: e.target.value })}
+                    />
+                  </div>
+                  <div className="grid gap-1">
+                    <Label htmlFor="ai-model" className="text-xs">Model</Label>
+                    <Input
+                      id="ai-model"
+                      placeholder="qwen2.5-72b-instruct"
+                      value={aiReply.model}
+                      onChange={(e) => setAiReplyConfig({ model: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div className="grid gap-1">
+                  <Label htmlFor="ai-key" className="text-xs">API key (optional)</Label>
+                  <Input
+                    id="ai-key"
+                    type="password"
+                    value={aiReply.apiKey}
+                    onChange={(e) => setAiReplyConfig({ apiKey: e.target.value })}
+                  />
+                </div>
+                <div className="grid gap-1">
+                  <Label htmlFor="ai-prompt" className="text-xs">Persona / system prompt</Label>
+                  <textarea
+                    id="ai-prompt"
+                    rows={3}
+                    className="w-full rounded-md border bg-transparent px-3 py-2 text-sm"
+                    value={aiReply.systemPrompt}
+                    onChange={(e) => setAiReplyConfig({ systemPrompt: e.target.value })}
+                  />
                 </div>
               </div>
             </>

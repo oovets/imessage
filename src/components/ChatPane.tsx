@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, MessageCircleDashed, SplitSquareHorizontal, SplitSquareVertical, X, MessageSquarePlus } from "lucide-react";
+import { ArrowLeft, Bot, MessageCircleDashed, SplitSquareHorizontal, SplitSquareVertical, X, MessageSquarePlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MessageList } from "@/components/MessageList";
 import { MessageInput } from "@/components/MessageInput";
@@ -38,6 +38,11 @@ export function ChatPane({ paneId, chatGUID, isActive, canClose, showMobileBack 
   const closePane = useAppStore((s) => s.closePane);
   const setPaneChat = useAppStore((s) => s.setPaneChat);
   const superlightMode = useAppStore((s) => s.superlightMode);
+  const aiConfigured = useAppStore(
+    (s) => s.aiReply.endpoint.trim().length > 0 && s.aiReply.model.trim().length > 0
+  );
+  const aiEnabled = useAppStore((s) => (chatGUID ? !!s.aiReplyChats[chatGUID] : false));
+  const toggleAiReplyChat = useAppStore((s) => s.toggleAiReplyChat);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const paneRef = useRef<HTMLDivElement>(null);
 
@@ -176,6 +181,21 @@ export function ChatPane({ paneId, chatGUID, isActive, canClose, showMobileBack 
         )}
 
         <div className="flex items-center gap-0.5 shrink-0">
+          {!empty && aiConfigured && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(
+                "h-7 w-7",
+                aiEnabled ? "text-primary" : "text-muted-foreground"
+              )}
+              onClick={() => chatGUID && toggleAiReplyChat(chatGUID)}
+              aria-label={aiEnabled ? "Disable AI auto-reply" : "Enable AI auto-reply"}
+              title={aiEnabled ? "AI auto-reply is ON for this chat" : "Enable AI auto-reply for this chat"}
+            >
+              <Bot className="h-4 w-4" />
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon"

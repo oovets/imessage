@@ -21,7 +21,7 @@ let aliasToCanonical = new Map<string, string>();
 let variantsByCanonical = new Map<string, string[]>();
 // canonical guid -> the variant whose thread saw the latest traffic; sends go
 // there so we answer on the service the contact is actually using.
-let preferredSendByCanonical = new Map<string, string>();
+const preferredSendByCanonical = new Map<string, string>();
 
 /** Map any thread guid to the merged conversation's guid. */
 export function canonicalChatGuid(guid: string): string {

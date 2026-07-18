@@ -8,6 +8,7 @@ import { usePollingFallback } from "@/hooks/usePollingFallback";
 import { useDesktopFeatures } from "@/hooks/useDesktopFeatures";
 import { useTelegramInbox } from "@/hooks/useTelegramInbox";
 import { useTelegramEvents } from "@/hooks/useTelegramEvents";
+import { useAiAutoReply } from "@/hooks/useAiAutoReply";
 import { isTauriRuntime } from "@/lib/tauriEnv";
 import { useAppStore, type PaneNode } from "@/store/useAppStore";
 import { useTheme } from "@/components/ThemeProvider";
@@ -33,6 +34,7 @@ export default function App() {
   usePollingFallback();
   useTelegramInbox();
   useTelegramEvents();
+  useAiAutoReply();
 
   const selectedChatGUID = useAppStore((s) => s.selectedChatGUID);
   const paneTree = useAppStore((s) => s.paneTree);
