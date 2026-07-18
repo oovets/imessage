@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { ChatList } from "@/components/ChatList";
 import { ChatPane } from "@/components/ChatPane";
 import { PaneTreeRoot } from "@/components/PaneTree";
+import { ImageContextMenu } from "@/components/ImageContextMenu";
 import { OnboardingWizard } from "@/components/OnboardingWizard";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { usePollingFallback } from "@/hooks/usePollingFallback";
@@ -132,6 +133,7 @@ export default function App() {
     <div className="app-shell flex h-screen overflow-hidden bg-background">
       {/* Draggable titlebar strip (Tauri only — hidden via CSS in the browser). */}
       <div className="app-titlebar" data-tauri-drag-region />
+      <ImageContextMenu />
       <aside
         className={cn(
           "flex flex-col min-h-0 shrink-0 transition-[width]",

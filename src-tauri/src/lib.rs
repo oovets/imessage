@@ -1,5 +1,6 @@
 mod telegram;
 mod ai;
+mod media_actions;
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use keyring::Entry;
@@ -324,6 +325,9 @@ pub fn run() {
             slack::sl_download_file,
             slack::sl_user_names,
             slack::sl_user_avatar,
+            media_actions::img_save,
+            media_actions::img_open,
+            media_actions::img_copy,
             // BlueBubbles in-app onboarding
             onboarding::bb_status,
             onboarding::bb_install,
