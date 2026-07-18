@@ -21,6 +21,9 @@ export const sl = {
     invoke<SlMessage[]>("sl_history", { workspaceId, channelId, limit }),
   selfUserId: (workspaceId: string) =>
     invoke<string | null>("sl_self_user_id", { workspaceId }),
+  /** A user's public avatar URL, or null if they have none. */
+  userAvatar: (workspaceId: string, userId: string) =>
+    invoke<string | null>("sl_user_avatar", { workspaceId, userId }),
   /** Known user id -> display name, for resolving `<@U123>` mentions. */
   userNames: (workspaceId: string) =>
     invoke<Record<string, string>>("sl_user_names", { workspaceId }),

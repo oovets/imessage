@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { Star } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 import { cn } from "@/lib/utils";
@@ -18,9 +19,18 @@ interface ChatItemProps {
   isSelected: boolean;
   onSelect: (guid: string) => void;
   compact?: boolean;
+  starred?: boolean;
+  onToggleStar?: (guid: string) => void;
 }
 
-function ChatItemComponent({ chat, isSelected, onSelect, compact = false }: ChatItemProps) {
+function ChatItemComponent({
+  chat,
+  isSelected,
+  onSelect,
+  compact = false,
+  starred = false,
+  onToggleStar,
+}: ChatItemProps) {
   const onClick = () => onSelect(chat.guid);
   const superlightMode = useAppStore((s) => s.superlightMode);
   const showAvatars = useAppStore((s) => s.showAvatars);
@@ -31,7 +41,9 @@ function ChatItemComponent({ chat, isSelected, onSelect, compact = false }: Chat
   const initials = getChatInitials(chat);
   const tgAvatarUrl = useTelegramAvatar(chat.guid);
   const contactAvatarUrl = useContactAvatar(chat);
-  const avatarUrl = tgAvatarUrl ?? contactAvatarUrl;
+  // Slack DMs carry a ready public URL on the chat itself — no hook needed.
+  const avatarUrl =
+    (showAvatars ? chat.avatarUrl : null) ?? tgAvatarUrl ?? contactAvatarUrl;
   const lastTime = chat.lastMessage?.dateCreated
     ? formatMessageTime(chat.lastMessage.dateCreated)
     : "";
@@ -59,7 +71,7 @@ function ChatItemComponent({ chat, isSelected, onSelect, compact = false }: Chat
           </AvatarFallback>
         </Avatar>
         {chat.unreadCount > 0 && (
-          <span className="absolute top-1 right-1 h-4 min-w-4 px-1 text-[10px] rounded-full bg-primary text-primary-foreground font-semibold flex items-center justify-center">
+          <span className="absolute top-1 right-1 h-4 min-w-4 px-1 text-[10px] rounded-full bg-red-500 text-white font-semibold flex items-center justify-center">
             {chat.unreadCount > 99 ? "99+" : chat.unreadCount}
           </span>
         )}
@@ -72,7 +84,7 @@ function ChatItemComponent({ chat, isSelected, onSelect, compact = false }: Chat
       onClick={onClick}
       aria-pressed={isSelected}
       className={cn(
-        "w-full flex items-center gap-3 pl-5 pr-4 py-2.5 text-left relative active:bg-accent/80",
+        "group w-full flex items-center gap-3 pl-5 pr-4 py-2.5 text-left relative active:bg-accent/80",
         superlightMode
           ? "hover:bg-muted/30"
           : cn(
@@ -112,9 +124,33 @@ function ChatItemComponent({ chat, isSelected, onSelect, compact = false }: Chat
           >
             {name}
           </span>
-          {lastTime && (
-            <span className="text-xs text-muted-foreground shrink-0">{lastTime}</span>
-          )}
+          <span className="flex items-center gap-1 shrink-0">
+            {/* Star: pinned shows always; otherwise it fades in on hover. A
+                span, not a button — the whole row already is one. */}
+            {onToggleStar && (
+              <span
+                role="button"
+                tabIndex={-1}
+                aria-label={starred ? "Unstar chat" : "Star chat"}
+                title={starred ? "Unstar" : "Star"}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleStar(chat.guid);
+                }}
+                className={cn(
+                  "rounded p-0.5 hover:bg-muted",
+                  starred
+                    ? "text-amber-500"
+                    : "text-muted-foreground/60 opacity-0 group-hover:opacity-100"
+                )}
+              >
+                <Star className={cn("h-3.5 w-3.5", starred && "fill-current")} />
+              </span>
+            )}
+            {lastTime && (
+              <span className="text-xs text-muted-foreground">{lastTime}</span>
+            )}
+          </span>
         </div>
         <div className="flex items-center justify-between gap-2">
           {isTyping ? (
@@ -125,7 +161,7 @@ function ChatItemComponent({ chat, isSelected, onSelect, compact = false }: Chat
             </p>
           )}
           {chat.unreadCount > 0 && (
-            <span className="h-5 min-w-5 px-1.5 text-[10px] shrink-0 rounded-full bg-primary text-primary-foreground font-semibold flex items-center justify-center">
+            <span className="h-5 min-w-5 px-1.5 text-[10px] shrink-0 rounded-full bg-red-500 text-white font-semibold flex items-center justify-center">
               {chat.unreadCount > 99 ? "99+" : chat.unreadCount}
             </span>
           )}

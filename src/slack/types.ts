@@ -36,6 +36,8 @@ export interface SlChat {
   username: string | null;
   unread: number;
   section: SlChatSection;
+  /** DM partner's profile photo (public slack-edge URL); null for channels. */
+  avatar_url: string | null;
 }
 
 /** Every field is optional on the wire — Slack omits them for some file types. */
@@ -68,6 +70,8 @@ export interface SlEventEnvelope {
   update?: {
     NewMessage?: {
       channel_id: string;
+      /** Sender's Slack user id (absent for some bots/webhooks). */
+      user_id: string | null;
       user_name: string;
       text: string;
       ts: string;

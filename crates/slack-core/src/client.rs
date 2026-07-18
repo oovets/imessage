@@ -20,6 +20,9 @@ fn log_debug(msg: &str) {
 pub enum SlackUpdate {
     NewMessage {
         channel_id: String,
+        /// Slack user id of the sender, when the event carries one (bots and
+        /// webhooks may not). This is what sender avatars key on.
+        user_id: Option<String>,
         user_name: String,
         text: String,
         ts: String,
@@ -285,6 +288,12 @@ struct UserInfoResponse {
 struct UserProfile {
     #[serde(default)]
     display_name: Option<String>,
+    // Slack avatar URLs are public hash-based links on avatars.slack-edge.com,
+    // so the webview can load them directly — no token, no proxying.
+    #[serde(default)]
+    image_192: Option<String>,
+    #[serde(default)]
+    image_72: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -306,6 +315,23 @@ struct CachedUserInfo {
     name: String,
     is_bot: bool,
     deleted: bool,
+    avatar_url: Option<String>,
+}
+
+impl CachedUserInfo {
+    /// One place builds this from a wire `User`, so every path that populates
+    /// the cache stores the same shape — a partial insert (say, name but no
+    /// avatar) would stick forever, since the cache never refetches a hit.
+    fn from_user(user: &User) -> Self {
+        CachedUserInfo {
+            name: SlackClient::display_name_for_user(user),
+            is_bot: user.is_bot,
+            deleted: user.deleted,
+            avatar_url: user.profile.as_ref().and_then(|p| {
+                p.image_192.clone().or_else(|| p.image_72.clone())
+            }),
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -622,20 +648,16 @@ impl SlackClient {
                             if let Some(info) = user_info_cache.lock().await.get(user_id_event).cloned() {
                                 info.name
                             } else {
-                                if let Ok(user_info) = Self::fetch_user_info(http, token, user_id_event).await {
+                                if let Ok(info) = Self::fetch_user_info(http, token, user_id_event).await {
                                     user_name_cache
                                         .lock()
                                         .await
-                                        .insert(user_id_event.to_string(), user_info.clone());
-                                    user_info_cache.lock().await.insert(
-                                        user_id_event.to_string(),
-                                        CachedUserInfo {
-                                            name: user_info.clone(),
-                                            is_bot: false,
-                                            deleted: false,
-                                        },
-                                    );
-                                    user_info
+                                        .insert(user_id_event.to_string(), info.name.clone());
+                                    user_info_cache
+                                        .lock()
+                                        .await
+                                        .insert(user_id_event.to_string(), info.clone());
+                                    info.name
                                 } else {
                                     user_id_event.to_string()
                                 }
@@ -676,6 +698,8 @@ impl SlackClient {
 
                         pending_updates.push(SlackUpdate::NewMessage {
                             channel_id: channel_id.to_string(),
+                            user_id: (user_id_event != "unknown")
+                                .then(|| user_id_event.to_string()),
                             user_name,
                             text: text.to_string(),
                             ts: ts.to_string(),
@@ -693,10 +717,19 @@ impl SlackClient {
                         event.get("channel").and_then(|v| v.as_str()),
                         event.get("user").and_then(|v| v.as_str()),
                     ) {
-                        let user_name = if let Ok(user_info) =
+                        // Typing events fire on every keystroke pause — always
+                        // check the cache before going to the network.
+                        let cached = user_info_cache.lock().await.get(user_id).cloned();
+                        let user_name = if let Some(info) = cached {
+                            info.name
+                        } else if let Ok(info) =
                             Self::fetch_user_info(http, token, user_id).await
                         {
-                            user_info
+                            user_info_cache
+                                .lock()
+                                .await
+                                .insert(user_id.to_string(), info.clone());
+                            info.name
                         } else {
                             user_id.to_string()
                         };
@@ -745,7 +778,14 @@ impl SlackClient {
             .unwrap_or_else(|| user.name.clone())
     }
 
-    async fn fetch_user_info(http: &HttpClient, token: &str, user_id: &str) -> Result<String> {
+    /// Static (no &self) because the WebSocket task runs without a full client.
+    /// Returns the whole cached shape, not just the name — a name-only variant
+    /// once let the realtime path insert avatar-less cache entries that stuck.
+    async fn fetch_user_info(
+        http: &HttpClient,
+        token: &str,
+        user_id: &str,
+    ) -> Result<CachedUserInfo> {
         let response: UserInfoResponse = http
             .get(&format!(
                 "https://slack.com/api/users.info?user={}",
@@ -758,9 +798,9 @@ impl SlackClient {
             .await?;
 
         if response.ok {
-            Ok(Self::display_name_for_user(&response.user))
+            Ok(CachedUserInfo::from_user(&response.user))
         } else {
-            Ok(user_id.to_string())
+            Err(anyhow!("users.info returned ok=false for {user_id}"))
         }
     }
 
@@ -790,11 +830,7 @@ impl SlackClient {
             return None;
         }
 
-        let info = CachedUserInfo {
-            name: Self::display_name_for_user(&response.user),
-            is_bot: response.user.is_bot,
-            deleted: response.user.deleted,
-        };
+        let info = CachedUserInfo::from_user(&response.user);
 
         self.user_info_cache
             .lock()
@@ -982,6 +1018,8 @@ impl SlackClient {
                 ChatSection::Public
             };
 
+            let avatar_url = dm_user_info.as_ref().and_then(|i| i.avatar_url.clone());
+
             let name = match section {
                 ChatSection::Group => {
                     // Fetch members and build "Name1, Name2" excluding self
@@ -1028,6 +1066,7 @@ impl SlackClient {
                 username: ch.user.or(Some(ch.id)),
                 unread: ch.unread_count.unwrap_or(0),
                 section,
+                avatar_url,
             });
         }
 
@@ -1303,6 +1342,12 @@ impl SlackClient {
     /// history messages are its own.
     pub async fn self_user_id(&self) -> Option<String> {
         self.user_id.lock().await.clone()
+    }
+
+    /// A user's profile photo URL (public), for sender avatars in
+    /// conversations. Cached like every other user lookup.
+    pub async fn user_avatar(&self, user_id: &str) -> Option<String> {
+        self.fetch_user_info_cached(user_id).await?.avatar_url
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<SlackUpdate> {

@@ -79,8 +79,44 @@ export interface AccountGroup {
 }
 
 /**
- * Split a chat list into per-account groups, preserving the incoming order
- * (recency) within each group.
+ * Section rank inside a Slack workspace: channels, then people, then group
+ * DMs. Public/private/shared channels interleave — the distinction matters to
+ * Slack's API, not to a reader scanning a sidebar.
+ */
+const SLACK_SECTION_RANK: Record<string, number> = {
+  Public: 0,
+  Private: 0,
+  Shared: 0,
+  DirectMessage: 1,
+  Group: 2,
+};
+
+/**
+ * Order within one Slack workspace: anything unread first (most recent on
+ * top), then channels, people and group chats, each alphabetical. Slack has
+ * no meaningful global recency — most channels idle for days — so a stable
+ * browsable order beats a feed that reshuffles on every message.
+ */
+export function sortSlackChats(chats: Chat[]): Chat[] {
+  const name = (c: Chat) =>
+    (c.displayName || c.chatIdentifier || "").replace(/^#/, "").toLowerCase();
+  return [...chats].sort((a, b) => {
+    const aUnread = (a.unreadCount ?? 0) > 0;
+    const bUnread = (b.unreadCount ?? 0) > 0;
+    if (aUnread !== bUnread) return aUnread ? -1 : 1;
+    if (aUnread && bUnread) return (b.activityAt ?? 0) - (a.activityAt ?? 0);
+    const rank =
+      (SLACK_SECTION_RANK[a.slackSection ?? ""] ?? 3) -
+      (SLACK_SECTION_RANK[b.slackSection ?? ""] ?? 3);
+    if (rank !== 0) return rank;
+    return name(a).localeCompare(name(b), "sv");
+  });
+}
+
+/**
+ * Split a chat list into per-account groups. iMessage and Telegram groups
+ * keep the incoming order (recency); Slack groups get their own order (see
+ * sortSlackChats).
  */
 export function groupChatsByAccount(
   chats: Chat[],
@@ -101,6 +137,9 @@ export function groupChatsByAccount(
     }
     group.chats.push(chat);
     group.unread += chat.unreadCount ?? 0;
+  }
+  for (const group of groups.values()) {
+    if (group.ref.source === "slack") group.chats = sortSlackChats(group.chats);
   }
   return [...groups.values()].sort(compareAccounts);
 }

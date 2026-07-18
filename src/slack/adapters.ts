@@ -54,6 +54,8 @@ export function slChatToChat(workspaceId: string, chat: SlChat): Chat {
     // Real activity arrives with the first history load / realtime event; until
     // then a chat with no timestamp sorts last rather than jumping to the top.
     activityAt: 0,
+    avatarUrl: chat.avatar_url ?? undefined,
+    slackSection: chat.section,
   } as Chat;
 }
 

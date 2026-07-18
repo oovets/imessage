@@ -5,6 +5,7 @@ import { type Message, decodeEscapedUnicode, formatMessageTime } from "@/types";
 import { useAppStore } from "@/store/useAppStore";
 import { supports } from "@/lib/source";
 import { useTelegramSenderAvatar } from "@/telegram/useTelegramAvatar";
+import { useSlackSenderAvatar } from "@/slack/useSlackAvatar";
 import { useContactAvatarForAddress } from "@/lib/contactAvatars";
 import { getClient } from "@/api/clientFactory";
 import { extractFirstUrl, fetchLinkPreview } from "@/lib/linkPreview";
@@ -176,10 +177,11 @@ export function MessageBubble({
   const senderAddress = !isMe ? (message.handle?.address ?? null) : null;
   const chatGuid = message.chatGUID ?? "";
   const tgSenderAvatar = useTelegramSenderAvatar(chatGuid, senderAddress);
+  const slSenderAvatar = useSlackSenderAvatar(chatGuid, senderAddress);
   const contactSenderAvatar = useContactAvatarForAddress(
     chatGuid && supports(chatGuid, "contactAvatars") ? senderAddress : null
   );
-  const senderAvatar = tgSenderAvatar ?? contactSenderAvatar;
+  const senderAvatar = tgSenderAvatar ?? slSenderAvatar ?? contactSenderAvatar;
 
   const [copied, setCopied] = useState(false);
   const [showReactions, setShowReactions] = useState(false);

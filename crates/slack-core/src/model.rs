@@ -54,4 +54,7 @@ pub struct ChatInfo {
     pub username: Option<String>,
     pub unread: u32,
     pub section: ChatSection,
+    /// DM partner's profile photo (public avatars.slack-edge.com URL).
+    /// Channels and group DMs have no avatar.
+    pub avatar_url: Option<String>,
 }

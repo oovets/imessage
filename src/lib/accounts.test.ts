@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  sortSlackChats,
   accountOfGuid,
   fallbackAccountLabel,
   groupChatsByAccount,
@@ -74,5 +75,44 @@ describe("groupChatsByAccount", () => {
     expect(fallbackAccountLabel(accountOfGuid("sl:mirkk:C1"))).toBe("mirkk");
     const [group] = groupChatsByAccount([chat("sl:mirkk:C1")], {});
     expect(group.label).toBe("mirkk");
+  });
+});
+
+describe("sortSlackChats", () => {
+  const sl = (id: string, name: string, section: string, unread = 0, activityAt = 0): Chat =>
+    ({
+      guid: `sl:work:${id}`,
+      displayName: name,
+      chatIdentifier: id,
+      unreadCount: unread,
+      activityAt,
+      slackSection: section,
+    }) as Chat;
+
+  it("floats unread to the top by recency, then channels/people/groups alphabetically", () => {
+    const sorted = sortSlackChats([
+      sl("C1", "#zebra", "Public"),
+      sl("D1", "anna", "DirectMessage"),
+      sl("C2", "#alpha", "Private"),
+      sl("G1", "pelle, dev", "Group"),
+      sl("D2", "bertil", "DirectMessage", 2, 100),
+      sl("C3", "#daily", "Public", 5, 200),
+    ]);
+    expect(sorted.map((c) => c.displayName)).toEqual([
+      "#daily",     // unread, newest
+      "bertil",     // unread, older
+      "#alpha",     // channels A–Ö (# stripped for comparison)
+      "#zebra",
+      "anna",       // people
+      "pelle, dev", // group chats
+    ]);
+  });
+
+  it("ignores the # prefix when alphabetising channels", () => {
+    const sorted = sortSlackChats([
+      sl("C1", "#Ö-kanal", "Public"),
+      sl("C2", "#a-kanal", "Public"),
+    ]);
+    expect(sorted[0].displayName).toBe("#a-kanal");
   });
 });

@@ -323,6 +323,7 @@ pub fn run() {
             slack::sl_self_user_id,
             slack::sl_download_file,
             slack::sl_user_names,
+            slack::sl_user_avatar,
             // BlueBubbles in-app onboarding
             onboarding::bb_status,
             onboarding::bb_install,

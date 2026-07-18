@@ -323,6 +323,19 @@ pub async fn sl_user_names(
         .await)
 }
 
+/// A Slack user's avatar URL (public slack-edge link), for sender avatars.
+#[tauri::command]
+pub async fn sl_user_avatar(
+    workspace_id: String,
+    user_id: String,
+    state: State<'_, SlackState>,
+) -> Result<Option<String>, String> {
+    Ok(with_client(&state, &workspace_id)
+        .await?
+        .user_avatar(&user_id)
+        .await)
+}
+
 /// Download a Slack attachment to a temp file and return its path.
 ///
 /// The bytes are written to disk rather than returned: a large image or video

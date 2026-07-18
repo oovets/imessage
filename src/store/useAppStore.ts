@@ -359,6 +359,9 @@ interface AppState {
   setAccountLabel: (key: string, label: string) => void;
   collapsedAccounts: string[];
   toggleAccountCollapsed: (key: string) => void;
+  /** Pinned chat guids, any source — shown in the Starred section on top. */
+  starredChats: string[];
+  toggleStarred: (guid: string) => void;
   setTelegramChats: (chats: Chat[]) => void;
   upsertChat: (chat: Chat) => void;
   // Bumped to re-run the Telegram chat loader (e.g. after adding an account).
@@ -495,6 +498,8 @@ function slimChat(c: Chat): Chat {
     unreadCount: c.unreadCount,
     lastMessageText: c.lastMessageText,
     activityAt: c.activityAt,
+    avatarUrl: c.avatarUrl,
+    slackSection: c.slackSection,
   } as Chat;
 }
 
@@ -538,6 +543,7 @@ export const useAppStore = create<AppState>()(
       slackAvailable: false,
       accountLabels: {},
       collapsedAccounts: [],
+      starredChats: [],
       slackReloadNonce: 0,
       slackSelfUserIds: {},
       slackUserNames: {},
@@ -836,6 +842,12 @@ export const useAppStore = create<AppState>()(
             ? s.collapsedAccounts.filter((k) => k !== key)
             : [...s.collapsedAccounts, key],
         })),
+      toggleStarred: (guid) =>
+        set((s) => ({
+          starredChats: s.starredChats.includes(guid)
+            ? s.starredChats.filter((g) => g !== guid)
+            : [...s.starredChats, guid],
+        })),
 
       reloadTelegram: () =>
         set((s) => ({ telegramReloadNonce: s.telegramReloadNonce + 1 })),
@@ -1019,6 +1031,7 @@ export const useAppStore = create<AppState>()(
         messageFetchedAt: s.messageFetchedAt,
         accountLabels: s.accountLabels,
         collapsedAccounts: s.collapsedAccounts,
+        starredChats: s.starredChats,
       }),
     }
   )

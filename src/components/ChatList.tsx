@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { PanelLeftClose, PanelLeftOpen, RefreshCw, MessageCircle, Search, X, ChevronRight } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, RefreshCw, MessageCircle, Search, X, ChevronRight, Star } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { SettingsDialog } from "@/components/SettingsDialog";
@@ -39,6 +39,8 @@ export function ChatList() {
   const accountLabels = useAppStore((s) => s.accountLabels);
   const collapsedAccounts = useAppStore((s) => s.collapsedAccounts);
   const toggleAccountCollapsed = useAppStore((s) => s.toggleAccountCollapsed);
+  const starredChats = useAppStore((s) => s.starredChats);
+  const toggleStarred = useAppStore((s) => s.toggleStarred);
   const wsConnected = useAppStore((s) => s.wsConnected);
   const pollingFallback = useAppStore((s) => s.pollingFallback);
   const superlightMode = useAppStore((s) => s.superlightMode);
@@ -114,14 +116,35 @@ export function ChatList() {
   );
   const grouped = groups.length > 1;
 
+  // Starred: pinned from any source, in recency order (filteredChats already
+  // is). They also stay in their account group — the star is a shortcut, not
+  // a move.
+  const starredList = useMemo(() => {
+    if (starredChats.length === 0) return [];
+    const set = new Set(starredChats);
+    return filteredChats.filter((c) => set.has(c.guid));
+  }, [filteredChats, starredChats]);
+
+  // The collapsed rail answers one question: "what needs me right now?" —
+  // starred chats, then anything unread by recency. The full recency-sorted
+  // list read as an inscrutable jumble of avatars at this width.
+  const compactChats = useMemo(() => {
+    const set = new Set(starredChats);
+    return [
+      ...starredList,
+      ...filteredChats.filter((c) => (c.unreadCount ?? 0) > 0 && !set.has(c.guid)),
+    ];
+  }, [starredList, filteredChats, starredChats]);
+
   // Keyboard navigation must follow what is actually on screen — skipping
-  // chats hidden inside a collapsed group.
+  // chats hidden inside a collapsed group or off the compact rail.
   const visibleChats = useMemo(() => {
-    if (!grouped) return filteredChats;
-    return groups.flatMap((g) =>
-      collapsedAccounts.includes(g.ref.key) ? [] : g.chats
-    );
-  }, [grouped, groups, collapsedAccounts, filteredChats]);
+    if (sidebarHidden) return compactChats;
+    const expanded = grouped
+      ? groups.flatMap((g) => (collapsedAccounts.includes(g.ref.key) ? [] : g.chats))
+      : filteredChats;
+    return [...starredList, ...expanded];
+  }, [sidebarHidden, compactChats, grouped, groups, collapsedAccounts, filteredChats, starredList]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -302,59 +325,104 @@ export function ChatList() {
               {query ? `No chats match "${query}".` : "No chats found."}
             </div>
           )
-        ) : !grouped || sidebarHidden ? (
-          filteredChats.map((chat) => (
+        ) : sidebarHidden ? (
+          compactChats.map((chat) => (
             <ChatItem
               key={chat.guid}
               chat={chat}
               isSelected={chat.guid === selectedChatGUID}
               onSelect={selectChat}
-              compact={sidebarHidden}
+              compact
             />
           ))
         ) : (
-          groups.map((group) => {
-            const collapsed = collapsedAccounts.includes(group.ref.key);
-            return (
-              <div key={group.ref.key}>
-                <button
-                  onClick={() => toggleAccountCollapsed(group.ref.key)}
-                  aria-expanded={!collapsed}
+          <>
+            {starredList.length > 0 && (
+              <div>
+                <div
                   className={cn(
                     "sticky top-0 z-[5] flex w-full items-center gap-1.5 px-3 py-1.5",
                     "text-[11px] font-semibold uppercase tracking-wider text-muted-foreground",
-                    "bg-background/95 backdrop-blur-sm hover:text-foreground"
+                    "bg-background/95 backdrop-blur-sm"
                   )}
                 >
-                  <ChevronRight
-                    className={cn(
-                      "h-3 w-3 shrink-0 transition-transform",
-                      !collapsed && "rotate-90"
-                    )}
+                  <Star className="h-3 w-3 shrink-0 fill-current text-amber-500" />
+                  <span>Starred</span>
+                </div>
+                {starredList.map((chat) => (
+                  <ChatItem
+                    key={`star-${chat.guid}`}
+                    chat={chat}
+                    isSelected={chat.guid === selectedChatGUID}
+                    onSelect={selectChat}
+                    starred
+                    onToggleStar={toggleStarred}
                   />
-                  <span className="truncate">{group.label}</span>
-                  <span className="ml-auto flex items-center gap-1.5 font-normal tabular-nums">
-                    {group.unread > 0 && (
-                      <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-medium text-primary-foreground">
-                        {group.unread}
-                      </span>
-                    )}
-                    <span className="text-muted-foreground/60">{group.chats.length}</span>
-                  </span>
-                </button>
-                {!collapsed &&
-                  group.chats.map((chat) => (
-                    <ChatItem
-                      key={chat.guid}
-                      chat={chat}
-                      isSelected={chat.guid === selectedChatGUID}
-                      onSelect={selectChat}
-                      compact={false}
-                    />
-                  ))}
+                ))}
               </div>
-            );
-          })
+            )}
+            {!grouped
+              ? filteredChats.map((chat) => (
+                  <ChatItem
+                    key={chat.guid}
+                    chat={chat}
+                    isSelected={chat.guid === selectedChatGUID}
+                    onSelect={selectChat}
+                    starred={starredChats.includes(chat.guid)}
+                    onToggleStar={toggleStarred}
+                  />
+                ))
+              : groups.map((group) => {
+                  const collapsed = collapsedAccounts.includes(group.ref.key);
+                  return (
+                    <div key={group.ref.key}>
+                      <button
+                        onClick={() => toggleAccountCollapsed(group.ref.key)}
+                        aria-expanded={!collapsed}
+                        className={cn(
+                          "sticky top-0 z-[5] flex w-full items-center gap-1.5 px-3 py-1.5",
+                          "text-[11px] font-semibold uppercase tracking-wider text-muted-foreground",
+                          "bg-background/95 backdrop-blur-sm hover:text-foreground"
+                        )}
+                      >
+                        <ChevronRight
+                          className={cn(
+                            "h-3 w-3 shrink-0 transition-transform",
+                            !collapsed && "rotate-90"
+                          )}
+                        />
+                        <span className="truncate">{group.label}</span>
+                        {/* Two fixed-width right-aligned columns, so the pills
+                            and counts line up across rows instead of drifting
+                            with each pill's width. */}
+                        <span className="ml-auto flex items-center gap-1.5 font-normal tabular-nums">
+                          <span className="min-w-8 text-right">
+                            {group.unread > 0 && (
+                              <span className="inline-block rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
+                                {group.unread > 999 ? "999+" : group.unread}
+                              </span>
+                            )}
+                          </span>
+                          <span className="w-8 text-right text-muted-foreground/60">
+                            {group.chats.length}
+                          </span>
+                        </span>
+                      </button>
+                      {!collapsed &&
+                        group.chats.map((chat) => (
+                          <ChatItem
+                            key={chat.guid}
+                            chat={chat}
+                            isSelected={chat.guid === selectedChatGUID}
+                            onSelect={selectChat}
+                            starred={starredChats.includes(chat.guid)}
+                            onToggleStar={toggleStarred}
+                          />
+                        ))}
+                    </div>
+                  );
+                })}
+          </>
         )}
       </ScrollArea>
     </div>

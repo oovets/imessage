@@ -36,7 +36,13 @@ export function useSlackEvents() {
           text: slackTextToPlain(nm.text ?? "", store.slackUserNames[ws] ?? {}),
           isFromMe: nm.is_self,
           dateCreated: slTsToMillis(nm.ts),
-          handle: nm.user_name ? { address: nm.user_name, firstName: nm.user_name } : null,
+          // Address is the user *id* when Slack sent one — the same key the
+          // history adapter uses, and what sender avatars resolve against.
+          handle: nm.user_id
+            ? { address: nm.user_id, firstName: nm.user_name }
+            : nm.user_name
+              ? { address: nm.user_name, firstName: nm.user_name }
+              : null,
           // Same helper the history adapter uses, so a message looks the same
           // whether it arrived live or was loaded from history.
           attachments: (nm.files ?? [])

@@ -41,6 +41,11 @@ export interface Chat {
   // (via enrichChatActivity) and Telegram (via the adapter) set this, since
   // lastMessage.dateCreated isn't reliably populated on the iMessage side.
   activityAt?: number;
+  /** Ready-to-load avatar URL, when the source hands one over (Slack DMs). */
+  avatarUrl?: string;
+  /** Slack's conversation grouping ("Public" | "DirectMessage" | …), used by
+   *  the per-workspace sort. Absent on other sources. */
+  slackSection?: string;
 }
 
 export interface LinkPreview {
