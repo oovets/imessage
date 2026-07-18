@@ -337,7 +337,11 @@ export function ChatList() {
           ))
         ) : (
           <>
-            {starredList.length > 0 && (
+            {/* Shown with a teaching hint until the first pin exists — the
+                hover-only star proved invisible without it. Hidden while a
+                search filters starred chats away, and gone for good once
+                something is pinned. */}
+            {(starredList.length > 0 || (starredChats.length === 0 && !query)) && (
               <div>
                 <div
                   className={cn(
@@ -349,16 +353,24 @@ export function ChatList() {
                   <Star className="h-3 w-3 shrink-0 fill-current text-amber-500" />
                   <span>Starred</span>
                 </div>
-                {starredList.map((chat) => (
-                  <ChatItem
-                    key={`star-${chat.guid}`}
-                    chat={chat}
-                    isSelected={chat.guid === selectedChatGUID}
-                    onSelect={selectChat}
-                    starred
-                    onToggleStar={toggleStarred}
-                  />
-                ))}
+                {starredList.length > 0 ? (
+                  starredList.map((chat) => (
+                    <ChatItem
+                      key={`star-${chat.guid}`}
+                      chat={chat}
+                      isSelected={chat.guid === selectedChatGUID}
+                      onSelect={selectChat}
+                      starred
+                      onToggleStar={toggleStarred}
+                    />
+                  ))
+                ) : (
+                  <p className="flex items-center gap-1.5 px-4 pb-2 pt-0.5 text-xs text-muted-foreground">
+                    Hover a chat and click its
+                    <Star className="inline h-3 w-3 shrink-0" />
+                    to pin it here.
+                  </p>
+                )}
               </div>
             )}
             {!grouped
