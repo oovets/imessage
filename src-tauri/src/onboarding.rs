@@ -40,6 +40,32 @@ fn open_bluebubbles() -> Result<String, String> {
     run("open", &[BB_APP])
 }
 
+/// Fully restart BlueBubbles so a fresh process re-binds its HTTP port (needed
+/// after macOS permissions are granted at runtime — BlueBubbles only binds once
+/// at launch). BlueBubbles is an Electron app with a single-instance lock and
+/// several processes (main + helpers); a slow `osascript quit` or a partial kill
+/// leaves the lock held, so `open` would just foreground the stuck instance
+/// instead of starting fresh. Kill every matching process and wait until none
+/// remain (releasing the lock) before relaunching.
+fn restart_bluebubbles(log: &Log) {
+    logln(log, "Restarting the server to apply the granted permissions…");
+    let _ = run("osascript", &["-e", "tell application \"BlueBubbles\" to quit"]);
+    for _ in 0..30 {
+        let running = run("pgrep", &["-f", "BlueBubbles.app"])
+            .map(|o| !o.trim().is_empty())
+            .unwrap_or(false);
+        if !running {
+            break;
+        }
+        let _ = run("pkill", &["-9", "-f", "BlueBubbles.app"]);
+        thread::sleep(Duration::from_millis(400));
+    }
+    thread::sleep(Duration::from_secs(1));
+    if let Err(e) = open_bluebubbles() {
+        logln(log, format!("✗ open failed: {e}"));
+    }
+}
+
 fn home() -> Result<PathBuf, String> {
     std::env::var_os("HOME")
         .map(PathBuf::from)
@@ -366,18 +392,9 @@ fn api_probe(url: &str) -> Result<(), String> {
 }
 
 fn start_and_check_blocking(password: String, port: u16, log: Log) -> ServerCheck {
-    // Restart, don't just foreground. BlueBubbles binds its HTTP port once at
-    // launch and does NOT re-bind when the macOS Local Network permission is
-    // granted at runtime — so the instance started before the user granted
-    // permissions is stuck not listening. `open -a` on an already-running app is
-    // a no-op, so quit and relaunch to get a fresh process that binds the port.
-    logln(&log, "Restarting the server to apply the granted permissions…");
-    let _ = run("osascript", &["-e", "tell application \"BlueBubbles\" to quit"]);
-    let _ = run("pkill", &["-x", "BlueBubbles"]);
-    thread::sleep(Duration::from_secs(2));
-    if let Err(e) = open_bluebubbles() {
-        logln(&log, format!("✗ open failed: {e}"));
-    }
+    // A fresh restart is what makes BlueBubbles bind the port after permissions
+    // were granted; `open` on the stuck instance is a no-op (see restart_bluebubbles).
+    restart_bluebubbles(&log);
     let base = format!("http://localhost:{port}/api/v1");
 
     // The password rides in the query string, so never log the full URL.
@@ -433,10 +450,7 @@ fn go_headless_blocking(_port: u16, log: Log) -> Result<(), String> {
     seed(db_s, "headless", "1")?;
     seed(db_s, "start_minimized", "1")?;
     seed(db_s, "hide_dock_icon", "1")?;
-    let _ = run("osascript", &["-e", "tell application \"BlueBubbles\" to quit"]);
-    let _ = run("pkill", &["-x", "BlueBubbles"]);
-    thread::sleep(Duration::from_secs(2));
-    open_bluebubbles()?;
+    restart_bluebubbles(&log);
     logln(&log, "Server restarted in the background.");
     Ok(())
 }
