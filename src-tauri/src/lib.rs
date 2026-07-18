@@ -318,6 +318,7 @@ pub fn run() {
             onboarding::bb_open_privacy,
             onboarding::bb_start_and_check,
             ai::ai_style_profile,
+            ai::ai_relationship_index,
             ai::ai_relationship_profile,
         ])
         .setup(|app| {

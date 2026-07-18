@@ -68,8 +68,8 @@ function statLines(stats: StyleStats | null | undefined): string[] {
   return out;
 }
 
-/** Layered system prompt (§5): RULES / STYLE / RELATIONSHIP / EXAMPLES. */
-function buildSystemPrompt(
+/** Layered system prompt (§5): RULES / STYLE / RELATIONSHIP / EXAMPLES. Exported for the simulator's prompt inspector. */
+export function buildSystemPrompt(
   userPrompt: string,
   chatName: string,
   profiles: AiProfiles | null

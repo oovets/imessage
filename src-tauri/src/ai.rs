@@ -22,6 +22,14 @@ pub async fn ai_style_profile(app: tauri::AppHandle) -> Option<String> {
         .ok()
 }
 
+/// The distiller's index of relationship profiles (for pickers/simulator).
+#[tauri::command]
+pub async fn ai_relationship_index(app: tauri::AppHandle) -> Option<String> {
+    tokio::fs::read_to_string(ai_dir(&app)?.join("index.json"))
+        .await
+        .ok()
+}
+
 /// The relationship profile for a chat guid (matched against each entry's
 /// underlying thread guids, so merged iMessage/SMS conversations resolve too).
 #[tauri::command]

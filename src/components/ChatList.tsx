@@ -3,6 +3,7 @@ import { PanelLeftClose, PanelLeftOpen, RefreshCw, MessageCircle, Search, X } fr
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { SettingsDialog } from "@/components/SettingsDialog";
+import { AiSimulatorDialog } from "@/components/AiSimulatorDialog";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ChatItem } from "@/components/ChatItem";
 import { ChatListSkeleton } from "@/components/ChatListSkeleton";
@@ -198,6 +199,7 @@ export function ChatList() {
           >
             <RefreshCw className={cn("h-4 w-4", loadingChats && "animate-spin")} />
           </Button>
+          <AiSimulatorDialog />
           <ThemeToggle compact={superlightMode} />
           <SettingsDialog compact={superlightMode} />
         </div>
