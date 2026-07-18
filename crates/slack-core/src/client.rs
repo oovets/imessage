@@ -16,7 +16,7 @@ fn log_debug(msg: &str) {
 }
 
 /// Updates received from Slack
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum SlackUpdate {
     NewMessage {
         channel_id: String,

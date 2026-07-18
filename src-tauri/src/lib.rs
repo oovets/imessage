@@ -12,6 +12,7 @@ use tauri::{
 use tauri::{tray::MouseButton, tray::MouseButtonState, tray::TrayIconBuilder, tray::TrayIconEvent};
 
 mod onboarding;
+mod slack;
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 const KEYRING_SERVICE: &str = "com.oovets.messages";
@@ -310,6 +311,14 @@ pub fn run() {
             telegram::tg_submit_password,
             telegram::tg_begin_qr_login,
             telegram::tg_sign_out,
+            // Slack
+            slack::sl_status,
+            slack::sl_save_workspace,
+            slack::sl_remove_workspace,
+            slack::sl_connect,
+            slack::sl_conversations,
+            slack::sl_history,
+            slack::sl_send,
             // BlueBubbles in-app onboarding
             onboarding::bb_status,
             onboarding::bb_install,
@@ -335,6 +344,7 @@ pub fn run() {
             // Everything Telegram runs OFF the main thread so app startup is
             // never blocked (Keychain reads, connecting, sync, temp cleanup).
             app.manage(telegram::TelegramState::new());
+            app.manage(slack::SlackState::new());
             std::thread::spawn(telegram::clear_media_tmp);
             let tg_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {

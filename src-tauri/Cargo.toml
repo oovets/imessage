@@ -30,6 +30,7 @@ tauri-plugin-websocket = "2"
 
 # Telegram backend (self-contained MTProto/SQLite core) wired into the app.
 telegram-core = { workspace = true }
+slack-core = { workspace = true }
 shared = { workspace = true }
 cache = { workspace = true }
 tokio = { workspace = true }
