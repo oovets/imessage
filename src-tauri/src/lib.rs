@@ -320,6 +320,8 @@ pub fn run() {
             ai::ai_style_profile,
             ai::ai_relationship_index,
             ai::ai_relationship_profile,
+            ai::ai_log_event,
+            ai::ai_read_telemetry,
         ])
         .setup(|app| {
             let app_handle = app.handle();

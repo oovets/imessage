@@ -14,6 +14,7 @@ import { useAppStore, isTelegramChatGuid, aiModeFor } from "@/store/useAppStore"
 import { getClient } from "@/api/clientFactory";
 import { generateReply } from "@/lib/aiReply";
 import { loadAiProfiles } from "@/lib/aiProfiles";
+import { log as logAi } from "@/lib/aiTelemetry";
 import { preferredSendGuid } from "@/lib/chatThreadMerge";
 import { tg } from "@/telegram/api";
 import { parseTgChatGuid } from "@/telegram/adapters";
@@ -67,6 +68,8 @@ export function useAiAutoReply() {
       const name = chat ? getChatDisplayName(chat) : "chat";
       // Layered personality prompt: global style + this relationship (cached).
       const profiles = await loadAiProfiles(guid).catch(() => null);
+      const profileName = profiles?.relationship?.name ?? null;
+      const t0 = performance.now();
       let text: string | null;
       try {
         text = await generateReply(s.aiReply, msgs, name, profiles);
@@ -77,6 +80,15 @@ export function useAiAutoReply() {
         return;
       }
       if (!text) return;
+      const latencyMs = Math.round(performance.now() - t0);
+      logAi({
+        kind: "generated",
+        chatGuid: guid,
+        model: s.aiReply.model,
+        profile: profileName,
+        latencyMs,
+        draftChars: text.length,
+      });
 
       // Re-check the toggle — it may have been turned off while generating.
       const now = useAppStore.getState();
@@ -85,7 +97,13 @@ export function useAiAutoReply() {
 
       // Draft mode (the default): put the suggestion in the composer and stop.
       if (nowMode === "draft") {
-        now.setAiDraft(guid, text);
+        now.setAiDraft(guid, {
+          text,
+          at: Date.now(),
+          latencyMs,
+          profile: profileName,
+          model: s.aiReply.model,
+        });
         return;
       }
 
@@ -93,6 +111,14 @@ export function useAiAutoReply() {
       st.consecutive += 1;
       st.aiTexts.add(text);
       if (st.aiTexts.size > 20) st.aiTexts.delete(st.aiTexts.values().next().value as string);
+
+      logAi({
+        kind: "auto_sent",
+        chatGuid: guid,
+        model: s.aiReply.model,
+        profile: profileName,
+        draftChars: text.length,
+      });
 
       try {
         if (isTelegramChatGuid(guid)) {

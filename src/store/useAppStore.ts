@@ -22,6 +22,17 @@ const MAX_PANE_DEPTH = 20;
 const MAX_PANE_LEAVES = 20;
 const OUTGOING_DEDUP_WINDOW_MS = 30_000;
 
+/** A pending AI suggestion plus what we need to score it later. */
+export interface AiDraft {
+  text: string;
+  at: number;
+  latencyMs?: number;
+  profile?: string | null;
+  model: string;
+  /** Set when the user pulls it into the composer (edit-time measurement). */
+  usedAt?: number;
+}
+
 export type PaneNode =
   | { type: "leaf"; id: string; chatGUID: string | null }
   | {
@@ -277,8 +288,9 @@ interface AppState {
   // Per-chat AI mode: "draft" (suggestion lands in the composer, default) or
   // "auto" (sends by itself). Legacy persisted `true` means "draft".
   aiReplyChats: Record<string, "draft" | "auto" | true>;
-  // Transient AI suggestions per chat (not persisted).
-  aiDrafts: Record<string, string>;
+  // Transient AI suggestions per chat (not persisted). Metadata rides along so
+  // accept/edit/reject telemetry can attribute the outcome.
+  aiDrafts: Record<string, AiDraft>;
   sidebarHidden: boolean;
   appearance: AppearanceSettings;
   linkPreviewsEnabled: boolean;
@@ -329,7 +341,9 @@ interface AppState {
   setShowAvatars: (v: boolean) => void;
   setAiReplyConfig: (patch: Partial<AppState["aiReply"]>) => void;
   cycleAiReplyChat: (guid: string) => void;
-  setAiDraft: (guid: string, text: string) => void;
+  setAiDraft: (guid: string, draft: AiDraft) => void;
+  /** Marks a draft as taken into the composer; starts the edit timer. */
+  markAiDraftUsed: (guid: string) => void;
   clearAiDraft: (guid: string) => void;
   setSidebarHidden: (v: boolean) => void;
   toggleSidebarHidden: () => void;
@@ -540,8 +554,14 @@ export const useAppStore = create<AppState>()(
           else delete next[guid];
           return { aiReplyChats: next };
         }),
-      setAiDraft: (guid, text) =>
-        set((s) => ({ aiDrafts: { ...s.aiDrafts, [guid]: text } })),
+      setAiDraft: (guid, draft) =>
+        set((s) => ({ aiDrafts: { ...s.aiDrafts, [guid]: draft } })),
+      markAiDraftUsed: (guid) =>
+        set((s) => {
+          const cur = s.aiDrafts[guid];
+          if (!cur) return {};
+          return { aiDrafts: { ...s.aiDrafts, [guid]: { ...cur, usedAt: Date.now() } } };
+        }),
       clearAiDraft: (guid) =>
         set((s) => {
           if (!(guid in s.aiDrafts)) return {};
@@ -785,7 +805,18 @@ export const useAppStore = create<AppState>()(
         if (!chatGUID) return;
         const existing = get().messages[chatGUID] ?? [];
         const updated = mergeMessageList(existing, [message]);
-        const newest = updated[updated.length - 1]?.dateCreated ?? 0;
+        // messageFetchedAt doubles as the polling cursor (`after=`), and it only
+        // ever moves forward. Optimistic messages carry the *client* clock, so
+        // letting one set the cursor would — on a machine running ahead of the
+        // server — permanently hide every message that follows. Only
+        // server-acknowledged messages may advance it.
+        // Note: not isLocalOptimisticMessage — that counts any tempGuid as
+        // local, and the server's echo carries the tempGuid too (that is how it
+        // is matched). Only the unsent `local-` placeholder must be skipped.
+        const newest = updated.reduce(
+          (max, m) => (m.guid.startsWith("local-") ? max : Math.max(max, m.dateCreated)),
+          0
+        );
         set((s) => {
           const idx = s.chats.findIndex((c) => c.guid === chatGUID);
           let nextChats = s.chats;
@@ -842,7 +873,9 @@ export const useAppStore = create<AppState>()(
       markChatHasNewMessage: (chatGUID) =>
         set((s) => ({
           chats: s.chats.map((c) =>
-            c.guid === chatGUID ? { ...c, unreadCount: c.unreadCount + 1 } : c
+            c.guid === chatGUID
+              ? { ...c, unreadCount: (Number.isFinite(c.unreadCount) ? c.unreadCount : 0) + 1 }
+              : c
           ),
         })),
 

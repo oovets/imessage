@@ -50,3 +50,37 @@ pub async fn ai_relationship_profile(app: tauri::AppHandle, chat_guid: String) -
     }
     None
 }
+
+// --- telemetry (Personality Engine §14) -------------------------------------
+//
+// Every generated draft and what the user did with it is appended as one JSON
+// line. A file (not localStorage) because this grows without bound, is written
+// far more often than it is read, and is meant to be analysed offline too.
+
+fn telemetry_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    let dir = ai_dir(app)?;
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir.join("telemetry.jsonl"))
+}
+
+/// Append one event (already-serialized JSON object) to the telemetry log.
+#[tauri::command]
+pub async fn ai_log_event(app: tauri::AppHandle, event: String) -> Result<(), String> {
+    use tokio::io::AsyncWriteExt;
+    let path = telemetry_path(&app).ok_or("no telemetry path")?;
+    let mut file = tokio::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .await
+        .map_err(|e| e.to_string())?;
+    file.write_all(format!("{}\n", event.trim()).as_bytes())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// The whole telemetry log (newline-delimited JSON), or None when empty.
+#[tauri::command]
+pub async fn ai_read_telemetry(app: tauri::AppHandle) -> Option<String> {
+    tokio::fs::read_to_string(telemetry_path(&app)?).await.ok()
+}

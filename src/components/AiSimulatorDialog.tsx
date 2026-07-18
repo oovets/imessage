@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { useAppStore } from "@/store/useAppStore";
 import { generateReply, buildSystemPrompt } from "@/lib/aiReply";
 import { loadAiProfiles, type AiProfiles } from "@/lib/aiProfiles";
+import { loadSummary, type AiSummary } from "@/lib/aiTelemetry";
 import { cn } from "@/lib/utils";
 import type { Message } from "@/types";
 
@@ -46,10 +47,12 @@ export function AiSimulatorDialog() {
   const [busy, setBusy] = useState(false);
   const [lastPrompt, setLastPrompt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [summary, setSummary] = useState<AiSummary | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
+    void loadSummary().then(setSummary).catch(() => setSummary(null));
     invoke<string | null>("ai_relationship_index")
       .then((raw) => {
         const parsed = raw ? (JSON.parse(raw) as { relationships?: IndexEntry[] }) : null;
@@ -222,6 +225,51 @@ export function AiSimulatorDialog() {
             <ArrowUp className="h-4 w-4" />
           </Button>
         </div>
+
+        {summary && summary.generated > 0 && (
+          <details className="text-xs">
+            <summary className="cursor-pointer text-muted-foreground">
+              Reply stats — {summary.generated} drafts, {Math.round(summary.acceptRate * 100)}% sent
+              unedited
+            </summary>
+            <div className="mt-2 space-y-1.5 rounded-md border bg-muted/30 p-2 text-[11px]">
+              <div className="grid grid-cols-4 gap-2 text-center">
+                {[
+                  ["accepted", summary.accepted],
+                  ["edited", summary.edited],
+                  ["rejected", summary.rejected],
+                  ["auto-sent", summary.autoSent],
+                ].map(([label, n]) => (
+                  <div key={label as string}>
+                    <div className="font-semibold text-foreground">{n as number}</div>
+                    <div className="text-muted-foreground">{label as string}</div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-muted-foreground">
+                median latency {summary.medianLatencyMs} ms
+                {summary.edited > 0 && (
+                  <>
+                    {" · "}edits change ~{summary.medianWordDiff} words
+                    {summary.medianEditSeconds > 0 && <> in ~{summary.medianEditSeconds}s</>}
+                  </>
+                )}
+              </p>
+              {summary.byProfile.length > 0 && (
+                <div className="space-y-0.5">
+                  {summary.byProfile.map((p) => (
+                    <div key={p.profile} className="flex justify-between gap-2">
+                      <span className="truncate text-muted-foreground">{p.profile}</span>
+                      <span className="shrink-0">
+                        {Math.round(p.acceptRate * 100)}% of {p.reviewed}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </details>
+        )}
 
         {lastPrompt && (
           <details className="text-xs">

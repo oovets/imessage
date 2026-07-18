@@ -7,6 +7,7 @@ import { parseTgChatGuid } from "@/telegram/adapters";
 import { cn } from "@/lib/utils";
 import { autoConvertEmoticons } from "@/lib/emoticons";
 import { preferredSendGuid } from "@/lib/chatThreadMerge";
+import { log as logAi, wordDiff } from "@/lib/aiTelemetry";
 import type { Message } from "@/types";
 import { decodeEscapedUnicode } from "@/types";
 import { EmojiSuggestions } from "@/components/EmojiSuggestions";
@@ -50,6 +51,7 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
   const updateChatPreview = useAppStore((s) => s.updateChatPreview);
   const aiDraft = useAppStore((s) => s.aiDrafts[chatGUID]);
   const clearAiDraft = useAppStore((s) => s.clearAiDraft);
+  const markAiDraftUsed = useAppStore((s) => s.markAiDraftUsed);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [attaching, setAttaching] = useState(false);
@@ -111,6 +113,31 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
   function send() {
     const trimmed = text.trim();
     if (!trimmed) return;
+
+    // §14: what happened to the suggestion is the training signal.
+    if (aiDraft) {
+      const suggested = aiDraft.text.trim();
+      const common = {
+        chatGuid: chatGUID,
+        model: aiDraft.model,
+        profile: aiDraft.profile,
+        draftChars: suggested.length,
+        sentChars: trimmed.length,
+      };
+      if (trimmed === suggested) {
+        logAi({ kind: "accepted", ...common });
+      } else {
+        logAi({
+          kind: "edited",
+          ...common,
+          charDiff: Math.abs(trimmed.length - suggested.length),
+          wordDiff: wordDiff(suggested, trimmed),
+          editSeconds: aiDraft.usedAt
+            ? Math.round((Date.now() - aiDraft.usedAt) / 1000)
+            : undefined,
+        });
+      }
+    }
     clearAiDraft(chatGUID);
 
     // Telegram: the core does its own optimistic-pending + reconcile and
@@ -199,18 +226,20 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
 
   return (
     <div className={cn("px-2 md:px-4 py-2.5", superlightMode ? "bg-background" : "border-t bg-background/80 backdrop-blur-xl")}>
-      {aiDraft && (
+      {aiDraft && !aiDraft.usedAt && (
         <div className={cn("mb-2 flex items-start gap-2 px-3 py-2", superlightMode ? "" : "border border-primary/30 rounded-lg bg-primary/5 animate-in fade-in slide-in-from-bottom-1 duration-150")}>
           {!superlightMode && <Sparkles className="h-3.5 w-3.5 mt-0.5 text-primary shrink-0" />}
           <div className="flex-1 min-w-0">
             <p className="text-[11px] text-muted-foreground">AI suggestion — edit before sending</p>
-            <p className="text-xs whitespace-pre-wrap text-foreground/90">{aiDraft}</p>
+            <p className="text-xs whitespace-pre-wrap text-foreground/90">{aiDraft.text}</p>
           </div>
           <button
             type="button"
             onClick={() => {
-              handleChange(aiDraft);
-              clearAiDraft(chatGUID);
+              handleChange(aiDraft.text);
+              // Keep the draft around (marked used) so send() can diff against
+              // it; the banner hides once the composer holds the text.
+              markAiDraftUsed(chatGUID);
               requestAnimationFrame(() => textareaRef.current?.focus());
             }}
             className="shrink-0 rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground hover:bg-primary/90"
@@ -219,7 +248,16 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
           </button>
           <button
             type="button"
-            onClick={() => clearAiDraft(chatGUID)}
+            onClick={() => {
+              logAi({
+                kind: "rejected",
+                chatGuid: chatGUID,
+                model: aiDraft.model,
+                profile: aiDraft.profile,
+                draftChars: aiDraft.text.length,
+              });
+              clearAiDraft(chatGUID);
+            }}
             className={cn("h-6 w-6 flex items-center justify-center text-muted-foreground", !superlightMode && "rounded-full hover:bg-muted")}
             aria-label="Dismiss AI suggestion"
           >
