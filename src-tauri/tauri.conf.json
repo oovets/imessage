@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Messages Desktop",
-  "version": "0.2.0",
+  "version": "0.2.12",
   "identifier": "com.oovets.messages",
   "build": {
     "frontendDist": "../dist",
@@ -27,7 +27,11 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$TEMP/unified-inbox-media/**"]
+      }
     }
   },
   "bundle": {

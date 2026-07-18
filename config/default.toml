@@ -1,0 +1,27 @@
+# Development defaults for TelegramGui.
+#
+# API credentials come from https://my.telegram.org ("API development tools").
+# Prefer supplying them via the TG_API_ID / TG_API_HASH environment variables
+# so they never end up in version control.
+
+[telegram]
+# api_id = 0
+# api_hash = ""
+device_model = "TelegramGui (macOS)"
+catch_up = true
+
+[storage]
+# data_dir / cache_dir default to the platform directories:
+#   ~/Library/Application Support/TelegramGui
+#   ~/Library/Caches/TelegramGui
+cache_max_bytes = 2147483648
+
+[log]
+filter = "info,telegram_core=debug,telegram_api=debug"
+file = true
+
+[sync]
+dialogs_page_size = 100
+history_page_size = 50
+backoff_initial_secs = 2
+backoff_max_secs = 300

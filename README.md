@@ -1,252 +1,324 @@
+# Messages
+
 [![latest release](https://img.shields.io/github/v/release/oovets/imessage?label=latest%20release)](https://github.com/oovets/imessage/releases/latest)
 [![macOS](https://img.shields.io/badge/macOS-desktop-black)](https://github.com/oovets/imessage/releases/latest)
 [![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8D8)](https://tauri.app/)
 [![React + TypeScript](https://img.shields.io/badge/React-TypeScript-3178C6)](https://react.dev/)
-[![Docs](https://img.shields.io/badge/docs-mkdocs--material-blue.svg)](https://stevoo.net/imessage/)
 
-![](docs/assets/messages-mockup.svg)
-native macos desktop app for bluebubbles servers. a real tauri 2 application that installs
-into /applications, lives in the menu bar, launches at login, and feels at home on macos —
-not a webpage in a wrapper. built with tauri 2, rust, react, typescript, vite, tailwind,
-and zustand: a clean multi-pane imessage experience with keychain credential storage,
-native notifications, deep links, and locally-fetched rich link previews. a browser-served
-web build exists for development, but the shipping product is the macos desktop app.
+![Messages desktop app](docs/assets/messages-mockup.svg)
 
-download -> [latest release](https://github.com/oovets/imessage/releases/latest) ·
-[apple silicon dmg](https://github.com/oovets/imessage/releases/download/v0.1.3/Messages_0.1.3_aarch64.dmg) ·
-[intel dmg](https://github.com/oovets/imessage/releases/download/v0.1.3/Messages_0.1.3_x64.dmg)
+A native macOS desktop app that puts **iMessage and Telegram in one unified inbox**.
+Conversations from both services live in a single chat list, sorted by time, with one
+clean Messages-style interface. iMessage runs through a self-hosted
+[BlueBubbles](https://bluebubbles.app) server; Telegram connects directly over MTProto.
 
-```
-== desktop features ==
+This is a real Tauri 2 application, not a webpage in a wrapper. It installs into
+`/Applications`, lives in the menu bar, launches at login, stores credentials in the macOS
+Keychain, and delivers native notifications and deep links. A browser-served web build
+exists for development, but the shipping product is the macOS desktop app.
 
-- real macos app bundle: native menu, tray icon, dock presence, Cmd+Q
+**Stack:** Tauri 2, Rust, React, TypeScript, Vite, Tailwind, Zustand. The Telegram side is a
+Cargo workspace of focused crates (`shared`, `database`, `cache`, `telegram-api`,
+`telegram-core`) compiled into the same binary.
 
-- macos keychain-backed credential storage in release builds
+---
 
-- native desktop notifications for incoming messages
+## TL;DR — from zero to unified inbox
 
-- launch-at-login and messages:// deep links to jump straight to a chat
+On a Mac signed into iCloud with Messages working:
 
-- link previews fetched locally through the tauri http plugin (no cors hacks)
+1. **Install the app.** Download the DMG for your architecture from the
+   [latest release](https://github.com/oovets/imessage/releases/latest), drag it to
+   `/Applications`, then clear the quarantine flag (builds are unsigned):
 
-- app-wide font scaling (Cmd +, Cmd -, Cmd 0) plus theme colour editing
+   ```bash
+   xattr -dr com.apple.quarantine "/Applications/Messages Desktop.app"
+   ```
 
-- native window vibrancy and an overlay titlebar -- frosted, draggable from the top
+2. **Run the first-launch wizard.** Open the app and pick **"Set it up for me"** — it
+   downloads, installs, and configures a local BlueBubbles server (localhost only, no
+   tunnels) and starts it.
 
-- emoji autocomplete -- type a plain word (fire) or a :shortcode (:smile), plus a
-  searchable emoji picker
+3. **Grant the macOS permissions** the wizard walks you through: Full Disk Access and
+   Local Network are the two the server needs to read and serve your messages
+   (Local Network is a toggle in the pane if no prompt appears). Hit
+   **verify** — it waits and restarts the server itself if needed.
 
-- memory-conscious: bounded message cache (lru eviction) and downscaled image thumbnails
+4. **Add Telegram (optional).** On the final wizard step, sign in with your phone number
+   or QR code. Done — one inbox, both services.
 
-- multi-pane conversations, replies, tapbacks, image/video/file attachments with
-  full-size preview dialogs
-```
+5. **AI auto-reply (optional).** Point Settings → AI auto-reply at any OpenAI-compatible
+   endpoint (e.g. Ollama: `http://your-gpu-box:11434/v1` + a model like `gemma3:12b`),
+   then flip the robot icon in any chat you want answered for you.
 
-```
-== status ==
+Reset everything for a fresh run with `scripts/reset-demo.sh --server`.
 
-current version 0.1.3. macos releases are built by github actions from v* tags:
-  apple silicon   aarch64-apple-darwin on macos-latest
-  intel           x86_64-apple-darwin on macos-13
+---
 
-release builds are currently unsigned unless apple signing + notarization secrets are
-added to the repo.
-```
+## Download
 
-```
-== requirements ==
-to use the app:
+Grab the latest signed-for-your-own-machine build from the
+[releases page](https://github.com/oovets/imessage/releases/latest). Pick the Apple Silicon
+DMG on M-series Macs and the Intel DMG on older ones.
 
-- macos (apple silicon or intel)
-- a reachable bluebubbles server + its url and password/api key
+Release builds are currently unsigned. On first launch, see
+[First run](#first-run) for clearing the Gatekeeper quarantine flag.
 
-to build from source: rust stable, tauri 2 macos prerequisites, xcode command line tools,
-node.js 24 + npm. the web build (development) needs only node.js 24 + npm.
-```
+---
 
-```
-== try it in one command ==
+## Features
 
-want to demo without the manual setup below? scripts/demo-setup.sh installs a bluebubbles
-server AND the messages desktop client, configures the server headless (no setup wizard),
-and pre-fills the client's connection. needs a mac signed into icloud with messages
-working; macos still asks you to grant three privacy toggles by hand (the script opens the
-right panes for you).
+### Unified inbox
 
-  curl -fsSLO https://raw.githubusercontent.com/oovets/imessage/main/scripts/demo-setup.sh
-  bash demo-setup.sh --dry-run              # preview every step, change nothing
-  bash demo-setup.sh                        # generated password, printed at the end
-  bash demo-setup.sh --login --headless     # server at login, no dock icon
-  bash demo-setup.sh --no-client            # only the server
+- One chat list interleaving iMessage and Telegram conversations, sorted by most recent
+  activity.
+- A consistent Messages-style interface across both services — same bubbles, same
+  composer, same behavior.
+- Split iMessage/SMS threads for the same contact (as served by pre-macOS-26 hosts) are
+  merged into one conversation, the way Apple's Messages app does — one list entry,
+  interleaved history, replies routed to the service the contact last used.
+- Source-specific code stays cleanly separated internally, but the user sees one app.
 
-  bash demo-setup.sh --uninstall            # remove it all (add --purge to wipe data too)
+### iMessage (via BlueBubbles)
 
-note: imessage cannot activate inside a macos vm (apple blocks it), so the end-to-end demo
-needs a physical mac; a vm is fine for testing the installer flow itself.
-```
+- Send and receive texts, replies, tapbacks, and image/video/file attachments.
+- Contact photos from the server's Contacts database (no Private API needed), shown in the
+  chat list and as mini avatars next to incoming messages; downscaled thumbnails keep
+  memory low, and a settings toggle switches all avatars off (initials only).
+- Optimistic outgoing rendering, deduped against server echoes.
+- Inline downscaled image thumbnails with a full-size preview dialog; video plays inline;
+  other attachments render as links.
+- Rich link previews fetched locally through the Tauri HTTP plugin (no CORS workarounds).
 
-```
-== installing a bluebubbles server ==
+### Telegram (via MTProto)
 
-the bluebubbles server is a macos app that bridges imessage to an http/websocket api. it
-must run on a mac signed into icloud with messages working.
+- Log in by phone number and code, or by QR, with two-factor password support.
+- Multiple accounts.
+- Messages, reactions, typing indicators, presence, and avatars — including sender photos
+  next to messages in group chats.
+- Media (photos, stickers, video, documents) fetched through an encrypted local cache and
+  streamed from disk to keep memory low.
+- Send messages and file attachments; edit, delete, and mark read.
 
-host: a mac on macos 11+ , signed into icloud with imessage enabled and a visible
-conversation; always-on power/network with sleep prevented; full disk access granted (to
-read the messages sqlite db); accessibility + automation granted (to send messages).
+### Desktop integration
 
-install:
-1. download the latest server from bluebubbles.app/server (or the github releases)
+- Real macOS app bundle: native menu, tray icon, dock presence, `Cmd+Q`.
+- macOS Keychain-backed credential storage in release builds.
+- Native desktop notifications for incoming messages.
+- Launch at login and `messages://` deep links to jump straight to a chat.
+- App-wide font scaling (`Cmd +`, `Cmd -`, `Cmd 0`), theme color editing, light/dark modes.
+- Native window vibrancy and an overlay titlebar — frosted and draggable from the top.
+- Emoji autocomplete (type a plain word like `fire` or a `:shortcode`) plus a searchable
+  picker.
+- Memory-conscious: bounded LRU message cache, downscaled image thumbnails, disk-streamed
+  video.
 
-2. move BlueBubbles.app to /applications and launch it
+### AI auto-reply (optional)
 
-3. approve prompts: system settings -> privacy & security -> full disk access, then
-   accessibility, then automation (allow control of messages + system events)
+- Point the app at any OpenAI-compatible chat-completions endpoint (vLLM, Ollama, or a
+  self-hosted GPU box) under Settings — endpoint, model, optional API key, and a
+  persona/system prompt.
+- Enable the robot icon in a chat's header to let the model answer incoming messages
+  there as you, in your tone and language. Works for both iMessage and Telegram, with
+  replies routed over the service the contact last used.
+- Built-in guardrails: replies wait for message bursts to finish, are rate-limited per
+  chat, and stop after ten consecutive auto-replies until you write something yourself —
+  so two bots can never loop.
+- Everything runs against your own endpoint; no messages leave your machines unless you
+  point it at a hosted API.
 
-4. set a strong server password (this is the api password the client uses)
+---
 
-5. choose a port (default 1234) and start the server
+## Requirements
 
-6. optional: launch on startup + disable app nap so it survives reboots
+**To run the app:**
 
-exposing: lan-only uses http://<mac-ip>:1234. for remote, use cloudflare tunnel
-(recommended; the server can publish a *.trycloudflare.com url), ngrok (from the server
-ui), or manual port-forward + dynamic dns with tls in front.
+- macOS (Apple Silicon or Intel).
+- For iMessage: a reachable BlueBubbles server plus its URL and password/API key.
+- For Telegram: nothing beyond your Telegram account — the app's API credentials are baked
+  into official release builds.
 
-verify:  curl -k "https://your-server/api/v1/server/info?password=YOUR_PASSWORD"
-a json metadata payload confirms the api is reachable; use that url + password on first run.
+**To build from source:** Rust stable, the Tauri 2 macOS prerequisites, Xcode command line
+tools, and Node.js 24 with npm. The web build (development only) needs just Node.js 24 and
+npm.
 
-pitfalls: messages must have launched + synced an imessage chat; "messages in icloud"
-should be on or old history is missing; macos upgrades can reset permissions (re-grant
-full disk access + restart); prefer a real tls cert via cloudflare tunnel for remote use.
-```
+---
+
+## Setting up the iMessage backend (BlueBubbles)
+
+The BlueBubbles server is a macOS app that bridges iMessage to an HTTP/WebSocket API. It
+must run on a Mac signed into iCloud with Messages working. There are three ways to set it
+up: the in-app wizard, the one-command script, or a manual install.
+
+### In-app first-run wizard
+
+On first launch in a desktop build, if no server is configured the app opens an onboarding
+wizard that installs and configures BlueBubbles for you and pre-fills the connection. This
+is the easiest path — just follow the steps and grant the privacy permissions it prompts
+for.
+
+### One command
+
+`scripts/demo-setup.sh` does the same thing headlessly: it installs a BlueBubbles server
+and the Messages desktop client, configures the server without its own setup wizard, and
+pre-fills the client's connection. It needs a Mac signed into iCloud with Messages working;
+macOS still asks you to grant three privacy toggles by hand (the script opens the right
+panes for you).
 
 ```bash
-# quick start -- most users just grab a dmg above; to build the desktop app:
+curl -fsSLO https://raw.githubusercontent.com/oovets/imessage/main/scripts/demo-setup.sh
+bash demo-setup.sh --dry-run          # preview every step, change nothing
+bash demo-setup.sh                    # generated password, printed at the end
+bash demo-setup.sh --login --headless # server at login, no dock icon
+bash demo-setup.sh --no-client        # only the server
+bash demo-setup.sh --uninstall        # remove it all (add --purge to wipe data too)
+```
+
+Note: iMessage activation validates the Mac's hardware identity, so it often fails in
+generic or Intel VMs (VMware, VirtualBox, QEMU) that present blank or fake identifiers. On
+Apple Silicon VMs running under Apple's Virtualization.framework — such as VirtualBuddy —
+it activates normally, so the full end-to-end demo works there too.
+
+### Clean reset
+
+To wipe every trace of the client for a fresh first-run test (the app bundle plus its
+keychain entries, Application Support, caches, WebView storage and preferences — none of
+which deleting the `.app` alone removes), use `scripts/reset-demo.sh`:
+
+```bash
+bash scripts/reset-demo.sh --dry-run  # preview what would be deleted
+bash scripts/reset-demo.sh            # remove the client + its data
+bash scripts/reset-demo.sh --server   # also remove the BlueBubbles server and its data
+```
+
+### Manual install
+
+**Host requirements:** a Mac on macOS 11+, signed into iCloud with iMessage enabled and a
+visible conversation; always-on power and network with sleep prevented; Full Disk Access
+granted (to read the Messages SQLite database); Accessibility and Automation granted (to
+send messages).
+
+**Install:**
+
+1. Download the latest server from [bluebubbles.app/server](https://bluebubbles.app/server)
+   (or the GitHub releases).
+2. Move `BlueBubbles.app` to `/Applications` and launch it.
+3. Approve the prompts in System Settings → Privacy & Security → Full Disk Access, then
+   Accessibility, then Automation (allow control of Messages and System Events).
+4. Set a strong server password — this is the API password the client uses.
+5. Choose a port (default `1234`) and start the server.
+6. Optional: enable launch on startup and disable App Nap so it survives reboots.
+
+**Exposing the server:** LAN-only use is `http://<mac-ip>:1234`. For remote access, use a
+Cloudflare Tunnel (recommended; the server can publish a `*.trycloudflare.com` URL), ngrok
+(from the server UI), or manual port-forwarding with dynamic DNS and TLS in front.
+
+**Verify:**
+
+```bash
+curl -k "https://your-server/api/v1/server/info?password=YOUR_PASSWORD"
+```
+
+A JSON metadata payload confirms the API is reachable. Use that URL and password on first
+run.
+
+**Common pitfalls:** Messages must have launched and synced at least one iMessage chat;
+"Messages in iCloud" should be on or old history is missing; macOS upgrades can reset
+permissions (re-grant Full Disk Access and restart); prefer a real TLS certificate via
+Cloudflare Tunnel for remote use.
+
+---
+
+## Setting up Telegram
+
+Telegram requires an app-level `api_id` and `api_hash` (from
+[my.telegram.org](https://my.telegram.org)) to connect over MTProto. These identify the
+application, not your account.
+
+**In official release builds** the credentials are baked into the binary at build time and
+you can just log in — no setup required.
+
+**When building from source or in CI**, supply them yourself. They are read at compile time
+via `option_env!` and are never committed to the repository:
+
+- For a local build, export them before building:
+
+  ```bash
+  export TG_API_ID=1234567
+  export TG_API_HASH=your32characterapihashfromtelegram
+  npm run tauri:build
+  ```
+
+- For GitHub Actions releases, add them as repository secrets named `TG_API_ID` and
+  `TG_API_HASH` (Settings → Secrets and variables → Actions). The release workflow reads
+  them as environment variables. If they are unset the app still builds and runs — just
+  without Telegram.
+
+**Logging in:** open Settings → Telegram and choose phone-number or QR login. Two-factor
+passwords are supported, and you can add multiple accounts.
+
+---
+
+## First run
+
+With no saved settings, the settings dialog opens automatically. Enter the BlueBubbles
+server URL (for example `https://your-bluebubbles-server`) and its password/API key, and
+optionally log in to Telegram.
+
+Credential storage depends on the build:
+
+- **Web / Tauri dev:** local dev storage, to avoid Keychain trust prompts from unsigned dev
+  binaries.
+- **macOS release:** the macOS Keychain, under the app's service identity, as a single
+  consolidated entry. Clearing settings removes the current and legacy Keychain entries.
+
+**Unsigned builds:** if macOS says the app "is damaged and can't be opened", move it to
+`/Applications` and clear the quarantine flag:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Messages Desktop.app"
+```
+
+---
+
+## Building from source
+
+```bash
 npm install --legacy-peer-deps
+
 npm run tauri:dev      # run the desktop app in development
-npm run tauri:build    # produce a local .app and .dmg (under src-tauri/target/release/bundle/)
+npm run tauri:build    # produce a local .app and .dmg
 
-# frontend-only (browser, no rust shell rebuild):
-npm run dev            # vite dev server
-npm run build          # type-check + build the frontend
+# frontend-only (browser, no Rust shell rebuild)
+npm run dev            # Vite dev server
+npm run build          # type-check and build the frontend
 ```
 
-```
-== local code signing ==
-
-unsigned local builds re-trigger the macos keychain trust prompt on every launch (the
-keychain can't remember "always allow" without a stable code signature). to silence it,
-npm run tauri:build signs the bundle with a stable identity.
-
-create the signing certificate once:
-  keychain access -> certificate assistant -> create a certificate
-  name: Messages Desktop Signing , identity type: self signed root , type: code signing
-
-the tauri:build script reads APPLE_SIGNING_IDENTITY and defaults to "Messages Desktop
-Signing". override it with your own cert name, or APPLE_SIGNING_IDENTITY="-" for an
-ad-hoc (unsigned) build:
-  APPLE_SIGNING_IDENTITY="Apple Development: you@example.com" npm run tauri:build
-  APPLE_SIGNING_IDENTITY="-" npm run tauri:build
-
-after the first launch of a signed build, click "always allow" once; the stable signature
-means it won't ask again, even after future rebuilds. github actions release builds are
-independent of this (still unsigned unless notarization secrets are added).
-```
+### npm scripts
 
 ```
-== first run ==
-
-with no saved settings the settings dialog opens automatically; enter the server url
-(e.g. https://your-bluebubbles-server) and the password/api key. in tauri dev, credentials
-use local dev storage (avoids keychain trust prompts from unsigned dev binaries). in macos
-release builds they are a single json entry in the keychain under com.oovets.messages.
-
-unsigned builds: if macos says the app "is damaged and can't be opened", move it to
-/applications and clear the quarantine flag:
-  xattr -dr com.apple.quarantine "/Applications/Messages Desktop.app"
+npm run dev          start the Vite dev server
+npm run build        type-check and build the frontend
+npm run lint         ESLint flat config
+npm run test         Vitest unit tests
+npm run preview      preview the built frontend
+npm run tauri:dev    run the desktop app in development
+npm run tauri:build  build local desktop bundles
 ```
+
+### Local cross-architecture builds
+
+On Apple Silicon, add the Intel target first:
 
 ```bash
-# npm scripts
-npm run dev          # start vite dev server
-npm run build        # type-check + build the frontend
-npm run lint         # eslint flat config
-npm run test         # vitest unit tests
-npm run preview      # preview the built frontend
-npm run tauri:dev    # run the desktop app in development
-npm run tauri:build  # build local desktop bundles
-```
-
-```
-== dev diagnostics ==
-
-memory work has two dev-only helpers. in a dev build the web inspector console exposes
-window.__mem() (js heap, dom nodes, cached message counts) and window.__memRec (start / mark /
-stop / dump to record a scenario walkthrough as a table + csv). scripts/mem-snapshot.sh prints
-the matching rss for the rust process and its wkwebview content process -- diff before/after
-launch to find the app's renderer pid:
-  scripts/mem-snapshot.sh before   # before launching the app
-  scripts/mem-snapshot.sh after    # the new WebContent pid is the app's
-```
-
-```
-== how it works ==
-
-secure settings   src/lib/secureConfig.ts + native tauri commands in src-tauri/src/lib.rs.
-                  web keeps credentials in memory; tauri dev uses dev storage; release uses
-                  keychain; clearing settings removes current + legacy keychain entries.
-
-realtime + sync   connects to the bluebubbles socket.io-compatible websocket; falls back to
-                  http polling. http and websocket both go through the tauri plugins
-                  (rust-side), so dev reaches a cleartext lan server without webview ats/cors
-                  blocks. (src/hooks/useWebSocket.ts, lib/wsTransport.ts,
-                  usePollingFallback.ts, src/api/client.ts)
-
-messages + attach optimistic outgoing render, deduped against server echoes via temp guids;
-                  images inline as downscaled thumbnails (click -> dark full-size dialog),
-                  video as <video controls>, other attachments as links. socket events that
-                  arrive without attachment data are backfilled over http. the in-memory cache
-                  is bounded (lru, 30 chats x 100 messages) and persisted.
-                  (src/components/Message*.tsx, store/useAppStore.ts, store/messageCache.ts)
-
-link previews     fetched locally via the tauri http plugin, cached in zustand with a bounded
-                  size. (src/lib/linkPreview.ts, components/LinkPreviewCard.tsx)
-
-appearance        light/dark + superlight modes, app-wide font scaling (Cmd +/-/0), font
-                  family + colour-token editing, auto-hidden scrollbars. (src/lib/appearance.ts)
-
-macos integration native menu + tray actions, launch at login, desktop notifications,
-                  messages:// deep links:  messages://chat/<guid>  or
-                  messages://open?chat=<guid>
-```
-
-```text
-== project structure ==
-
-.github/workflows/   github actions release workflow
-src/                 react application
-  api/               bluebubbles api client
-  components/        ui and chat components
-  hooks/             realtime, polling, desktop hooks
-  lib/               utilities, appearance, secure config, previews, ws transport, diagnostics
-  store/             zustand app state (+ messageCache.ts bounded cache)
-  types/             shared typescript types
-scripts/             dev helpers (mem-snapshot.sh)
-src-tauri/           tauri 2 desktop shell (capabilities/ icons/ src/ rust commands)
-eslint.config.js     eslint 9 flat config
-package.json         npm scripts + frontend deps
-vite.config.ts       vite config
-vitest.config.ts     vitest config
-```
-
-```bash
-# local cross-architecture builds (on apple silicon, add the intel target first)
 rustup target add x86_64-apple-darwin
-npm run tauri:build -- --target x86_64-apple-darwin --bundles app,dmg   # intel
-npm run tauri:build -- --target aarch64-apple-darwin --bundles app,dmg  # apple silicon
+npm run tauri:build -- --target x86_64-apple-darwin --bundles app,dmg   # Intel
+npm run tauri:build -- --target aarch64-apple-darwin --bundles app,dmg  # Apple Silicon
+```
 
-# verification before shipping
+### Verification before shipping
+
+```bash
 npm run lint
 npm run test
 npm run build
@@ -254,18 +326,147 @@ cd src-tauri && cargo check
 npm run tauri:build     # for desktop packaging changes
 ```
 
+---
+
+## Local code signing
+
+Unsigned local builds re-trigger the macOS Keychain trust prompt on every launch — the
+Keychain cannot remember "always allow" without a stable code signature. `npm run
+tauri:build` signs the bundle with a stable identity to silence this.
+
+Create the signing certificate once:
+
+- Keychain Access → Certificate Assistant → Create a Certificate
+- Name: `Messages Desktop Signing`, identity type: self-signed root, type: code signing
+
+The `tauri:build` script reads `APPLE_SIGNING_IDENTITY` and defaults to
+`Messages Desktop Signing`. Override it with your own certificate name, or use `-` for an
+ad-hoc (unsigned) build:
+
+```bash
+APPLE_SIGNING_IDENTITY="Apple Development: you@example.com" npm run tauri:build
+APPLE_SIGNING_IDENTITY="-" npm run tauri:build
 ```
-== troubleshooting ==
 
-keychain prompts          dev builds avoid the keychain (dev storage). unsigned release
-                          builds re-prompt every launch; sign locally so "always allow"
-                          sticks -- see "local code signing" above.
+After the first launch of a signed build, click "always allow" once; the stable signature
+means it will not ask again, even after future rebuilds. GitHub Actions release builds are
+independent of this.
 
-dmg build "resource busy" a temp app from a mounted dmg blocks hdiutil detach; quit it,
-                          eject the temp volume, rerun npm run tauri:build.
+---
 
-self-signed server cert   open the server url in a browser first and accept the cert.
+## Releases and CI
 
-unsigned release warning  gatekeeper may require manual approval; add apple signing +
-                          notarization secrets to github actions before wider distribution.
+macOS releases are built by GitHub Actions from `v*` tags:
+
+- **Apple Silicon:** `aarch64-apple-darwin` on `macos-latest`
+- **Intel:** `x86_64-apple-darwin` on `macos-13`
+
+Tag a release and push it:
+
+```bash
+git tag v0.2.1
+git push origin v0.2.1
 ```
+
+The workflow builds both architectures, bakes in the Telegram credentials from the
+`TG_API_ID` / `TG_API_HASH` secrets, and publishes the `.dmg` and `.app` to a GitHub
+Release.
+
+Release builds are unsigned unless Apple signing and notarization secrets (a Developer ID
+certificate, `APPLE_ID`, an app-specific password, and `APPLE_TEAM_ID`) are added to the
+repository. Without them, other users must clear the quarantine flag manually — see
+[First run](#first-run).
+
+---
+
+## Project structure
+
+```
+.github/workflows/   GitHub Actions release workflow
+src/                 React application
+  api/               BlueBubbles API client
+  components/        UI and chat components
+  hooks/             realtime, polling, desktop, and Telegram hooks
+  lib/               utilities, appearance, secure config, previews, WS transport
+  store/             Zustand app state (unified chat list, bounded message cache)
+  telegram/          Telegram types, API bindings, adapters, media components
+  types/             shared TypeScript types
+crates/              Telegram Rust workspace
+  shared/            domain model, events, config, ids
+  database/          SQLite persistence and migrations
+  cache/             encrypted blob cache and Keychain secret store
+  telegram-api/      MTProto boundary
+  telegram-core/     sync engine and services
+src-tauri/           Tauri 2 desktop shell (Rust commands, capabilities, icons)
+scripts/             dev helpers
+```
+
+---
+
+## How it works
+
+**Unified chat list.** Both sources write into a single `chats` array in the Zustand store,
+each updating only its own slice, and the list is sorted by a shared activity timestamp. The
+UI never renders directly from network responses — data lands in the store (and, for
+Telegram, SQLite) first, then the list re-reads.
+
+**iMessage realtime and sync.** Connects to the BlueBubbles socket.io-compatible WebSocket
+and falls back to HTTP polling. HTTP and WebSocket both go through the Tauri plugins on the
+Rust side, so development reaches a cleartext LAN server without webview ATS/CORS blocks.
+
+**Telegram sync.** SQLite is the source of truth for the UI. The sync engine writes network
+data into the database and emits a domain event, which the webview receives as a
+`tg:core-event`; the UI re-reads from state. Cold start renders from disk; the network only
+updates state. Core initialization runs off the main thread, emitting `tg:ready` when done.
+
+**Media handling.** Attachments are fetched on the Rust side and streamed from a temp file
+via the asset protocol, so large videos never cross the IPC boundary or sit in memory.
+Telegram media is decrypted from a local encrypted cache; downloads are throttled by a
+shared semaphore to avoid rate limits.
+
+**Credentials.** All secrets live in the macOS Keychain as a single consolidated entry in
+release builds; the web and Tauri dev builds use in-memory or local dev storage.
+
+**Deep links.** `messages://chat/<guid>` and `messages://open?chat=<guid>` open a specific
+conversation.
+
+---
+
+## Dev diagnostics
+
+Memory work has two dev-only helpers. In a dev build, the web inspector console exposes
+`window.__mem()` (JS heap, DOM nodes, cached message counts) and `window.__memRec`
+(start / mark / stop / dump a scenario walkthrough as a table and CSV).
+`scripts/mem-snapshot.sh` prints the matching RSS for the Rust process and its WKWebView
+content process — diff before and after launch to find the app's renderer PID:
+
+```bash
+scripts/mem-snapshot.sh before   # before launching the app
+scripts/mem-snapshot.sh after    # the new WebContent pid is the app's
+```
+
+---
+
+## Troubleshooting
+
+**Keychain prompts.** Dev builds avoid the Keychain (dev storage). Unsigned release builds
+re-prompt every launch; sign locally so "always allow" sticks — see
+[Local code signing](#local-code-signing).
+
+**DMG build "resource busy".** A temp app from a mounted DMG blocks `hdiutil detach`. Quit
+it, eject the temp volume, and rerun `npm run tauri:build`.
+
+**HTTP vs HTTPS.** For a server on the same machine or LAN, use plain `http://` (for example
+`http://localhost:1234`) — no certificate is involved, and that is what the automatic setup
+saves. HTTPS only matters when you expose the server over the internet; there, prefer a real
+certificate via a Cloudflare Tunnel rather than a self-signed one. The desktop app routes
+requests through the Rust HTTP plugin, so it is not subject to the WebView's cleartext/CORS
+restrictions. If you do front the server with a self-signed certificate, open its URL in a
+browser once and accept the certificate.
+
+**Unsigned release warning.** Gatekeeper may require manual approval; add Apple signing and
+notarization secrets to GitHub Actions before wider distribution.
+
+**Telegram won't connect.** Confirm the build has `TG_API_ID` / `TG_API_HASH` baked in
+(official releases do; source builds need them exported or set as CI secrets — see
+[Setting up Telegram](#setting-up-telegram)).

@@ -1,3 +1,5 @@
+mod telegram;
+
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use keyring::Entry;
 use serde::{Deserialize, Serialize};
@@ -286,11 +288,34 @@ pub fn run() {
             save_secure_config,
             clear_secure_config,
             set_menubar_visible,
+            // Telegram (unified inbox)
+            telegram::tg_status,
+            telegram::tg_list_accounts,
+            telegram::tg_chat_list,
+            telegram::tg_messages,
+            telegram::tg_avatar_data_url,
+            telegram::tg_user_avatar_data_url,
+            telegram::tg_media_data_url,
+            telegram::tg_media_file,
+            telegram::download_to_temp,
+            telegram::tg_send_message,
+            telegram::tg_send_file,
+            telegram::tg_edit_message,
+            telegram::tg_delete_messages,
+            telegram::tg_react,
+            telegram::tg_mark_read,
+            telegram::tg_set_typing,
+            telegram::tg_begin_code_login,
+            telegram::tg_submit_code,
+            telegram::tg_submit_password,
+            telegram::tg_begin_qr_login,
+            telegram::tg_sign_out,
+            // BlueBubbles in-app onboarding
             onboarding::bb_status,
             onboarding::bb_install,
             onboarding::bb_configure,
             onboarding::bb_open_privacy,
-            onboarding::bb_start_and_check
+            onboarding::bb_start_and_check,
         ])
         .setup(|app| {
             let app_handle = app.handle();
@@ -306,6 +331,20 @@ pub fn run() {
                         .build(),
                 )?;
             }
+
+            // Everything Telegram runs OFF the main thread so app startup is
+            // never blocked (Keychain reads, connecting, sync, temp cleanup).
+            app.manage(telegram::TelegramState::new());
+            std::thread::spawn(telegram::clear_media_tmp);
+            let tg_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Some(core) = telegram::init_core(&tg_handle).await {
+                    tg_handle.state::<telegram::TelegramState>().set(core);
+                    // Tell the webview Telegram is ready so it (re)loads chats.
+                    let _ = tg_handle.emit("tg:ready", ());
+                }
+            });
+
             Ok(())
         })
         .on_menu_event(|app, event| match event.id().as_ref() {

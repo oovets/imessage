@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.2.0"
+version = "0.2.12"
 description = "A Tauri App"
 authors = ["you"]
 license = ""
@@ -21,12 +21,20 @@ tauri-build = { version = "2.6.0", features = [] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2.11.0", features = ["macos-private-api", "tray-icon"] }
+tauri = { version = "2.11.0", features = ["protocol-asset", "macos-private-api", "tray-icon"] }
 tauri-plugin-log = "2"
 tauri-plugin-deep-link = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-http = "2.5.9"
 tauri-plugin-websocket = "2"
+
+# Telegram backend (self-contained MTProto/SQLite core) wired into the app.
+telegram-core = { workspace = true }
+shared = { workspace = true }
+cache = { workspace = true }
+tokio = { workspace = true }
+chrono = { workspace = true }
+base64 = { workspace = true }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-autostart = "2"

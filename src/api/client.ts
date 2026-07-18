@@ -1,6 +1,11 @@
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import type { Chat, Message } from "@/types";
 import { isTauriRuntime } from "@/lib/tauriEnv";
+import {
+  mergeChatThreads,
+  chatGuidVariants,
+  notePreferredSendGuid,
+} from "@/lib/chatThreadMerge";
 
 const CONTACT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -122,6 +127,32 @@ export class BlueBubblesClient {
     }
   }
 
+  /**
+   * Raw contact avatars from the server's macOS Contacts database (no Private
+   * API involved). Returns base64 image data per contact with every address
+   * (phones + emails) it should match; callers downscale and cache.
+   */
+  async getContactAvatarsRaw(): Promise<Array<{ addresses: string[]; avatar: string }>> {
+    const url = `${this.baseUrl}/api/v1/contact?${this.authParam()}&extraProperties=avatar`;
+    const res = await httpFetch(url);
+    if (!res.ok) return [];
+    const json = await res.json();
+    const contacts: Array<{
+      avatar?: string | null;
+      phoneNumbers?: Array<{ address?: string | null }>;
+      emails?: Array<{ address?: string | null }>;
+    }> = json?.data ?? [];
+    const out: Array<{ addresses: string[]; avatar: string }> = [];
+    for (const c of contacts) {
+      if (!c.avatar) continue;
+      const addresses = [...(c.phoneNumbers ?? []), ...(c.emails ?? [])]
+        .map((e) => e.address ?? "")
+        .filter(Boolean);
+      if (addresses.length > 0) out.push({ addresses, avatar: c.avatar });
+    }
+    return out;
+  }
+
   async getChats(): Promise<Chat[]> {
     const url = `${this.baseUrl}/api/v1/chat/query?${this.authParam()}`;
     let res: Response;
@@ -157,7 +188,9 @@ export class BlueBubblesClient {
       }
     }
 
-    return chats;
+    // Collapse split per-service DM threads (pre-macOS-26 hosts) into one
+    // conversation per contact, like Apple's Messages app does.
+    return mergeChatThreads(chats);
   }
 
   async enrichChatActivity(
@@ -173,10 +206,24 @@ export class BlueBubblesClient {
         chats.slice(i, i + MAX_CONCURRENT).map(async (chat, batchIdx) => {
           const idx = i + batchIdx;
           try {
-            const msgs = await this._getMessages(chat.guid, 1, false);
-            if (msgs.length > 0) {
-              entries[idx].lastMsgTime = msgs[0].dateCreated;
-              entries[idx].chat.lastMessageText = msgs[0].text ?? "";
+            // A merged conversation spans several underlying threads; the
+            // preview must reflect whichever thread saw the latest message.
+            let newest: Message | null = null;
+            let newestVariant = chat.guid;
+            for (const variant of chatGuidVariants(chat.guid)) {
+              const msgs = await this._getMessages(variant, 1, false);
+              if (msgs.length > 0 && (!newest || msgs[0].dateCreated > newest.dateCreated)) {
+                newest = msgs[0];
+                newestVariant = variant;
+              }
+            }
+            if (newest) {
+              entries[idx].lastMsgTime = newest.dateCreated;
+              entries[idx].chat.lastMessageText = newest.text ?? "";
+              // Record the activity time used for unified chat-list ordering.
+              entries[idx].chat.activityAt = newest.dateCreated;
+              // Replies should go out on the service the contact last used.
+              notePreferredSendGuid(newestVariant);
             }
           } catch {}
         })
@@ -223,7 +270,25 @@ export class BlueBubblesClient {
   }
 
   async getMessages(chatGUID: string, limit = 50, after?: number): Promise<Message[]> {
-    const msgs = await this._getMessages(chatGUID, limit, true, after);
+    // A merged conversation reads from every underlying thread (usually just
+    // one; two for split iMessage/SMS pairs) and interleaves by time, stamped
+    // with the canonical guid so the UI sees a single conversation.
+    const variants = chatGuidVariants(chatGUID);
+    let msgs: Message[];
+    if (variants.length === 1) {
+      msgs = await this._getMessages(chatGUID, limit, true, after);
+    } else {
+      const perThread = await Promise.all(
+        variants.map((v) => this._getMessages(v, limit, true, after).catch(() => []))
+      );
+      msgs = perThread
+        .flat()
+        .sort((a, b) => a.dateCreated - b.dateCreated)
+        .slice(-limit);
+      for (const m of msgs) {
+        m.chatGUID = chatGUID;
+      }
+    }
 
     const contactMap = await this.getContacts();
     for (const m of msgs) {
@@ -278,6 +343,33 @@ export class BlueBubblesClient {
       } catch {}
       throw new Error(
         `sendMessage failed: HTTP ${res.status}${detail ? ` - ${detail.slice(0, 160)}` : ""}`
+      );
+    }
+  }
+
+  /** Send a file attachment. Uses the AppleScript method, which does not
+   *  require the BlueBubbles Private API (only replies/reactions do). */
+  async sendAttachment(
+    chatGUID: string,
+    file: Blob,
+    name: string,
+    tempGuid?: string
+  ): Promise<void> {
+    const url = `${this.baseUrl}/api/v1/message/attachment?${this.authParam()}`;
+    const form = new FormData();
+    form.append("chatGuid", chatGUID);
+    form.append("tempGuid", tempGuid ?? crypto.randomUUID());
+    form.append("name", name);
+    form.append("method", "apple-script");
+    form.append("attachment", file, name);
+    const res = await httpFetch(url, { method: "POST", body: form });
+    if (!res.ok) {
+      let detail = "";
+      try {
+        detail = await res.text();
+      } catch {}
+      throw new Error(
+        `sendAttachment failed: HTTP ${res.status}${detail ? ` - ${detail.slice(0, 160)}` : ""}`
       );
     }
   }

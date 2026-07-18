@@ -1,8 +1,12 @@
 import { useState, useRef, type KeyboardEvent } from "react";
 import { ArrowUp, Paperclip, X, Reply, Smile } from "lucide-react";
-import { useAppStore } from "@/store/useAppStore";
+import { useAppStore, isTelegramChatGuid } from "@/store/useAppStore";
 import { getClient } from "@/api/clientFactory";
+import { tg } from "@/telegram/api";
+import { parseTgChatGuid } from "@/telegram/adapters";
 import { cn } from "@/lib/utils";
+import { autoConvertEmoticons } from "@/lib/emoticons";
+import { preferredSendGuid } from "@/lib/chatThreadMerge";
 import type { Message } from "@/types";
 import { decodeEscapedUnicode } from "@/types";
 import { EmojiSuggestions } from "@/components/EmojiSuggestions";
@@ -45,16 +49,44 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
   const replaceMessage = useAppStore((s) => s.replaceMessage);
   const updateChatPreview = useAppStore((s) => s.updateChatPreview);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [attaching, setAttaching] = useState(false);
   const emoji = useEmojiAutocomplete(text, setText, textareaRef);
   const [pickerOpen, setPickerOpen] = useState(false);
+
+  async function sendFile(file: File) {
+    setAttaching(true);
+    try {
+      if (isTelegramChatGuid(chatGUID)) {
+        const { accountId, chatId } = parseTgChatGuid(chatGUID);
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        // The composer text (if any) rides along as the caption.
+        await tg.sendFile(accountId, chatId, file.name || "upload", bytes, text.trim() || undefined);
+        setText("");
+      } else {
+        await getClient(serverUrl, password).sendAttachment(
+          preferredSendGuid(chatGUID),
+          file,
+          file.name || "upload",
+        );
+      }
+    } catch (err) {
+      setConnectionNotice(
+        `Unable to send attachment: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      setAttaching(false);
+    }
+  }
 
   const hasText = text.trim().length > 0;
   const replyPreview = decodeEscapedUnicode(replyTarget?.text);
 
   function handleChange(value: string) {
-    // Convert a fully-typed `:shortcode:` straight to its emoji.
+    // Convert a fully-typed `:shortcode:` straight to its emoji, then convert
+    // common ASCII emoticons (":)", "<3", ":D", …) to emoji.
     const replaced = autoReplaceClosedShortcode(value);
-    setText(replaced ?? value);
+    setText(autoConvertEmoticons(replaced ?? value));
   }
 
   function insertEmoji(char: string) {
@@ -78,6 +110,29 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
     const trimmed = text.trim();
     if (!trimmed) return;
 
+    // Telegram: the core does its own optimistic-pending + reconcile and
+    // drives the UI via tg:core-event, so we just fire the send and clear
+    // the input (no frontend optimistic message — it would duplicate).
+    if (isTelegramChatGuid(chatGUID)) {
+      const { accountId, chatId } = parseTgChatGuid(chatGUID);
+      const replyId = replyTarget ? Number(replyTarget.guid.split(":").pop()) : NaN;
+      const replyTo = Number.isFinite(replyId) && replyId > 0 ? replyId : undefined;
+      setText("");
+      setReplyTarget(chatGUID, null);
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto";
+        textareaRef.current.focus();
+      }
+      void tg
+        .sendMessage(accountId, chatId, trimmed, replyTo)
+        .catch((err) =>
+          setConnectionNotice(
+            `Unable to send message: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
+      return;
+    }
+
     const optimistic = makeOptimisticMessage(chatGUID, trimmed, replyTarget?.guid ?? "");
     upsertMessage(optimistic);
     updateChatPreview(chatGUID, trimmed);
@@ -93,7 +148,9 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
     void (async () => {
       try {
         const client = getClient(serverUrl, password);
-        await client.sendMessage(chatGUID, trimmed, replyGuid, optimistic.tempGuid);
+        // Merged iMessage/SMS conversation: send on the thread the contact
+        // last used, so the reply goes out over the right service.
+        await client.sendMessage(preferredSendGuid(chatGUID), trimmed, replyGuid, optimistic.tempGuid);
         replaceMessage(chatGUID, optimistic.guid, { ...optimistic, pending: false });
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
@@ -170,10 +227,23 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
             !superlightMode && "rounded-full hover:bg-muted hover:text-foreground"
           )}
           aria-label="Attach file"
-          title="Attachments coming soon"
+          title="Attach photo or video"
+          disabled={attaching}
+          onClick={() => fileInputRef.current?.click()}
         >
           <Paperclip className="h-4 w-4" />
         </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*,video/*"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = ""; // allow re-selecting the same file
+            if (file) void sendFile(file);
+          }}
+        />
 
         <div className="relative shrink-0">
           <button

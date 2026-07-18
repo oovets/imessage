@@ -2,10 +2,15 @@ import { useEffect, useState } from "react";
 import { Copy, Reply, Smile, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { type Message, decodeEscapedUnicode, formatMessageTime } from "@/types";
-import { useAppStore } from "@/store/useAppStore";
+import { useAppStore, isTelegramChatGuid } from "@/store/useAppStore";
+import { useTelegramSenderAvatar } from "@/telegram/useTelegramAvatar";
+import { useContactAvatarForAddress } from "@/lib/contactAvatars";
 import { getClient } from "@/api/clientFactory";
 import { extractFirstUrl, fetchLinkPreview } from "@/lib/linkPreview";
 import { LinkPreviewCard } from "@/components/LinkPreviewCard";
+import { OrientedImage } from "@/components/OrientedImage";
+import { StreamedVideo } from "@/components/StreamedVideo";
+import { TelegramMedia } from "@/telegram/TelegramMedia";
 import {
   Dialog,
   DialogContent,
@@ -106,7 +111,10 @@ function AttachmentImage({
   alt: string;
   onOpen: (src: string, alt: string) => void;
 }) {
-  const [src, setSrc] = useState(thumbSrc);
+  // Render the full image through OrientedImage: it applies EXIF orientation
+  // (server thumbnails drop it and render rotated) and keeps only a downscaled
+  // bitmap in memory. `thumbSrc` is unused now but kept in the signature.
+  void thumbSrc;
   return (
     <button
       type="button"
@@ -118,14 +126,10 @@ function AttachmentImage({
       className="-mx-1 mb-1 block cursor-zoom-in border-0 bg-transparent p-0"
       aria-label="Open full image"
     >
-      <img
-        src={src}
+      <OrientedImage
+        src={fullSrc}
         alt={alt}
-        loading="lazy"
-        onError={() => {
-          if (src !== fullSrc) setSrc(fullSrc);
-        }}
-        className="rounded-lg max-h-80 max-w-full object-cover"
+        className="rounded-lg max-h-80 max-w-full"
       />
     </button>
   );
@@ -159,9 +163,21 @@ export function MessageBubble({
   const serverUrl = useAppStore((s) => s.serverUrl);
   const password = useAppStore((s) => s.password);
   const superlightMode = useAppStore((s) => s.superlightMode);
+  const showAvatars = useAppStore((s) => s.showAvatars);
   const linkPreviewsEnabled = useAppStore((s) => s.linkPreviewsEnabled);
   const linkPreviewCache = useAppStore((s) => s.linkPreviewCache);
   const setLinkPreview = useAppStore((s) => s.setLinkPreview);
+
+  // Mini sender avatar (incoming messages): Telegram sender photo or the
+  // iMessage contact photo, falling back to the initials circle below. The
+  // hooks gate on the global "show avatars" setting internally.
+  const senderAddress = !isMe ? (message.handle?.address ?? null) : null;
+  const chatGuid = message.chatGUID ?? "";
+  const tgSenderAvatar = useTelegramSenderAvatar(chatGuid, senderAddress);
+  const contactSenderAvatar = useContactAvatarForAddress(
+    chatGuid && !isTelegramChatGuid(chatGuid) ? senderAddress : null
+  );
+  const senderAvatar = tgSenderAvatar ?? contactSenderAvatar;
 
   const [copied, setCopied] = useState(false);
   const [showReactions, setShowReactions] = useState(false);
@@ -257,11 +273,22 @@ export function MessageBubble({
         )}
 
         <div className={cn(superlightMode ? "w-full" : "flex items-end gap-2 w-full", isMe && "justify-end")}>
-          {!isMe && !superlightMode && (
+          {/* Avatars off = text only: neither the circle nor its reserved
+              column renders, so bubbles sit flush left. */}
+          {!isMe && !superlightMode && showAvatars && (
             isLastInGroup ? (
-              <div className="h-7 w-7 shrink-0 rounded-full bg-[#5e84c9] text-white text-[10px] font-semibold flex items-center justify-center select-none">
-                {senderInitials}
-              </div>
+              senderAvatar ? (
+                <img
+                  src={senderAvatar}
+                  alt=""
+                  className="h-7 w-7 shrink-0 rounded-full object-cover select-none"
+                  draggable={false}
+                />
+              ) : (
+                <div className="h-7 w-7 shrink-0 rounded-full bg-[#5e84c9] text-white text-[10px] font-semibold flex items-center justify-center select-none">
+                  {senderInitials}
+                </div>
+              )
             ) : (
               <div className="w-7 shrink-0" aria-hidden="true" />
             )
@@ -284,6 +311,10 @@ export function MessageBubble({
             onDoubleClick={() => onReact?.(message, "love")}
           >
             {message.attachments?.map((att) => {
+              // Telegram media is fetched lazily via its own component.
+              if (att.guid.startsWith("tgmedia:")) {
+                return <TelegramMedia key={att.guid} att={att} />;
+              }
               const mime = att.mimeType ?? "";
               const client = getClient(serverUrl, password);
               const src = att.url || client.getAttachmentUrl(att.guid);
@@ -319,10 +350,10 @@ export function MessageBubble({
               }
               if (VIDEO_MIME.test(mime)) {
                 return (
-                  <video
+                  <StreamedVideo
                     key={att.guid}
                     src={src}
-                    controls
+                    mime={mime}
                     className="rounded-lg max-h-80 max-w-full -mx-1 mb-1"
                   />
                 );

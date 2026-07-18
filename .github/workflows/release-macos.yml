@@ -21,6 +21,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
+    # Telegram API credentials are baked into the binary at build time
+    # (option_env!), so the bundled app works without runtime env vars. Add
+    # them as repository Actions secrets; nothing secret is committed. If they
+    # are unset, the app still builds and runs — just without Telegram.
+    env:
+      TG_API_ID: ${{ secrets.TG_API_ID }}
+      TG_API_HASH: ${{ secrets.TG_API_HASH }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6.0.2
@@ -30,6 +37,21 @@ jobs:
         with:
           node-version: 24
           cache: npm
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # Cache the Cargo registry and the workspace target dir keyed on the
+      # target triple, so the huge MTProto/TLS/Tauri dependency tree is compiled
+      # once instead of from scratch on every run (Intel builds went from ~25min
+      # to a few minutes on a warm cache).
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+          key: ${{ matrix.target }}
 
       - name: Install frontend dependencies
         run: npm ci --legacy-peer-deps
@@ -44,7 +66,7 @@ jobs:
           args: --target ${{ matrix.target }} --bundles app,dmg
           tagName: ${{ github.ref_name }}
           releaseName: Messages ${{ github.ref_name }}
-          releaseBody: macOS desktop builds for Messages.
+          releaseBody: macOS desktop builds for Messages (unified iMessage + Telegram).
           releaseDraft: false
           prerelease: false
 
@@ -57,10 +79,12 @@ jobs:
           projectPath: src-tauri
           args: --target ${{ matrix.target }} --bundles app,dmg
 
+      # The Cargo workspace builds into the repo-root target/, not src-tauri/target/.
       - name: Upload bundle artifacts
         uses: actions/upload-artifact@v7.0.1
         with:
           name: messages-macos-${{ matrix.arch }}-bundles
           path: |
-            src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
-            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app
+            target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            target/${{ matrix.target }}/release/bundle/macos/*.app
+          if-no-files-found: error

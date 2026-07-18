@@ -251,11 +251,30 @@ interface AppState {
   password: string;
   isConfigured: boolean;
   configLoaded: boolean;
+  // Set when the user skips BlueBubbles setup (e.g. to run Telegram only), so
+  // the first-run wizard stops gating the app. Persisted.
+  onboardingDismissed: boolean;
+  dismissOnboarding: () => void;
   launchOnLogin: boolean;
   networkOnline: boolean;
   connectionNotice: string | null;
   superlightMode: boolean;
   showTimestamps: boolean;
+  // Show contact/Telegram profile photos; off = initials only.
+  showAvatars: boolean;
+  // AI auto-reply: an OpenAI-compatible endpoint answers on the user's behalf
+  // in explicitly enabled chats.
+  aiReply: {
+    endpoint: string;
+    apiKey: string;
+    model: string;
+    systemPrompt: string;
+    /** Min seconds between auto-replies per chat; 0 = no limit. */
+    cooldownSeconds: number;
+    /** Auto-replies in a row before going quiet until a manual message; 0 = no limit. */
+    maxConsecutive: number;
+  };
+  aiReplyChats: Record<string, true>;
   sidebarHidden: boolean;
   appearance: AppearanceSettings;
   linkPreviewsEnabled: boolean;
@@ -280,6 +299,21 @@ interface AppState {
   typingChats: Record<string, number>;
   setTyping: (chatGUID: string, display: boolean) => void;
 
+  // Unified inbox: Telegram availability + its slice of the chat list.
+  telegramAvailable: boolean;
+  setTelegramAvailable: (v: boolean) => void;
+  setTelegramChats: (chats: Chat[]) => void;
+  upsertChat: (chat: Chat) => void;
+  // Bumped to re-run the Telegram chat loader (e.g. after adding an account).
+  telegramReloadNonce: number;
+  reloadTelegram: () => void;
+  // Presence keyed by the private-chat GUID (tg:<account>:<userId>).
+  telegramPresence: Record<string, { online: boolean; lastSeen: number | null }>;
+  setTelegramPresence: (
+    guid: string,
+    presence: { online: boolean; lastSeen: number | null },
+  ) => void;
+
   setConfig: (serverUrl: string, password: string) => void;
   clearConfig: () => void;
   setConfigLoaded: (v: boolean) => void;
@@ -288,6 +322,9 @@ interface AppState {
   setConnectionNotice: (v: string | null) => void;
   setSuperlightMode: (v: boolean) => void;
   setShowTimestamps: (v: boolean) => void;
+  setShowAvatars: (v: boolean) => void;
+  setAiReplyConfig: (patch: Partial<AppState["aiReply"]>) => void;
+  toggleAiReplyChat: (guid: string) => void;
   setSidebarHidden: (v: boolean) => void;
   toggleSidebarHidden: () => void;
   setFontScale: (value: number) => void;
@@ -335,6 +372,22 @@ function deriveSelectedChat(tree: PaneNode, activePaneId: string): string | null
   return fallbackLeaf.type === "leaf" ? fallbackLeaf.chatGUID : null;
 }
 
+// Unified inbox: Telegram chats live in the same `chats` array as iMessage
+// chats, distinguished by a `tg:` GUID prefix. Each source updates only its
+// own slice so the two never clobber each other, and the merged list is
+// sorted by most-recent activity so conversations interleave by time.
+const TG_GUID_PREFIX = "tg:";
+export function isTelegramChatGuid(guid: string): boolean {
+  return guid.startsWith(TG_GUID_PREFIX);
+}
+function chatActivity(chat: Chat): number {
+  return chat.activityAt ?? chat.lastMessage?.dateCreated ?? 0;
+}
+function sortChatsByRecency(list: Chat[]): Chat[] {
+  // Stable sort keeps each source's incoming order among equal/unknown times.
+  return [...list].sort((a, b) => chatActivity(b) - chatActivity(a));
+}
+
 export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
@@ -342,16 +395,31 @@ export const useAppStore = create<AppState>()(
       password: "",
       isConfigured: false,
       configLoaded: false,
+      onboardingDismissed: false,
       launchOnLogin: false,
       networkOnline: true,
       connectionNotice: null,
       superlightMode: false,
       showTimestamps: true,
+      showAvatars: true,
+      aiReply: {
+        endpoint: "",
+        apiKey: "",
+        model: "",
+        systemPrompt:
+          "You are replying as me in a personal chat. Match my tone and language, keep replies short and natural, never mention being an AI.",
+        cooldownSeconds: 10,
+        maxConsecutive: 10,
+      },
+      aiReplyChats: {},
       sidebarHidden: false,
       appearance: DEFAULT_APPEARANCE,
       linkPreviewsEnabled: true,
 
       chats: [],
+      telegramAvailable: false,
+      telegramPresence: {},
+      telegramReloadNonce: 0,
       paneTree: EMPTY_LEAF,
       activePaneId: EMPTY_LEAF.id,
       paneLayouts: {},
@@ -400,12 +468,23 @@ export const useAppStore = create<AppState>()(
           selectedChatGUID: null,
         }),
 
+      dismissOnboarding: () => set({ onboardingDismissed: true }),
+
       setConfigLoaded: (v) => set({ configLoaded: v }),
       setLaunchOnLogin: (v) => set({ launchOnLogin: v }),
       setNetworkOnline: (v) => set({ networkOnline: v }),
       setConnectionNotice: (v) => set({ connectionNotice: v }),
       setSuperlightMode: (v) => set({ superlightMode: v }),
       setShowTimestamps: (v) => set({ showTimestamps: v }),
+      setShowAvatars: (v) => set({ showAvatars: v }),
+      setAiReplyConfig: (patch) => set((s) => ({ aiReply: { ...s.aiReply, ...patch } })),
+      toggleAiReplyChat: (guid) =>
+        set((s) => {
+          const next = { ...s.aiReplyChats };
+          if (next[guid]) delete next[guid];
+          else next[guid] = true;
+          return { aiReplyChats: next };
+        }),
       setSidebarHidden: (v) => set({ sidebarHidden: v }),
       toggleSidebarHidden: () => set((s) => ({ sidebarHidden: !s.sidebarHidden })),
       setFontScale: (value) =>
@@ -574,7 +653,42 @@ export const useAppStore = create<AppState>()(
         });
       },
 
-      setChats: (chats) => set({ chats }),
+      // iMessage source: replace all non-Telegram chats, keep Telegram ones.
+      setChats: (chats) =>
+        set((s) => ({
+          chats: sortChatsByRecency([
+            ...chats,
+            ...s.chats.filter((c) => isTelegramChatGuid(c.guid)),
+          ]),
+        })),
+
+      // Telegram source: replace all Telegram chats, keep iMessage ones.
+      setTelegramChats: (tgChats) =>
+        set((s) => ({
+          chats: sortChatsByRecency([
+            ...s.chats.filter((c) => !isTelegramChatGuid(c.guid)),
+            ...tgChats,
+          ]),
+        })),
+
+      setTelegramAvailable: (v) => set({ telegramAvailable: v }),
+
+      reloadTelegram: () =>
+        set((s) => ({ telegramReloadNonce: s.telegramReloadNonce + 1 })),
+
+      setTelegramPresence: (guid, presence) =>
+        set((s) => ({
+          telegramPresence: { ...s.telegramPresence, [guid]: presence },
+        })),
+
+      // Replace or insert a single chat (any source), keeping the list sorted.
+      upsertChat: (chat) =>
+        set((s) => ({
+          chats: sortChatsByRecency([
+            ...s.chats.filter((c) => c.guid !== chat.guid),
+            chat,
+          ]),
+        })),
 
       setMessages: (chatGUID, messages) => {
         const capped = capMessages(messages);
@@ -613,13 +727,14 @@ export const useAppStore = create<AppState>()(
           let nextChats = s.chats;
           if (idx !== -1) {
             const chat = s.chats[idx];
-            const prevLatest = chat.lastMessage?.dateCreated ?? 0;
+            const prevLatest = chat.activityAt ?? chat.lastMessage?.dateCreated ?? 0;
             const isNewLatest = !!message.text && message.dateCreated > prevLatest;
             const updatedChat = isNewLatest
               ? {
                   ...chat,
                   lastMessageText: message.text,
                   lastMessage: message,
+                  activityAt: message.dateCreated,
                 }
               : message.text
               ? { ...chat, lastMessageText: message.text }
@@ -693,6 +808,10 @@ export const useAppStore = create<AppState>()(
       partialize: (s) => ({
         superlightMode: s.superlightMode,
         showTimestamps: s.showTimestamps,
+        showAvatars: s.showAvatars,
+        aiReply: s.aiReply,
+        aiReplyChats: s.aiReplyChats,
+        onboardingDismissed: s.onboardingDismissed,
         sidebarHidden: s.sidebarHidden,
         appearance: s.appearance,
         linkPreviewsEnabled: s.linkPreviewsEnabled,

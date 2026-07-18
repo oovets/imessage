@@ -6,6 +6,9 @@ import { OnboardingWizard } from "@/components/OnboardingWizard";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { usePollingFallback } from "@/hooks/usePollingFallback";
 import { useDesktopFeatures } from "@/hooks/useDesktopFeatures";
+import { useTelegramInbox } from "@/hooks/useTelegramInbox";
+import { useTelegramEvents } from "@/hooks/useTelegramEvents";
+import { useAiAutoReply } from "@/hooks/useAiAutoReply";
 import { isTauriRuntime } from "@/lib/tauriEnv";
 import { useAppStore, type PaneNode } from "@/store/useAppStore";
 import { useTheme } from "@/components/ThemeProvider";
@@ -29,6 +32,9 @@ export default function App() {
   useDesktopFeatures();
   useWebSocket();
   usePollingFallback();
+  useTelegramInbox();
+  useTelegramEvents();
+  useAiAutoReply();
 
   const selectedChatGUID = useAppStore((s) => s.selectedChatGUID);
   const paneTree = useAppStore((s) => s.paneTree);
@@ -37,6 +43,7 @@ export default function App() {
   const superlightMode = useAppStore((s) => s.superlightMode);
   const configLoaded = useAppStore((s) => s.configLoaded);
   const isConfigured = useAppStore((s) => s.isConfigured);
+  const onboardingDismissed = useAppStore((s) => s.onboardingDismissed);
   const active = findActiveLeaf(paneTree, activePaneId);
   const sidebarHidden = useAppStore((s) => s.sidebarHidden);
   const appearance = useAppStore((s) => s.appearance);
@@ -105,7 +112,8 @@ export default function App() {
 
   // First-run in the desktop app: guide setup (install + configure BlueBubbles,
   // or connect to an existing server) instead of dropping into the empty shell.
-  if (isTauriRuntime() && !isConfigured) {
+  // Skipped once the user dismisses it (e.g. to run Telegram only).
+  if (isTauriRuntime() && !isConfigured && !onboardingDismissed) {
     return <OnboardingWizard />;
   }
 

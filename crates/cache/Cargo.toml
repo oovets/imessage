@@ -1,0 +1,23 @@
+[package]
+name = "cache"
+description = "Encrypted local blob cache and Keychain-backed secret storage"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+shared = { workspace = true }
+tokio = { workspace = true }
+keyring = { workspace = true }
+chacha20poly1305 = { workspace = true }
+sha2 = { workspace = true }
+base64 = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints.clippy]
+unwrap_used = "deny"

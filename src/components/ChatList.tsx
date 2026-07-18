@@ -29,6 +29,9 @@ export function ChatList() {
   const serverUrl = useAppStore((s) => s.serverUrl);
   const password = useAppStore((s) => s.password);
   const isConfigured = useAppStore((s) => s.isConfigured);
+  const telegramAvailable = useAppStore((s) => s.telegramAvailable);
+  // The list is shown if either messaging source is available.
+  const hasAnySource = isConfigured || telegramAvailable;
   const wsConnected = useAppStore((s) => s.wsConnected);
   const pollingFallback = useAppStore((s) => s.pollingFallback);
   const superlightMode = useAppStore((s) => s.superlightMode);
@@ -211,7 +214,7 @@ export function ChatList() {
         </div>
       )}
 
-      {!sidebarHidden && isConfigured && (
+      {!sidebarHidden && hasAnySource && (
         <div className={cn("px-3 pt-2 pb-2", !superlightMode && "border-b")}>
           <div className="relative">
             {!superlightMode && (
@@ -256,7 +259,7 @@ export function ChatList() {
       )}
 
       <ScrollArea className="flex-1">
-        {!isConfigured ? (
+        {!hasAnySource ? (
           !sidebarHidden && (
             <div className="p-6 text-center text-sm text-muted-foreground">
               <p>Configure your server to get started.</p>

@@ -14,6 +14,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { useAppStore } from "@/store/useAppStore";
+import { TelegramAccounts } from "@/components/TelegramAccounts";
 import { clearSecureConfig, saveSecureConfig } from "@/lib/secureConfig";
 import { isTauriRuntime } from "@/lib/tauriEnv";
 import { cn } from "@/lib/utils";
@@ -49,6 +50,10 @@ export function SettingsDialog(_props: SettingsDialogProps) {
     setLaunchOnLogin,
     showTimestamps,
     setShowTimestamps,
+    showAvatars,
+    setShowAvatars,
+    aiReply,
+    setAiReplyConfig,
     linkPreviewsEnabled,
     setLinkPreviewsEnabled,
     clearLinkPreviewCache,
@@ -65,7 +70,9 @@ export function SettingsDialog(_props: SettingsDialogProps) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"server" | "general" | "appearance">("server");
+  const [tab, setTab] = useState<
+    "server" | "telegram" | "general" | "appearance"
+  >("server");
   const autoOpenedRef = useRef(false);
 
   useEffect(() => {
@@ -206,6 +213,7 @@ export function SettingsDialog(_props: SettingsDialogProps) {
           {(
             [
               ["server", "Server"],
+              ["telegram", "Telegram"],
               ["general", "General"],
               ["appearance", "Appearance"],
             ] as const
@@ -227,6 +235,7 @@ export function SettingsDialog(_props: SettingsDialogProps) {
         </div>
 
         <div className="grid gap-4 py-2">
+          {tab === "telegram" && <TelegramAccounts />}
           {tab === "server" && (
             <>
               <div className="grid gap-2">
@@ -307,6 +316,22 @@ export function SettingsDialog(_props: SettingsDialogProps) {
                 </label>
               </div>
               <div className="grid gap-2">
+                <Label htmlFor="show-avatars">Avatars</Label>
+                <label
+                  htmlFor="show-avatars"
+                  className="inline-flex items-center gap-2 text-sm text-muted-foreground"
+                >
+                  <input
+                    id="show-avatars"
+                    type="checkbox"
+                    checked={showAvatars}
+                    onChange={(e) => setShowAvatars(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  Show avatars (off = text only, no circles)
+                </label>
+              </div>
+              <div className="grid gap-2">
                 <Label htmlFor="link-previews">Link previews</Label>
                 <div className="flex items-center justify-between gap-3">
                   <label
@@ -332,6 +357,91 @@ export function SettingsDialog(_props: SettingsDialogProps) {
                     Clear cache
                   </Button>
                 </div>
+              </div>
+              <div className="grid gap-2 rounded-md border p-3">
+                <Label>AI auto-reply</Label>
+                <p className="text-xs text-muted-foreground">
+                  An OpenAI-compatible endpoint (vLLM, Ollama, …) answers as you in chats where
+                  you enable the robot icon in the chat header. Replies are capped and cool down
+                  automatically.
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="grid gap-1">
+                    <Label htmlFor="ai-endpoint" className="text-xs">Endpoint</Label>
+                    <Input
+                      id="ai-endpoint"
+                      placeholder="http://gpulab:8000/v1"
+                      value={aiReply.endpoint}
+                      onChange={(e) => setAiReplyConfig({ endpoint: e.target.value })}
+                    />
+                  </div>
+                  <div className="grid gap-1">
+                    <Label htmlFor="ai-model" className="text-xs">Model</Label>
+                    <Input
+                      id="ai-model"
+                      placeholder="qwen2.5-72b-instruct"
+                      value={aiReply.model}
+                      onChange={(e) => setAiReplyConfig({ model: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div className="grid gap-1">
+                  <Label htmlFor="ai-key" className="text-xs">API key (optional)</Label>
+                  <Input
+                    id="ai-key"
+                    type="password"
+                    value={aiReply.apiKey}
+                    onChange={(e) => setAiReplyConfig({ apiKey: e.target.value })}
+                  />
+                </div>
+                <div className="grid gap-1">
+                  <Label htmlFor="ai-prompt" className="text-xs">Persona / system prompt</Label>
+                  <textarea
+                    id="ai-prompt"
+                    rows={3}
+                    className="w-full rounded-md border bg-transparent px-3 py-2 text-sm"
+                    value={aiReply.systemPrompt}
+                    onChange={(e) => setAiReplyConfig({ systemPrompt: e.target.value })}
+                  />
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="grid gap-1">
+                    <Label htmlFor="ai-cooldown" className="text-xs">
+                      Min seconds between replies (0 = no limit)
+                    </Label>
+                    <Input
+                      id="ai-cooldown"
+                      type="number"
+                      min={0}
+                      value={aiReply.cooldownSeconds ?? 10}
+                      onChange={(e) =>
+                        setAiReplyConfig({
+                          cooldownSeconds: Math.max(0, parseInt(e.target.value, 10) || 0),
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="grid gap-1">
+                    <Label htmlFor="ai-max" className="text-xs">
+                      Max replies in a row (0 = no limit)
+                    </Label>
+                    <Input
+                      id="ai-max"
+                      type="number"
+                      min={0}
+                      value={aiReply.maxConsecutive ?? 10}
+                      onChange={(e) =>
+                        setAiReplyConfig({
+                          maxConsecutive: Math.max(0, parseInt(e.target.value, 10) || 0),
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  The cap resets whenever you send something yourself. Setting both to 0 removes
+                  every brake — two bots in the same chat can then loop forever.
+                </p>
               </div>
             </>
           )}

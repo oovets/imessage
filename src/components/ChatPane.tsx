@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, MessageCircleDashed, SplitSquareHorizontal, SplitSquareVertical, X, MessageSquarePlus } from "lucide-react";
+import { ArrowLeft, Bot, MessageCircleDashed, SplitSquareHorizontal, SplitSquareVertical, X, MessageSquarePlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MessageList } from "@/components/MessageList";
 import { MessageInput } from "@/components/MessageInput";
-import { useAppStore } from "@/store/useAppStore";
+import { useAppStore, isTelegramChatGuid } from "@/store/useAppStore";
 import { getClient } from "@/api/clientFactory";
-import { getChatDisplayName, getChatInitials } from "@/types";
+import { getChatDisplayName, getChatInitials, formatMessageTime } from "@/types";
+import { tg } from "@/telegram/api";
+import { parseTgChatGuid, tgMessageToMessage } from "@/telegram/adapters";
 import { cn } from "@/lib/utils";
 
 interface ChatPaneProps {
@@ -20,6 +22,12 @@ export function ChatPane({ paneId, chatGUID, isActive, canClose, showMobileBack 
   const selectedChat = useAppStore((s) =>
     chatGUID ? s.chats.find((c) => c.guid === chatGUID) : undefined
   );
+  const presence = useAppStore((s) =>
+    chatGUID ? s.telegramPresence[chatGUID] : undefined
+  );
+  // Bumped when Telegram becomes ready / an account changes; re-runs the
+  // message load so a pane opened before the core was ready recovers.
+  const telegramReloadNonce = useAppStore((s) => s.telegramReloadNonce);
   const serverUrl = useAppStore((s) => s.serverUrl);
   const password = useAppStore((s) => s.password);
   const setMessages = useAppStore((s) => s.setMessages);
@@ -30,6 +38,11 @@ export function ChatPane({ paneId, chatGUID, isActive, canClose, showMobileBack 
   const closePane = useAppStore((s) => s.closePane);
   const setPaneChat = useAppStore((s) => s.setPaneChat);
   const superlightMode = useAppStore((s) => s.superlightMode);
+  const aiConfigured = useAppStore(
+    (s) => s.aiReply.endpoint.trim().length > 0 && s.aiReply.model.trim().length > 0
+  );
+  const aiEnabled = useAppStore((s) => (chatGUID ? !!s.aiReplyChats[chatGUID] : false));
+  const toggleAiReplyChat = useAppStore((s) => s.toggleAiReplyChat);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const paneRef = useRef<HTMLDivElement>(null);
 
@@ -44,6 +57,32 @@ export function ChatPane({ paneId, chatGUID, isActive, canClose, showMobileBack 
     const lastFetchedAt = snapshot.messageFetchedAt[chatGUID] ?? 0;
 
     if (!hasCached) setLoadingMessages(true);
+
+    // Telegram chats load through the tg_* commands, not BlueBubbles.
+    if (isTelegramChatGuid(chatGUID)) {
+      const { accountId, chatId } = parseTgChatGuid(chatGUID);
+      tg.messages(accountId, chatId, undefined, 50)
+        .then((tgMsgs) => {
+          if (cancelled) return;
+          // tg_messages returns newest-first; MessageList renders array order
+          // with the newest at the bottom, so sort ascending by time.
+          const ordered = tgMsgs
+            .map(tgMessageToMessage)
+            .sort((a, b) => a.dateCreated - b.dateCreated);
+          setMessages(chatGUID, ordered);
+          // Opening a chat marks it read (server + local via tg:core-event).
+          void tg.markRead(accountId, chatId).catch(() => {});
+        })
+        .catch((e: unknown) => {
+          if (!cancelled) setFetchError(String(e));
+        })
+        .finally(() => {
+          if (!cancelled) setLoadingMessages(false);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
 
     const client = getClient(serverUrl, password);
     const after = hasCached ? lastFetchedAt : undefined;
@@ -71,7 +110,7 @@ export function ChatPane({ paneId, chatGUID, isActive, canClose, showMobileBack 
     return () => {
       cancelled = true;
     };
-  }, [chatGUID, serverUrl, password]);
+  }, [chatGUID, serverUrl, password, telegramReloadNonce]);
 
   const empty = !chatGUID || !selectedChat;
 
@@ -122,11 +161,41 @@ export function ChatPane({ paneId, chatGUID, isActive, canClose, showMobileBack 
             <div className="h-7 w-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-semibold shrink-0">
               {getChatInitials(selectedChat)}
             </div>
-            <span data-tauri-drag-region className="font-semibold text-sm truncate">{getChatDisplayName(selectedChat)}</span>
+            <div data-tauri-drag-region className="flex flex-col min-w-0 leading-tight">
+              <span data-tauri-drag-region className="font-semibold text-sm truncate">{getChatDisplayName(selectedChat)}</span>
+              {presence && (presence.online || presence.lastSeen) && (
+                <span
+                  data-tauri-drag-region
+                  className={cn(
+                    "text-[11px] truncate",
+                    presence.online ? "text-green-600 dark:text-green-400" : "text-muted-foreground"
+                  )}
+                >
+                  {presence.online
+                    ? "online"
+                    : `last seen ${formatMessageTime(presence.lastSeen as number)}`}
+                </span>
+              )}
+            </div>
           </div>
         )}
 
         <div className="flex items-center gap-0.5 shrink-0">
+          {!empty && aiConfigured && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(
+                "h-7 w-7",
+                aiEnabled ? "text-primary" : "text-muted-foreground"
+              )}
+              onClick={() => chatGUID && toggleAiReplyChat(chatGUID)}
+              aria-label={aiEnabled ? "Disable AI auto-reply" : "Enable AI auto-reply"}
+              title={aiEnabled ? "AI auto-reply is ON for this chat" : "Enable AI auto-reply for this chat"}
+            >
+              <Bot className="h-4 w-4" />
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon"
