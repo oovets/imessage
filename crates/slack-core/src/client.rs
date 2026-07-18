@@ -45,12 +45,43 @@ pub enum SlackUpdate {
     },
 }
 
+/// Fan-out for realtime updates.
+///
+/// The TUI drained `get_pending_updates()` from its render loop. The app needs
+/// to *await* instead, so every update is also published on a broadcast channel
+/// the host bridges to the webview — mirroring `telegram_core::Core::subscribe`.
+#[derive(Clone)]
+struct Updates {
+    queued: Arc<Mutex<Vec<SlackUpdate>>>,
+    tx: broadcast::Sender<SlackUpdate>,
+}
+
+impl Updates {
+    fn new() -> Self {
+        let (tx, _rx) = broadcast::channel(256);
+        Self {
+            queued: Arc::new(Mutex::new(Vec::new())),
+            tx,
+        }
+    }
+
+    async fn push(&self, update: SlackUpdate) {
+        // Send first: a lagging subscriber must not block the queue.
+        let _ = self.tx.send(update.clone());
+        self.queued.lock().await.push(update);
+    }
+
+    async fn drain(&self) -> Vec<SlackUpdate> {
+        std::mem::take(&mut *self.queued.lock().await)
+    }
+}
+
 #[derive(Clone)]
 pub struct SlackClient {
     http: HttpClient,
     token: String, // Can be either User Token (xoxp-) or Bot Token (xoxb-)
     user_id: Arc<Mutex<Option<String>>>,
-    pending_updates: Arc<Mutex<Vec<SlackUpdate>>>,
+    pending_updates: Updates,
     ws_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     ws_shutdown: Arc<Mutex<Option<broadcast::Sender<()>>>>,
     user_name_cache: Arc<Mutex<std::collections::HashMap<String, String>>>,
@@ -292,7 +323,7 @@ impl SlackClient {
             http,
             token,
             user_id: Arc::new(Mutex::new(None)),
-            pending_updates: Arc::new(Mutex::new(Vec::new())),
+            pending_updates: Updates::new(),
             ws_handle: Arc::new(Mutex::new(None)),
             ws_shutdown: Arc::new(Mutex::new(None)),
             user_name_cache: Arc::new(Mutex::new(std::collections::HashMap::new())),
@@ -509,7 +540,7 @@ impl SlackClient {
 
     async fn process_event(
         event: &serde_json::Value,
-        pending_updates: &Arc<Mutex<Vec<SlackUpdate>>>,
+        pending_updates: &Updates,
         http: &HttpClient,
         token: &str,
         user_id: &Arc<Mutex<Option<String>>>,
@@ -533,11 +564,11 @@ impl SlackClient {
                                     message.get("ts").and_then(|v| v.as_str()),
                                     message.get("text").and_then(|v| v.as_str()),
                                 ) {
-                                    pending_updates.lock().await.push(SlackUpdate::MessageChanged {
+                                    pending_updates.push(SlackUpdate::MessageChanged {
                                         channel_id: channel_id.to_string(),
                                         ts: ts.to_string(),
                                         new_text: new_text.to_string(),
-                                    });
+                                    }).await;
                                 }
                             }
                             return;
@@ -548,10 +579,10 @@ impl SlackClient {
                                 event.get("channel").and_then(|v| v.as_str()),
                                 event.get("deleted_ts").and_then(|v| v.as_str()),
                             ) {
-                                pending_updates.lock().await.push(SlackUpdate::MessageDeleted {
+                                pending_updates.push(SlackUpdate::MessageDeleted {
                                     channel_id: channel_id.to_string(),
                                     ts: deleted_ts.to_string(),
-                                });
+                                }).await;
                             }
                             return;
                         }
@@ -643,7 +674,7 @@ impl SlackClient {
                             .and_then(|f| serde_json::from_value(f.clone()).ok())
                             .unwrap_or_default();
 
-                        pending_updates.lock().await.push(SlackUpdate::NewMessage {
+                        pending_updates.push(SlackUpdate::NewMessage {
                             channel_id: channel_id.to_string(),
                             user_name,
                             text: text.to_string(),
@@ -654,7 +685,7 @@ impl SlackClient {
                             forwarded,
                             mentions_me,
                             files,
-                        });
+                        }).await;
                     }
                 }
                 "user_typing" => {
@@ -670,10 +701,10 @@ impl SlackClient {
                             user_id.to_string()
                         };
 
-                        pending_updates.lock().await.push(SlackUpdate::UserTyping {
+                        pending_updates.push(SlackUpdate::UserTyping {
                             channel_id: channel_id.to_string(),
                             user_name,
-                        });
+                        }).await;
                     }
                 }
                 _ => {}
@@ -1201,9 +1232,14 @@ impl SlackClient {
         Ok(())
     }
 
+    /// Subscribe to realtime updates. The host bridges this straight to the
+    /// webview; late subscribers only see updates from the moment they attach.
+    pub fn subscribe(&self) -> broadcast::Receiver<SlackUpdate> {
+        self.pending_updates.tx.subscribe()
+    }
+
     pub async fn get_pending_updates(&self) -> Vec<SlackUpdate> {
-        let mut updates = self.pending_updates.lock().await;
-        std::mem::take(&mut *updates)
+        self.pending_updates.drain().await
     }
 
     #[allow(dead_code)]
