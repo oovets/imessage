@@ -299,6 +299,16 @@ pub async fn sl_history(
         .map_err(|e| format!("slack history failed: {e}"))
 }
 
+/// The signed-in user's id for a workspace, so the UI can mark its own
+/// messages in loaded history (realtime updates already say `is_self`).
+#[tauri::command]
+pub async fn sl_self_user_id(
+    workspace_id: String,
+    state: State<'_, SlackState>,
+) -> Result<Option<String>, String> {
+    Ok(with_client(&state, &workspace_id).await?.self_user_id().await)
+}
+
 #[tauri::command]
 pub async fn sl_send(
     workspace_id: String,

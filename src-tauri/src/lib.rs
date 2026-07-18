@@ -320,6 +320,7 @@ pub fn run() {
             slack::sl_conversations,
             slack::sl_history,
             slack::sl_send,
+            slack::sl_self_user_id,
             // BlueBubbles in-app onboarding
             onboarding::bb_status,
             onboarding::bb_install,

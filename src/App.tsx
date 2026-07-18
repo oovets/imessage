@@ -8,6 +8,8 @@ import { usePollingFallback } from "@/hooks/usePollingFallback";
 import { useDesktopFeatures } from "@/hooks/useDesktopFeatures";
 import { useTelegramInbox } from "@/hooks/useTelegramInbox";
 import { useTelegramEvents } from "@/hooks/useTelegramEvents";
+import { useSlackInbox } from "@/hooks/useSlackInbox";
+import { useSlackEvents } from "@/hooks/useSlackEvents";
 import { useAiAutoReply } from "@/hooks/useAiAutoReply";
 import { configureTracing } from "@/lib/aiTracing";
 import { isTauriRuntime } from "@/lib/tauriEnv";
@@ -35,6 +37,8 @@ export default function App() {
   usePollingFallback();
   useTelegramInbox();
   useTelegramEvents();
+  useSlackInbox();
+  useSlackEvents();
   useAiAutoReply();
 
   // §17: (re)point tracing whenever the collector setting changes.

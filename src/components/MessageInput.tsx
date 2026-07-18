@@ -2,6 +2,8 @@ import { useState, useRef, type KeyboardEvent } from "react";
 import { ArrowUp, Paperclip, X, Reply, Smile, Sparkles } from "lucide-react";
 import { useAppStore } from "@/store/useAppStore";
 import { isSource } from "@/lib/source";
+import { sl } from "@/slack/api";
+import { parseSlChatGuid } from "@/slack/adapters";
 import { getClient } from "@/api/clientFactory";
 import { tg } from "@/telegram/api";
 import { parseTgChatGuid } from "@/telegram/adapters";
@@ -147,6 +149,28 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
       }
     }
     clearAiDraft(chatGUID);
+
+    // Slack echoes our own sends back over the socket as `is_self` messages,
+    // so — like Telegram — no frontend optimistic bubble, it would duplicate.
+    if (isSource(chatGUID, "slack")) {
+      const { workspaceId, channelId } = parseSlChatGuid(chatGUID);
+      // Replying inside a Slack thread means posting with the parent's ts.
+      const threadTs = replyTarget?.guid.split(":").pop();
+      setText("");
+      setReplyTarget(chatGUID, null);
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto";
+        textareaRef.current.focus();
+      }
+      void sl
+        .send(workspaceId, channelId, trimmed, threadTs)
+        .catch((err) =>
+          setConnectionNotice(
+            `Unable to send message: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
+      return;
+    }
 
     // Telegram: the core does its own optimistic-pending + reconcile and
     // drives the UI via tg:core-event, so we just fire the send and clear

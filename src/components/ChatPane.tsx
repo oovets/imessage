@@ -5,6 +5,8 @@ import { MessageList } from "@/components/MessageList";
 import { MessageInput } from "@/components/MessageInput";
 import { useAppStore, aiModeFor } from "@/store/useAppStore";
 import { isSource } from "@/lib/source";
+import { sl } from "@/slack/api";
+import { parseSlChatGuid, slMessageToMessage } from "@/slack/adapters";
 import { getClient } from "@/api/clientFactory";
 import { getChatDisplayName, getChatInitials, formatMessageTime } from "@/types";
 import { tg } from "@/telegram/api";
@@ -29,6 +31,10 @@ export function ChatPane({ paneId, chatGUID, isActive, canClose, showMobileBack 
   // Bumped when Telegram becomes ready / an account changes; re-runs the
   // message load so a pane opened before the core was ready recovers.
   const telegramReloadNonce = useAppStore((s) => s.telegramReloadNonce);
+  const slackReloadNonce = useAppStore((s) => s.slackReloadNonce);
+  // Slack marks a message as ours by user id, which the history payload
+  // doesn't carry — resolved from the workspace once connected.
+  const slackSelfUserIds = useAppStore((s) => s.slackSelfUserIds);
   const serverUrl = useAppStore((s) => s.serverUrl);
   const password = useAppStore((s) => s.password);
   const setMessages = useAppStore((s) => s.setMessages);
@@ -58,6 +64,31 @@ export function ChatPane({ paneId, chatGUID, isActive, canClose, showMobileBack 
     const lastFetchedAt = snapshot.messageFetchedAt[chatGUID] ?? 0;
 
     if (!hasCached) setLoadingMessages(true);
+
+    // Slack history comes from the sl_* commands.
+    if (isSource(chatGUID, "slack")) {
+      const { workspaceId, channelId } = parseSlChatGuid(chatGUID);
+      const selfUserId = slackSelfUserIds[workspaceId] ?? null;
+      sl.history(workspaceId, channelId, 50)
+        .then((slMsgs) => {
+          if (cancelled) return;
+          // conversations.history returns newest-first; MessageList renders in
+          // array order with the newest at the bottom.
+          const ordered = slMsgs
+            .map((m) => slMessageToMessage(workspaceId, channelId, m, selfUserId))
+            .sort((a, b) => a.dateCreated - b.dateCreated);
+          setMessages(chatGUID, ordered);
+        })
+        .catch((e: unknown) => {
+          if (!cancelled) setFetchError(String(e));
+        })
+        .finally(() => {
+          if (!cancelled) setLoadingMessages(false);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
 
     // Telegram chats load through the tg_* commands, not BlueBubbles.
     if (isSource(chatGUID, "telegram")) {
@@ -112,14 +143,16 @@ export function ChatPane({ paneId, chatGUID, isActive, canClose, showMobileBack 
     return () => {
       cancelled = true;
     };
-    // The nonce is a Telegram-only signal. Keeping it unconditional re-ran this
-    // whole effect — including the BlueBubbles fetch — for every open iMessage
-    // pane each time Telegram reloaded.
+    // Each nonce is a single-source signal. Keeping them unconditional re-ran
+    // this whole effect — including the BlueBubbles fetch — for every open
+    // iMessage pane each time Telegram or Slack reloaded.
   }, [
     chatGUID,
     serverUrl,
     password,
     isSource(chatGUID ?? "", "telegram") ? telegramReloadNonce : 0,
+    isSource(chatGUID ?? "", "slack") ? slackReloadNonce : 0,
+    isSource(chatGUID ?? "", "slack") ? slackSelfUserIds : null,
   ]);
 
   const empty = !chatGUID || !selectedChat;

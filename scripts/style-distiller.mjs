@@ -214,6 +214,125 @@ function tgConversations() {
   return [...byChat.values()];
 }
 
+// ---------------------------------------------------------------- slack
+//
+// Slack is a third corpus of the user's own writing, and a distinctly
+// different register from iMessage and Telegram — which is exactly why it is
+// worth having: the relationship profiles get sharper when the same person is
+// seen writing to colleagues as well as to friends.
+
+/**
+ * Workspace tokens, from the app's keychain blob or the legacy TUI config.
+ * The blob stores `name<TAB>base64` lines under one entry.
+ */
+function slackWorkspaces() {
+  const fromBlob = () => {
+    const raw = execFileSync(
+      "security",
+      ["find-generic-password", "-s", "dev.stefan.TelegramGui", "-a", "secrets", "-w"],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }
+    );
+    for (const line of raw.split("\n")) {
+      const [name, b64] = line.split("\t");
+      if (name !== "slack-workspaces" || !b64) continue;
+      return JSON.parse(Buffer.from(b64.trim(), "base64").toString("utf8"));
+    }
+    return null;
+  };
+  const fromFile = () => {
+    const path = join(homedir(), ".slack_config.json");
+    if (!existsSync(path)) return null;
+    return JSON.parse(readFileSync(path, "utf8")).workspaces;
+  };
+
+  for (const source of [fromBlob, fromFile]) {
+    try {
+      const ws = source();
+      if (Array.isArray(ws) && ws.length > 0) return ws;
+    } catch {
+      /* try the next source */
+    }
+  }
+  return [];
+}
+
+async function slackApi(token, method, params = {}) {
+  const url = new URL(`https://slack.com/api/${method}`);
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const json = await res.json();
+  if (!json.ok) throw new Error(`${method}: ${json.error}`);
+  return json;
+}
+
+/** Conversations from every workspace, with the user's own messages. */
+async function slackConversations(perChannel = 400) {
+  const workspaces = slackWorkspaces();
+  if (workspaces.length === 0) return [];
+  const out = [];
+
+  for (const ws of workspaces) {
+    const token = ws.token;
+    if (!token) continue;
+    let me;
+    try {
+      me = (await slackApi(token, "auth.test")).user_id;
+    } catch (e) {
+      log(`  ! slack ${ws.name}: ${e.message}`);
+      continue;
+    }
+
+    let channels;
+    try {
+      const res = await slackApi(token, "users.conversations", {
+        types: "public_channel,private_channel,im,mpim",
+        exclude_archived: true,
+        limit: 200,
+      });
+      channels = res.channels ?? [];
+    } catch (e) {
+      log(`  ! slack ${ws.name} conversations: ${e.message}`);
+      continue;
+    }
+
+    for (const ch of channels) {
+      try {
+        const res = await slackApi(token, "conversations.history", {
+          channel: ch.id,
+          limit: perChannel,
+        });
+        const sent = [];
+        const incomingTimes = [];
+        for (const m of res.messages ?? []) {
+          // Joins, leaves and other channel chatter aren't writing.
+          if (m.subtype && m.subtype !== "thread_broadcast") continue;
+          const text = (m.text ?? "").trim();
+          const at = Math.round(Number.parseFloat(m.ts) * 1000);
+          if (m.user === me) {
+            if (text) sent.push({ text, at });
+          } else {
+            incomingTimes.push(at);
+          }
+        }
+        if (sent.length === 0) continue;
+        const name = ch.is_im
+          ? `Slack DM (${ch.user ?? ch.id})`
+          : `#${ch.name ?? ch.id}`;
+        out.push({
+          guid: `sl:${ws.name}:${ch.id}`,
+          guids: [`sl:${ws.name}:${ch.id}`],
+          name: `${name} · ${ws.name}`,
+          sent: sent.sort((a, b) => a.at - b.at),
+          incomingTimes: incomingTimes.sort((a, b) => a - b),
+        });
+      } catch {
+        // not_in_channel and friends are expected; skip quietly
+      }
+    }
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- stats
 const EMOJI_RE = /\p{Extended_Pictographic}/gu;
 const LAUGH_EMOJI_RE = /[\u{1F602}\u{1F923}\u{1F606}\u{1F605}\u{1F604}\u{1F603}]/u;
@@ -364,6 +483,14 @@ for (const conv of convs) {
   if (sent.length > 0) collected.push({ ...conv, sent, incomingTimes });
 }
 log(`  ${collected.length} with sent messages`);
+
+log("collecting Slack conversations…");
+const slConvs = (await slackConversations().catch((e) => {
+  log(`  ! slack: ${e.message}`);
+  return [];
+})).filter((c) => c.sent.length > 0);
+log(`  ${slConvs.length} with sent messages`);
+collected.push(...slConvs);
 
 log("collecting Telegram conversations…");
 const tgConvs = tgConversations().filter((c) => c.sent.length > 0);

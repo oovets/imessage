@@ -338,6 +338,15 @@ interface AppState {
 
   // Unified inbox: Telegram availability + its slice of the chat list.
   telegramAvailable: boolean;
+  /** Slack is configured with at least one workspace. */
+  slackAvailable: boolean;
+  setSlackAvailable: (v: boolean) => void;
+  setSlackChats: (chats: Chat[]) => void;
+  slackReloadNonce: number;
+  reloadSlack: () => void;
+  /** workspace id -> our own Slack user id, for marking history as ours. */
+  slackSelfUserIds: Record<string, string>;
+  setSlackSelfUserId: (workspaceId: string, userId: string) => void;
   setTelegramAvailable: (v: boolean) => void;
   setTelegramChats: (chats: Chat[]) => void;
   upsertChat: (chat: Chat) => void;
@@ -515,6 +524,9 @@ export const useAppStore = create<AppState>()(
 
       chats: [],
       telegramAvailable: false,
+      slackAvailable: false,
+      slackReloadNonce: 0,
+      slackSelfUserIds: {},
       telegramPresence: {},
       telegramReloadNonce: 0,
       paneTree: EMPTY_LEAF,
@@ -784,6 +796,11 @@ export const useAppStore = create<AppState>()(
       setTelegramChats: (tgChats) => get().setChatsForSource("telegram", tgChats),
 
       setTelegramAvailable: (v) => set({ telegramAvailable: v }),
+      setSlackChats: (slChats) => get().setChatsForSource("slack", slChats),
+      setSlackAvailable: (v) => set({ slackAvailable: v }),
+      reloadSlack: () => set((s) => ({ slackReloadNonce: s.slackReloadNonce + 1 })),
+      setSlackSelfUserId: (workspaceId, userId) =>
+        set((s) => ({ slackSelfUserIds: { ...s.slackSelfUserIds, [workspaceId]: userId } })),
 
       reloadTelegram: () =>
         set((s) => ({ telegramReloadNonce: s.telegramReloadNonce + 1 })),

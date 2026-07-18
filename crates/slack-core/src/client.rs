@@ -1234,6 +1234,15 @@ impl SlackClient {
 
     /// Subscribe to realtime updates. The host bridges this straight to the
     /// webview; late subscribers only see updates from the moment they attach.
+    /// This workspace's own user id, once authenticated.
+    ///
+    /// Realtime updates carry `is_self`, but `conversations.history` only
+    /// reports each message's author, so the caller needs the id to tell which
+    /// history messages are its own.
+    pub async fn self_user_id(&self) -> Option<String> {
+        self.user_id.lock().await.clone()
+    }
+
     pub fn subscribe(&self) -> broadcast::Receiver<SlackUpdate> {
         self.pending_updates.tx.subscribe()
     }

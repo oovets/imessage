@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { useAppStore } from "@/store/useAppStore";
 import { TelegramAccounts } from "@/components/TelegramAccounts";
+import { SlackWorkspaces } from "@/components/SlackWorkspaces";
 import { clearSecureConfig, saveSecureConfig } from "@/lib/secureConfig";
 import { isTauriRuntime } from "@/lib/tauriEnv";
 import { cn } from "@/lib/utils";
@@ -71,7 +72,7 @@ export function SettingsDialog(_props: SettingsDialogProps) {
   const [saving, setSaving] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [tab, setTab] = useState<
-    "server" | "telegram" | "general" | "appearance"
+    "server" | "telegram" | "slack" | "general" | "appearance"
   >("server");
   const autoOpenedRef = useRef(false);
 
@@ -214,6 +215,7 @@ export function SettingsDialog(_props: SettingsDialogProps) {
             [
               ["server", "Server"],
               ["telegram", "Telegram"],
+              ["slack", "Slack"],
               ["general", "General"],
               ["appearance", "Appearance"],
             ] as const
@@ -236,6 +238,7 @@ export function SettingsDialog(_props: SettingsDialogProps) {
 
         <div className="grid gap-4 py-2">
           {tab === "telegram" && <TelegramAccounts />}
+          {tab === "slack" && <SlackWorkspaces />}
           {tab === "server" && (
             <>
               <div className="grid gap-2">
