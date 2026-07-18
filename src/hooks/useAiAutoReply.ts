@@ -19,8 +19,6 @@ import { parseTgChatGuid } from "@/telegram/adapters";
 import { getChatDisplayName, type Message } from "@/types";
 
 const DEBOUNCE_MS = 4_000;
-const COOLDOWN_MS = 10_000;
-const MAX_CONSECUTIVE = 10;
 
 interface ChatState {
   lastHandled: string | null;
@@ -54,8 +52,11 @@ export function useAiAutoReply() {
       if (!newest || newest.isFromMe || newest.guid === st.lastHandled) return;
       st.lastHandled = newest.guid;
 
-      if (Date.now() < st.cooldownUntil) return;
-      if (st.consecutive >= MAX_CONSECUTIVE) return;
+      // User-configurable guardrails (0 = that limit is off).
+      const cooldownMs = Math.max(0, s.aiReply.cooldownSeconds ?? 10) * 1000;
+      const maxConsecutive = Math.max(0, s.aiReply.maxConsecutive ?? 10);
+      if (cooldownMs > 0 && Date.now() < st.cooldownUntil) return;
+      if (maxConsecutive > 0 && st.consecutive >= maxConsecutive) return;
 
       const chat = s.chats.find((c) => c.guid === guid);
       const name = chat ? getChatDisplayName(chat) : "chat";
@@ -74,7 +75,7 @@ export function useAiAutoReply() {
       const now = useAppStore.getState();
       if (!now.aiReplyChats[guid]) return;
 
-      st.cooldownUntil = Date.now() + COOLDOWN_MS;
+      st.cooldownUntil = Date.now() + cooldownMs;
       st.consecutive += 1;
       st.aiTexts.add(text);
       if (st.aiTexts.size > 20) st.aiTexts.delete(st.aiTexts.values().next().value as string);

@@ -269,6 +269,10 @@ interface AppState {
     apiKey: string;
     model: string;
     systemPrompt: string;
+    /** Min seconds between auto-replies per chat; 0 = no limit. */
+    cooldownSeconds: number;
+    /** Auto-replies in a row before going quiet until a manual message; 0 = no limit. */
+    maxConsecutive: number;
   };
   aiReplyChats: Record<string, true>;
   sidebarHidden: boolean;
@@ -404,6 +408,8 @@ export const useAppStore = create<AppState>()(
         model: "",
         systemPrompt:
           "You are replying as me in a personal chat. Match my tone and language, keep replies short and natural, never mention being an AI.",
+        cooldownSeconds: 10,
+        maxConsecutive: 10,
       },
       aiReplyChats: {},
       sidebarHidden: false,

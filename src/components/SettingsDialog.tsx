@@ -404,6 +404,44 @@ export function SettingsDialog(_props: SettingsDialogProps) {
                     onChange={(e) => setAiReplyConfig({ systemPrompt: e.target.value })}
                   />
                 </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="grid gap-1">
+                    <Label htmlFor="ai-cooldown" className="text-xs">
+                      Min seconds between replies (0 = no limit)
+                    </Label>
+                    <Input
+                      id="ai-cooldown"
+                      type="number"
+                      min={0}
+                      value={aiReply.cooldownSeconds ?? 10}
+                      onChange={(e) =>
+                        setAiReplyConfig({
+                          cooldownSeconds: Math.max(0, parseInt(e.target.value, 10) || 0),
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="grid gap-1">
+                    <Label htmlFor="ai-max" className="text-xs">
+                      Max replies in a row (0 = no limit)
+                    </Label>
+                    <Input
+                      id="ai-max"
+                      type="number"
+                      min={0}
+                      value={aiReply.maxConsecutive ?? 10}
+                      onChange={(e) =>
+                        setAiReplyConfig({
+                          maxConsecutive: Math.max(0, parseInt(e.target.value, 10) || 0),
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  The cap resets whenever you send something yourself. Setting both to 0 removes
+                  every brake — two bots in the same chat can then loop forever.
+                </p>
               </div>
             </>
           )}
