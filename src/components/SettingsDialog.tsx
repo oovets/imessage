@@ -452,6 +452,21 @@ export function SettingsDialog(_props: SettingsDialogProps) {
                   />
                   Self-critique — score each draft and rewrite once if it sounds off
                 </label>
+                <div className="grid gap-1">
+                  <Label htmlFor="ai-otlp" className="text-xs">
+                    Trace collector (optional)
+                  </Label>
+                  <Input
+                    id="ai-otlp"
+                    placeholder="http://gpulab:4318"
+                    value={aiReply.otlpEndpoint ?? ""}
+                    onChange={(e) => setAiReplyConfig({ otlpEndpoint: e.target.value })}
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    OpenTelemetry endpoint — sends a span per pipeline step (profile load,
+                    generation, critique, rewrite, your verdict) to Jaeger/Tempo/Grafana.
+                  </p>
+                </div>
                 <div className="grid gap-1.5 rounded-md border p-2">
                   <p className="text-xs font-medium">Delivery</p>
                   <p className="text-[11px] text-muted-foreground -mt-1">

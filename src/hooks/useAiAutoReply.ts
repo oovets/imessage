@@ -15,6 +15,7 @@ import { getClient } from "@/api/clientFactory";
 import { generateReply, critiqueReply, critiqueFails } from "@/lib/aiReply";
 import { loadAiProfiles } from "@/lib/aiProfiles";
 import { log as logAi } from "@/lib/aiTelemetry";
+import { startReplyTrace, childSpan, endReplyTrace } from "@/lib/aiTracing";
 import { preferredSendGuid } from "@/lib/chatThreadMerge";
 import { tg } from "@/telegram/api";
 import { parseTgChatGuid } from "@/telegram/adapters";
@@ -66,25 +67,57 @@ export function useAiAutoReply() {
 
       const chat = s.chats.find((c) => c.guid === guid);
       const name = chat ? getChatDisplayName(chat) : "chat";
+
+      // §17: one trace per reply, spanning generation through the user's
+      // verdict — the interesting latency is the whole round trip.
+      const traceKey = `${guid}:${newest.guid}`;
+      startReplyTrace(traceKey, {
+        "ai.chat_guid": guid,
+        "ai.model": s.aiReply.model,
+        "ai.context_messages": msgs.length,
+        "ai.mode": mode,
+      });
+
       // Layered personality prompt: global style + this relationship (cached).
-      const profiles = await loadAiProfiles(guid).catch(() => null);
+      const profiles = await childSpan(traceKey, "profile.load", undefined, () =>
+        loadAiProfiles(guid).catch(() => null)
+      );
       const profileName = profiles?.relationship?.name ?? null;
       const t0 = performance.now();
       let text: string | null = null;
       let critiqued = false;
       let rewritten = false;
       try {
-        const first = await generateReply(s.aiReply, msgs, name, profiles);
+        const first = await childSpan(
+          traceKey,
+          "llm.generate",
+          { "ai.profile": profileName ?? "none" },
+          () => generateReply(s.aiReply, msgs, name, profiles)
+        );
         text = first?.text ?? null;
 
         // §6: score the draft against the same personality layers and, if it
         // falls short on any axis, rewrite once with the critique as guidance.
         if (first && s.aiReply.selfCritique) {
-          const c = await critiqueReply(s.aiReply, first.systemPrompt, msgs, first.text);
+          const c = await childSpan(traceKey, "llm.critique", undefined, async (sp) => {
+            const res = await critiqueReply(s.aiReply, first.systemPrompt, msgs, first.text);
+            if (res && sp) {
+              sp.setAttribute("critique.sounds_like_me", res.soundsLikeMe);
+              sp.setAttribute("critique.fits_recipient", res.fitsRecipient);
+              sp.setAttribute("critique.too_ai_like", res.tooAiLike);
+              sp.setAttribute("critique.too_verbose", res.tooVerbose);
+            }
+            return res;
+          });
           if (c) {
             critiqued = true;
             if (critiqueFails(c)) {
-              const second = await generateReply(s.aiReply, msgs, name, profiles, c.notes);
+              const second = await childSpan(
+                traceKey,
+                "llm.rewrite",
+                { "critique.notes": c.notes },
+                () => generateReply(s.aiReply, msgs, name, profiles, c.notes)
+              );
               if (second) {
                 text = second.text;
                 rewritten = true;
@@ -93,12 +126,16 @@ export function useAiAutoReply() {
           }
         }
       } catch (e) {
+        endReplyTrace(traceKey, "error");
         s.setConnectionNotice(
           `AI auto-reply failed: ${e instanceof Error ? e.message : String(e)}`
         );
         return;
       }
-      if (!text) return;
+      if (!text) {
+        endReplyTrace(traceKey, "empty");
+        return;
+      }
       const latencyMs = Math.round(performance.now() - t0);
       logAi({
         kind: "generated",
@@ -114,16 +151,21 @@ export function useAiAutoReply() {
       // Re-check the toggle — it may have been turned off while generating.
       const now = useAppStore.getState();
       const nowMode = aiModeFor(now.aiReplyChats, guid);
-      if (nowMode === "off") return;
+      if (nowMode === "off") {
+        endReplyTrace(traceKey, "disabled_mid_generation");
+        return;
+      }
 
       // Draft mode (the default): put the suggestion in the composer and stop.
       if (nowMode === "draft") {
+        // The trace stays open until the composer reports the verdict.
         now.setAiDraft(guid, {
           text,
           at: Date.now(),
           latencyMs,
           profile: profileName,
           model: s.aiReply.model,
+          traceKey,
         });
         return;
       }
@@ -133,6 +175,7 @@ export function useAiAutoReply() {
       st.aiTexts.add(text);
       if (st.aiTexts.size > 20) st.aiTexts.delete(st.aiTexts.values().next().value as string);
 
+      endReplyTrace(traceKey, "auto_sent", { "ai.rewritten": rewritten });
       logAi({
         kind: "auto_sent",
         chatGuid: guid,

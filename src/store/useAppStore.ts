@@ -31,6 +31,8 @@ export interface AiDraft {
   model: string;
   /** Set when the user pulls it into the composer (edit-time measurement). */
   usedAt?: number;
+  /** Open §17 trace, closed when the user accepts/edits/rejects. */
+  traceKey?: string;
 }
 
 export type PaneNode =
@@ -291,6 +293,8 @@ interface AppState {
      * absolute levels — 0 means "however I normally am", so turning one up
      * adapts the delivery without overwriting the personality.
      */
+    /** OTLP/HTTP collector for pipeline traces (§17); empty disables tracing. */
+    otlpEndpoint: string;
     tone: {
       humor: number;
       sarcasm: number;
@@ -490,6 +494,7 @@ export const useAppStore = create<AppState>()(
         cooldownSeconds: 10,
         maxConsecutive: 10,
         selfCritique: true,
+        otlpEndpoint: "",
         tone: { humor: 0, sarcasm: 0, warmth: 0, energy: 0, formality: 0 },
       },
       aiReplyChats: {},

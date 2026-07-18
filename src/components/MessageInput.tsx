@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { autoConvertEmoticons } from "@/lib/emoticons";
 import { preferredSendGuid } from "@/lib/chatThreadMerge";
 import { log as logAi, wordDiff } from "@/lib/aiTelemetry";
+import { endReplyTrace } from "@/lib/aiTracing";
 import type { Message } from "@/types";
 import { decodeEscapedUnicode } from "@/types";
 import { EmojiSuggestions } from "@/components/EmojiSuggestions";
@@ -125,8 +126,14 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
         sentChars: trimmed.length,
       };
       if (trimmed === suggested) {
+        if (aiDraft.traceKey) endReplyTrace(aiDraft.traceKey, "accepted");
         logAi({ kind: "accepted", ...common });
       } else {
+        if (aiDraft.traceKey) {
+          endReplyTrace(aiDraft.traceKey, "edited", {
+            "ai.word_diff": wordDiff(suggested, trimmed),
+          });
+        }
         logAi({
           kind: "edited",
           ...common,
@@ -249,6 +256,7 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
           <button
             type="button"
             onClick={() => {
+              if (aiDraft.traceKey) endReplyTrace(aiDraft.traceKey, "rejected");
               logAi({
                 kind: "rejected",
                 chatGuid: chatGUID,

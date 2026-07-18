@@ -9,6 +9,7 @@ import { useDesktopFeatures } from "@/hooks/useDesktopFeatures";
 import { useTelegramInbox } from "@/hooks/useTelegramInbox";
 import { useTelegramEvents } from "@/hooks/useTelegramEvents";
 import { useAiAutoReply } from "@/hooks/useAiAutoReply";
+import { configureTracing } from "@/lib/aiTracing";
 import { isTauriRuntime } from "@/lib/tauriEnv";
 import { useAppStore, type PaneNode } from "@/store/useAppStore";
 import { useTheme } from "@/components/ThemeProvider";
@@ -35,6 +36,12 @@ export default function App() {
   useTelegramInbox();
   useTelegramEvents();
   useAiAutoReply();
+
+  // §17: (re)point tracing whenever the collector setting changes.
+  const otlpEndpoint = useAppStore((s) => s.aiReply.otlpEndpoint);
+  useEffect(() => {
+    configureTracing(otlpEndpoint ?? "");
+  }, [otlpEndpoint]);
 
   const selectedChatGUID = useAppStore((s) => s.selectedChatGUID);
   const paneTree = useAppStore((s) => s.paneTree);
