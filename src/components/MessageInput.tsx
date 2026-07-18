@@ -46,7 +46,14 @@ function makeOptimisticMessage(chatGUID: string, text: string, replyGuid: string
 
 export function MessageInput({ chatGUID }: MessageInputProps) {
   const [text, setText] = useState("");
-  const { serverUrl, password, superlightMode } = useAppStore();
+  // Narrow selectors, never the bare store: a selector-less subscription
+  // re-renders this whole component on EVERY store change — each websocket
+  // message, typing event and preview write, times one per open pane. That
+  // was the "typing feels sluggish": keystrokes queued behind re-renders
+  // triggered by unrelated traffic.
+  const serverUrl = useAppStore((s) => s.serverUrl);
+  const password = useAppStore((s) => s.password);
+  const superlightMode = useAppStore((s) => s.superlightMode);
   const replyTarget = useAppStore((s) => s.replyTarget[chatGUID] ?? null);
   const setReplyTarget = useAppStore((s) => s.setReplyTarget);
   const setConnectionNotice = useAppStore((s) => s.setConnectionNotice);
@@ -257,7 +264,7 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
   }
 
   return (
-    <div className={cn("px-2 md:px-4 py-2.5", superlightMode ? "bg-background" : "border-t bg-background/80 backdrop-blur-xl")}>
+    <div className={cn("px-2 md:px-4 py-2", superlightMode ? "bg-background" : "border-t bg-background/80 backdrop-blur-xl")}>
       {aiDraft && !aiDraft.usedAt && (
         <div className={cn("mb-2 flex items-start gap-2 px-3 py-2", superlightMode ? "" : "border border-primary/30 rounded-lg bg-primary/5 animate-in fade-in slide-in-from-bottom-1 duration-150")}>
           {!superlightMode && <Sparkles className="h-3.5 w-3.5 mt-0.5 text-primary shrink-0" />}
@@ -406,7 +413,7 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
               "scrollbar-autohide w-full resize-none text-sm caret-foreground",
               superlightMode
                 ? "block bg-background p-0 m-0 leading-tight placeholder:text-muted-foreground focus:outline-none min-h-0 max-h-[140px] overflow-y-auto"
-                : "border border-input rounded-2xl bg-muted/40 pl-4 py-2.5 pr-11 placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring min-h-[40px] max-h-[140px] overflow-y-auto transition-shadow"
+                : "border border-input rounded-2xl bg-muted/40 pl-4 py-2 pr-11 placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring min-h-9 max-h-[140px] overflow-y-auto transition-shadow"
             )}
           />
           <button
@@ -417,7 +424,7 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
               "absolute right-1.5 h-7 w-7 flex items-center justify-center shrink-0",
               superlightMode
                 ? "top-1/2 -translate-y-1/2 text-foreground"
-                : "bottom-1.5 rounded-full bg-primary text-primary-foreground shadow-sm transition-all duration-150 ease-out active:scale-90",
+                : "bottom-1 rounded-full bg-primary text-primary-foreground shadow-sm transition-all duration-150 ease-out active:scale-90",
               superlightMode
                 ? hasText
                   ? "opacity-100"

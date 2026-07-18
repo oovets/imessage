@@ -38,34 +38,35 @@ function normalizeServerUrl(value: string): string {
 }
 
 export function SettingsDialog(_props: SettingsDialogProps) {
-  const {
-    serverUrl,
-    password,
-    isConfigured,
-    configLoaded,
-    setConfig,
-    clearConfig,
-    superlightMode,
-    setSuperlightMode,
-    launchOnLogin,
-    setLaunchOnLogin,
-    showTimestamps,
-    setShowTimestamps,
-    showAvatars,
-    setShowAvatars,
-    aiReply,
-    setAiReplyConfig,
-    linkPreviewsEnabled,
-    setLinkPreviewsEnabled,
-    clearLinkPreviewCache,
-    appearance,
-    decreaseFontScale,
-    increaseFontScale,
-    resetFontScale,
-    setFontFamily,
-    setThemeToken,
-    resetThemeOverrides,
-  } = useAppStore();
+  // Individual selectors — this component is mounted in the sidebar header at
+  // all times (not just while the dialog is open), so a bare useAppStore()
+  // here re-rendered it on every message that arrived.
+  const serverUrl = useAppStore((s) => s.serverUrl);
+  const password = useAppStore((s) => s.password);
+  const isConfigured = useAppStore((s) => s.isConfigured);
+  const configLoaded = useAppStore((s) => s.configLoaded);
+  const setConfig = useAppStore((s) => s.setConfig);
+  const clearConfig = useAppStore((s) => s.clearConfig);
+  const superlightMode = useAppStore((s) => s.superlightMode);
+  const setSuperlightMode = useAppStore((s) => s.setSuperlightMode);
+  const launchOnLogin = useAppStore((s) => s.launchOnLogin);
+  const setLaunchOnLogin = useAppStore((s) => s.setLaunchOnLogin);
+  const showTimestamps = useAppStore((s) => s.showTimestamps);
+  const setShowTimestamps = useAppStore((s) => s.setShowTimestamps);
+  const showAvatars = useAppStore((s) => s.showAvatars);
+  const setShowAvatars = useAppStore((s) => s.setShowAvatars);
+  const aiReply = useAppStore((s) => s.aiReply);
+  const setAiReplyConfig = useAppStore((s) => s.setAiReplyConfig);
+  const linkPreviewsEnabled = useAppStore((s) => s.linkPreviewsEnabled);
+  const setLinkPreviewsEnabled = useAppStore((s) => s.setLinkPreviewsEnabled);
+  const clearLinkPreviewCache = useAppStore((s) => s.clearLinkPreviewCache);
+  const appearance = useAppStore((s) => s.appearance);
+  const decreaseFontScale = useAppStore((s) => s.decreaseFontScale);
+  const increaseFontScale = useAppStore((s) => s.increaseFontScale);
+  const resetFontScale = useAppStore((s) => s.resetFontScale);
+  const setFontFamily = useAppStore((s) => s.setFontFamily);
+  const setThemeToken = useAppStore((s) => s.setThemeToken);
+  const resetThemeOverrides = useAppStore((s) => s.resetThemeOverrides);
   const [url, setUrl] = useState(serverUrl);
   const [pwd, setPwd] = useState(password);
   const [open, setOpen] = useState(false);

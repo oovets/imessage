@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist, type PersistStorage } from "zustand/middleware";
 import {
   DEFAULT_APPEARANCE,
   FONT_SCALE_STEP,
@@ -461,24 +461,73 @@ function sortChatsByRecency(list: Chat[]): Chat[] {
 // localStorage wrapper that can never break app flows: a quota-exceeded write
 // evicts the secondary caches (avatars, contacts — both rebuildable) and
 // retries once; if it still fails the write is dropped and the app runs on.
-const safeLocalStorage = {
-  getItem: (name: string) => window.localStorage.getItem(name),
-  removeItem: (name: string) => window.localStorage.removeItem(name),
-  setItem: (name: string, value: string) => {
+//
+// Writes are also DEBOUNCED. zustand's persist middleware serialises the whole
+// persisted slice on every store change, and this store changes on every
+// websocket message, typing event and preview write — with 600 chats and the
+// message cache that is megabytes of JSON.stringify on the main thread, many
+// times a second while the app is busy. That stall lands exactly where the
+// user feels it: between their click or keystroke and the next paint. One
+// trailing write after a quiet half-second keeps the same durability for a
+// cold start, and pagehide flushes so a quit never loses the last burst.
+// The debounce sits ABOVE the JSON layer on purpose: createJSONStorage would
+// stringify before handing over the string, so debouncing under it would skip
+// only the (cheap) disk write and still pay the (expensive) serialisation on
+// every store change. Holding the state snapshot and stringifying once on
+// flush skips both. Snapshots are safe to hold — zustand state is replaced,
+// never mutated.
+const PERSIST_DEBOUNCE_MS = 500;
+let persistTimer: number | undefined;
+let pendingWrite: { name: string; value: unknown } | null = null;
+
+function writeThrough(name: string, value: string) {
+  try {
+    window.localStorage.setItem(name, value);
+  } catch {
     try {
+      for (const key of Object.keys(window.localStorage)) {
+        if (key.startsWith("bb-avatar-cache") || key.startsWith("bb-contact-cache")) {
+          window.localStorage.removeItem(key);
+        }
+      }
       window.localStorage.setItem(name, value);
     } catch {
-      try {
-        for (const key of Object.keys(window.localStorage)) {
-          if (key.startsWith("bb-avatar-cache") || key.startsWith("bb-contact-cache")) {
-            window.localStorage.removeItem(key);
-          }
-        }
-        window.localStorage.setItem(name, value);
-      } catch {
-        /* still over quota — persist skipped, in-memory state unaffected */
-      }
+      /* still over quota — persist skipped, in-memory state unaffected */
     }
+  }
+}
+
+function flushPendingPersist() {
+  if (persistTimer !== undefined) {
+    window.clearTimeout(persistTimer);
+    persistTimer = undefined;
+  }
+  if (pendingWrite) {
+    const { name, value } = pendingWrite;
+    pendingWrite = null;
+    writeThrough(name, JSON.stringify(value));
+  }
+}
+
+if (typeof window !== "undefined") {
+  // pagehide, not beforeunload: fires reliably on app quit and window close.
+  window.addEventListener("pagehide", flushPendingPersist);
+}
+
+/** PersistStorage working on parsed values, so serialisation is debounced too. */
+const debouncedStorage = {
+  getItem: (name: string) => {
+    const raw = window.localStorage.getItem(name);
+    return raw ? JSON.parse(raw) : null;
+  },
+  removeItem: (name: string) => {
+    pendingWrite = null;
+    window.localStorage.removeItem(name);
+  },
+  setItem: (name: string, value: unknown) => {
+    pendingWrite = { name, value };
+    if (persistTimer !== undefined) window.clearTimeout(persistTimer);
+    persistTimer = window.setTimeout(flushPendingPersist, PERSIST_DEBOUNCE_MS);
   },
 };
 
@@ -1008,7 +1057,8 @@ export const useAppStore = create<AppState>()(
         };
         return merged;
       },
-      storage: createJSONStorage(() => safeLocalStorage),
+      // Cast: our storage debounces above the JSON layer (see debouncedStorage).
+      storage: debouncedStorage as PersistStorage<Record<string, unknown>> as never,
       partialize: (s) => ({
         superlightMode: s.superlightMode,
         showTimestamps: s.showTimestamps,
