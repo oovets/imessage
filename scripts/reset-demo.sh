@@ -13,7 +13,12 @@
 #   --server    also remove the BlueBubbles server, its data and launch agents
 #   --dry-run   print what it would delete without touching anything (implies --yes)
 #   --yes       don't pause for confirmation
-set -euo pipefail
+#
+# NOTE: intentionally NOT `set -e`. Cleanup must always run to the end even when
+# an individual step "fails" (a keychain service with nothing to delete, a glob
+# that matches nothing, a path we can't remove) — those are normal, not fatal.
+# Errors are handled and reported per-step instead.
+set -uo pipefail
 
 # --- identifiers (must match the app) --------------------------------------
 CLIENT_APP="/Applications/Messages Desktop.app"
@@ -71,7 +76,7 @@ wipe_keychain() {
     return
   fi
   while security delete-generic-password -s "$svc" >/dev/null 2>&1; do n=$((n+1)); done
-  [ "$n" -gt 0 ] && ok "removed $n keychain item(s) for $svc"
+  if [ "$n" -gt 0 ]; then ok "removed $n keychain item(s) for $svc"; fi
 }
 
 quit_app() { # quit gracefully, then force-kill so its .app isn't busy on removal
