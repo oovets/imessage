@@ -36,10 +36,11 @@ export function useSlackEvents() {
           text: slackTextToPlain(nm.text ?? "", store.slackUserNames[ws] ?? {}),
           isFromMe: nm.is_self,
           dateCreated: slTsToMillis(nm.ts),
-          // Address is the user *id* when Slack sent one — the same key the
-          // history adapter uses, and what sender avatars resolve against.
-          handle: nm.user_id
-            ? { address: nm.user_id, firstName: nm.user_name }
+          // Address is the sender's *id* when Slack sent one (user id for
+          // humans, bot id for apps) — the same keys the history adapter uses,
+          // and what sender avatars resolve against.
+          handle: nm.user_id || nm.bot_id
+            ? { address: (nm.user_id ?? nm.bot_id)!, firstName: nm.user_name }
             : nm.user_name
               ? { address: nm.user_name, firstName: nm.user_name }
               : null,

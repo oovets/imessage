@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseSlackMarks, slackTextToPlain, stripSlackMarks } from "./mrkdwn";
 import { extractFirstUrl } from "@/lib/linkPreview";
-import { slFileToAttachment } from "./adapters";
+import { slFileToAttachment, slMessageToMessage } from "./adapters";
 import type { SlFile } from "./types";
 
 describe("slackTextToPlain", () => {
@@ -140,5 +140,32 @@ describe("full emoji set + marks (the alert-bot messages)", () => {
     expect(stripSlackMarks("*oplog-fönstret* är nere på `4h`")).toBe(
       "oplog-fönstret är nere på 4h"
     );
+  });
+});
+
+describe("app/bot senders", () => {
+  const botMsg = (over: object) => ({
+    ts: "1700000000.000100",
+    user: null,
+    text: "🚨 nere",
+    username: null,
+    bot_id: "B0ALERT",
+    thread_ts: null,
+    ...over,
+  });
+
+  it("keys app messages on the bot id, named from bot_profile", () => {
+    const m = slMessageToMessage(
+      "work",
+      "C1",
+      botMsg({ bot_profile: { id: "B0ALERT", name: "AlertBot", app_id: null, icons: null } }) as never,
+      null
+    );
+    expect(m.handle).toEqual({ address: "B0ALERT", firstName: "AlertBot" });
+  });
+
+  it("prefers the username Slack set on the message", () => {
+    const m = slMessageToMessage("work", "C1", botMsg({ username: "Deploys" }) as never, null);
+    expect(m.handle).toEqual({ address: "B0ALERT", firstName: "Deploys" });
   });
 });

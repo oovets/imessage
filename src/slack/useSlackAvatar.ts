@@ -23,8 +23,9 @@ export function useSlackSenderAvatar(
 
   useEffect(() => {
     if (!showAvatars || !senderAddress || !isSource(chatGuid, "slack")) return;
-    // Only real user ids resolve; bot/webhook senders carry a name here.
-    if (!/^[UVW][A-Z0-9]+$/.test(senderAddress)) return;
+    // U/W = humans (users.info), B = apps (bots.info); anything else is a
+    // display name that can't be resolved to an avatar.
+    if (!/^[UVWB][A-Z0-9]+$/.test(senderAddress)) return;
     if (cache.has(key)) {
       setUrl(cache.get(key) ?? null);
       return;

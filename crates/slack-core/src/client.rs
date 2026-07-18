@@ -31,6 +31,9 @@ pub enum SlackUpdate {
         /// Slack user id of the sender, when the event carries one (bots and
         /// webhooks may not). This is what sender avatars key on.
         user_id: Option<String>,
+        /// Bot id (`B…`) when an app sent the message — the avatar key for
+        /// senders that have no user id.
+        bot_id: Option<String>,
         user_name: String,
         text: String,
         ts: String,
@@ -203,6 +206,28 @@ pub struct BotProfile {
     pub name: Option<String>,
     #[serde(default)]
     pub app_id: Option<String>,
+    #[serde(default)]
+    pub icons: Option<BotIcons>,
+}
+
+/// App icons as they ride on `bot_profile` and `bots.info`.
+#[derive(Deserialize, Serialize, Clone)]
+pub struct BotIcons {
+    #[serde(default)]
+    pub image_36: Option<String>,
+    #[serde(default)]
+    pub image_48: Option<String>,
+    #[serde(default)]
+    pub image_72: Option<String>,
+}
+
+impl BotIcons {
+    fn best(&self) -> Option<String> {
+        self.image_72
+            .clone()
+            .or_else(|| self.image_48.clone())
+            .or_else(|| self.image_36.clone())
+    }
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
@@ -671,6 +696,31 @@ impl SlackClient {
                                 .and_then(|n| n.as_str())
                                 .unwrap_or("Bot")
                                 .to_string();
+                            // Seed the shared cache so the app's icon resolves
+                            // without a bots.info round-trip.
+                            if let Some(bot_id) = event.get("bot_id").and_then(|b| b.as_str()) {
+                                if !user_info_cache.lock().await.contains_key(bot_id) {
+                                    let avatar_url = bot_profile
+                                        .get("icons")
+                                        .and_then(|i| {
+                                            serde_json::from_value::<BotIcons>(i.clone()).ok()
+                                        })
+                                        .and_then(|i| i.best());
+                                    user_name_cache
+                                        .lock()
+                                        .await
+                                        .insert(bot_id.to_string(), name.clone());
+                                    user_info_cache.lock().await.insert(
+                                        bot_id.to_string(),
+                                        CachedUserInfo {
+                                            name: name.clone(),
+                                            is_bot: true,
+                                            deleted: false,
+                                            avatar_url,
+                                        },
+                                    );
+                                }
+                            }
                             name
                         } else if let Some(username) = event.get("username").and_then(|u| u.as_str()) {
                             // Bot with username field
@@ -702,6 +752,10 @@ impl SlackClient {
                             channel_id: channel_id.to_string(),
                             user_id: (user_id_event != "unknown")
                                 .then(|| user_id_event.to_string()),
+                            bot_id: event
+                                .get("bot_id")
+                                .and_then(|b| b.as_str())
+                                .map(|s| s.to_string()),
                             user_name,
                             text: text.to_string(),
                             ts: ts.to_string(),
@@ -866,44 +920,56 @@ impl SlackClient {
     }
 
     pub async fn resolve_bot_name(&self, bot_id: &str) -> String {
-        // Check cache first
+        match self.fetch_bot_info_cached(bot_id).await {
+            Some(info) => info.name,
+            None => bot_id.to_string(),
+        }
+    }
+
+    /// A bot/app's name and icon via `bots.info`, cached alongside the human
+    /// users — one cache, one lookup path, whatever kind of sender it is.
+    async fn fetch_bot_info_cached(&self, bot_id: &str) -> Option<CachedUserInfo> {
         {
-            let cache = self.user_name_cache.lock().await;
-            if let Some(name) = cache.get(bot_id) {
-                return name.clone();
+            let cache = self.user_info_cache.lock().await;
+            if let Some(info) = cache.get(bot_id) {
+                return Some(info.clone());
             }
         }
-        
-        // Fetch bot info
-        let resp = self
+
+        let json: serde_json::Value = self
             .http
-            .get(&format!(
-                "https://slack.com/api/bots.info?bot={}",
-                bot_id
-            ))
+            .get(&format!("https://slack.com/api/bots.info?bot={}", bot_id))
             .bearer_auth(&self.token)
             .send()
-            .await;
-
-        if let Ok(resp) = resp {
-            if let Ok(json) = resp.json::<serde_json::Value>().await {
-                if json.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
-                    if let Some(name) = json.get("bot")
-                        .and_then(|b| b.get("name"))
-                        .and_then(|n| n.as_str()) {
-                        let name_str = name.to_string();
-                        // Cache it
-                        self.user_name_cache
-                            .lock()
-                            .await
-                            .insert(bot_id.to_string(), name_str.clone());
-                        return name_str;
-                    }
-                }
-            }
+            .await
+            .ok()?
+            .json()
+            .await
+            .ok()?;
+        if !json.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
+            return None;
         }
-        
-        bot_id.to_string()
+        let bot = json.get("bot")?;
+        let info = CachedUserInfo {
+            name: bot.get("name")?.as_str()?.to_string(),
+            is_bot: true,
+            deleted: false,
+            avatar_url: bot
+                .get("icons")
+                .and_then(|i| serde_json::from_value::<BotIcons>(i.clone()).ok())
+                .and_then(|i| i.best()),
+        };
+        self.cache_sender_info(bot_id, info.clone()).await;
+        Some(info)
+    }
+
+    /// Insert one sender (human or bot) into both caches.
+    async fn cache_sender_info(&self, id: &str, info: CachedUserInfo) {
+        self.user_name_cache
+            .lock()
+            .await
+            .insert(id.to_string(), info.name.clone());
+        self.user_info_cache.lock().await.insert(id.to_string(), info);
     }
 
     pub async fn get_conversation_members(&self, channel_id: &str) -> Result<Vec<String>> {
@@ -1132,23 +1198,53 @@ impl SlackClient {
         Ok(all_messages)
     }
 
-    /// Put a human name on every message.
+    /// Put a name on every message, human or app.
     ///
-    /// `conversations.history` identifies authors only by id (`U08846VMHT5`),
-    /// while realtime updates carry a name — so without this, loaded history
-    /// renders as raw ids while new messages in the same channel show names.
-    /// Ids are resolved in one batch through the shared cache.
+    /// `conversations.history` identifies human authors only by id
+    /// (`U08846VMHT5`), while realtime updates carry a name — so without this,
+    /// loaded history renders as raw ids while new messages in the same
+    /// channel show names. Ids are resolved in one batch through the shared
+    /// cache. App messages come with a `bot_profile` whose name and icon are
+    /// seeded into the same cache, so their avatars resolve without another
+    /// bots.info round-trip.
     async fn fill_user_names(&self, messages: &mut [SlackMessage]) {
         let ids: Vec<String> = messages
             .iter()
-            .filter(|m| m.username.is_none())
+            .filter(|m| m.username.is_none() && m.bot_id.is_none())
             .filter_map(|m| m.user.clone())
             .collect();
-        if ids.is_empty() {
-            return;
+        if !ids.is_empty() {
+            self.prefetch_user_infos(ids).await;
         }
-        self.prefetch_user_infos(ids).await;
+
         for message in messages.iter_mut() {
+            if let Some(ref bot_id) = message.bot_id {
+                // Seed from the profile riding on the message; only go to
+                // bots.info when the message carries nothing.
+                let profile_name = message.bot_profile.as_ref().and_then(|b| b.name.clone());
+                if let Some(ref name) = profile_name {
+                    if !self.user_info_cache.lock().await.contains_key(bot_id) {
+                        let info = CachedUserInfo {
+                            name: name.clone(),
+                            is_bot: true,
+                            deleted: false,
+                            avatar_url: message
+                                .bot_profile
+                                .as_ref()
+                                .and_then(|b| b.icons.as_ref())
+                                .and_then(|i| i.best()),
+                        };
+                        self.cache_sender_info(bot_id, info).await;
+                    }
+                }
+                if message.username.is_none() {
+                    message.username = Some(match profile_name {
+                        Some(name) => name,
+                        None => self.resolve_bot_name(bot_id).await,
+                    });
+                }
+                continue;
+            }
             if message.username.is_some() {
                 continue;
             }
@@ -1346,10 +1442,15 @@ impl SlackClient {
         self.user_id.lock().await.clone()
     }
 
-    /// A user's profile photo URL (public), for sender avatars in
-    /// conversations. Cached like every other user lookup.
+    /// A sender's photo/icon URL (public), for avatars in conversations.
+    /// `U`/`W` ids are humans (users.info), `B` ids are apps (bots.info);
+    /// both land in the same cache.
     pub async fn user_avatar(&self, user_id: &str) -> Option<String> {
-        self.fetch_user_info_cached(user_id).await?.avatar_url
+        if user_id.starts_with('B') {
+            self.fetch_bot_info_cached(user_id).await?.avatar_url
+        } else {
+            self.fetch_user_info_cached(user_id).await?.avatar_url
+        }
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<SlackUpdate> {

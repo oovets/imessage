@@ -118,11 +118,19 @@ export function slMessageToMessage(
     text: slackTextToPlain(m.text ?? "", userNames),
     isFromMe: !!selfUserId && m.user === selfUserId,
     dateCreated: slTsToMillis(m.ts),
+    // Humans key on their user id, apps on their bot id — the same ids the
+    // avatar cache resolves. The display name for an app is its bot_profile
+    // name (or `username`, which Slack also sets on app messages).
     handle: m.user
       ? { address: m.user, firstName: m.username ?? "" }
-      : m.username
-        ? { address: m.username, firstName: m.username }
-        : null,
+      : m.bot_id
+        ? {
+            address: m.bot_id,
+            firstName: m.username ?? m.bot_profile?.name ?? "App",
+          }
+        : m.username
+          ? { address: m.username, firstName: m.username }
+          : null,
     attachments,
     associatedMessageGuid: "",
     associatedMessageType: "",

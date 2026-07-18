@@ -49,12 +49,24 @@ export interface SlFile {
   size: number | null;
 }
 
+export interface SlBotProfile {
+  id: string | null;
+  name: string | null;
+  app_id: string | null;
+  icons: {
+    image_36: string | null;
+    image_48: string | null;
+    image_72: string | null;
+  } | null;
+}
+
 export interface SlMessage {
   ts: string;
   user: string | null;
   text: string;
   username: string | null;
   bot_id: string | null;
+  bot_profile?: SlBotProfile | null;
   thread_ts: string | null;
   files?: SlFile[];
 }
@@ -72,6 +84,8 @@ export interface SlEventEnvelope {
       channel_id: string;
       /** Sender's Slack user id (absent for some bots/webhooks). */
       user_id: string | null;
+      /** Bot id (B…) when an app sent the message. */
+      bot_id: string | null;
       user_name: string;
       text: string;
       ts: string;
