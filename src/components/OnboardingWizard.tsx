@@ -309,9 +309,10 @@ export function OnboardingWizard() {
               listen; Automation appears on its own the first time it sends.
             </p>
             <p className="mt-2 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
-              <strong>Local Network</strong> is a toggle, not a popup — if no prompt appears, open the
-              pane and switch BlueBubbles on. Then hit verify: the server is restarted so it picks up
-              what you just granted.
+              The server is already running — if macOS asks about the <strong>local network</strong>,
+              click Allow; if no prompt appears, open the pane and switch BlueBubbles on. Then hit
+              verify — it waits and restarts the server automatically if needed (can take a minute
+              or two).
             </p>
             {reusedInstall && (
               <p className="mt-2 text-xs text-muted-foreground">

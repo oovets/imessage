@@ -320,6 +320,14 @@ fn configure_blocking(
     seed(db_s, "start_minimized", if headless { "1" } else { "0" })?;
     seed(db_s, "hide_dock_icon", if headless { "1" } else { "0" })?;
     logln(&log, "Configuration written.");
+    // Start the server right away so it runs while the user grants permissions:
+    // the macOS Local Network prompt then appears during that step, and since
+    // BlueBubbles re-checks denied permissions every ~60s it usually binds on
+    // its own shortly after they're granted — often no restart needed at all.
+    logln(&log, "Starting the server (grant the permissions while it runs)…");
+    if let Err(e) = open_bluebubbles() {
+        logln(&log, format!("✗ open failed: {e}"));
+    }
     Ok(())
 }
 
@@ -392,25 +400,37 @@ fn api_probe(url: &str) -> Result<(), String> {
 }
 
 fn start_and_check_blocking(password: String, port: u16, log: Log) -> ServerCheck {
-    // A fresh restart is what makes BlueBubbles bind the port after permissions
-    // were granted; `open` on the stuck instance is a no-op (see restart_bluebubbles).
-    restart_bluebubbles(&log);
     let base = format!("http://localhost:{port}/api/v1");
-
     // The password rides in the query string, so never log the full URL.
-    logln(&log, format!("Checking the API on http://localhost:{port}…"));
     let info_url = format!("{base}/server/info?password={password}");
+
+    // Self-healing check. The server has been running since configuration, so
+    // round 0 just probes: if the user's permission grants already took effect
+    // (BlueBubbles re-checks every ~60s) it's up with no restart at all. If
+    // not, restart it — a fresh process re-reads permissions immediately — and
+    // probe again, up to two restarts, instead of failing back to the user.
+    logln(&log, format!("Checking the API on http://localhost:{port}…"));
     let mut reachable = false;
     let mut last_reason = String::from("no response");
-    for _ in 0..40 {
-        match api_probe(&info_url) {
-            Ok(()) => {
-                reachable = true;
-                break;
-            }
-            Err(reason) => last_reason = reason,
+    'rounds: for round in 0..3 {
+        if round > 0 {
+            logln(
+                &log,
+                format!("Not reachable yet ({last_reason}) — restarting the server…"),
+            );
+            restart_bluebubbles(&log);
         }
-        thread::sleep(Duration::from_secs(1));
+        let window_secs = if round == 0 { 20 } else { 45 };
+        for _ in 0..window_secs {
+            match api_probe(&info_url) {
+                Ok(()) => {
+                    reachable = true;
+                    break 'rounds;
+                }
+                Err(reason) => last_reason = reason,
+            }
+            thread::sleep(Duration::from_secs(1));
+        }
     }
 
     if reachable {
@@ -439,19 +459,20 @@ fn start_and_check_blocking(password: String, port: u16, log: Log) -> ServerChec
 }
 
 /// After a successful, visible first run (so the macOS Local Network prompt was
-/// granted), switch the server to headless + minimized + hidden dock icon and
-/// restart it so it stays out of the way on every future launch. The Local
-/// Network permission is per-app and persists, so the headless relaunch still
-/// binds the port.
+/// granted), seed headless + minimized + hidden dock icon so the server stays
+/// out of the way from its NEXT launch on. Deliberately no restart here: the
+/// server just came up verified, and every restart is another chance for it to
+/// come back not listening. The visible window this one time is harmless.
 fn go_headless_blocking(_port: u16, log: Log) -> Result<(), String> {
     let db = config_db_path()?;
     let db_s = path_str(&db)?;
-    logln(&log, "Switching the server to headless (hidden) mode…");
     seed(db_s, "headless", "1")?;
     seed(db_s, "start_minimized", "1")?;
     seed(db_s, "hide_dock_icon", "1")?;
-    restart_bluebubbles(&log);
-    logln(&log, "Server restarted in the background.");
+    logln(
+        &log,
+        "Server set to start hidden from its next launch (leaving it running now — keep it open).",
+    );
     Ok(())
 }
 
