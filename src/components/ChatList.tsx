@@ -60,6 +60,8 @@ export function ChatList() {
         if (!prev) return chat;
         return {
           ...chat,
+          // Same carry-forward as the polling path: never regress activityAt.
+          activityAt: chat.activityAt ?? prev.activityAt,
           lastMessageText:
             chat.lastMessageText ??
             chat.lastMessage?.text ??

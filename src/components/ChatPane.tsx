@@ -91,12 +91,13 @@ export function ChatPane({ paneId, chatGUID, isActive, canClose, showMobileBack 
       .getMessages(chatGUID, 50, after)
       .then(async (msgs) => {
         if (cancelled) return;
-        if (hasCached && msgs.length === 0) {
-          try {
-            msgs = await client.getMessages(chatGUID, 50);
-          } catch {}
-          if (cancelled) return;
-        }
+        // An empty delta means nothing arrived since lastFetchedAt — the normal
+        // answer when reopening a quiet chat. It used to trigger a second,
+        // full-window fetch (doubling every reopen) as a workaround for the
+        // cursor being poisoned by optimistic sends; that cause is fixed in
+        // upsertMessage, so trust the empty response. Real failures land in
+        // .catch below.
+        if (hasCached && msgs.length === 0) return;
         if (hasCached) mergeMessages(chatGUID, msgs);
         else setMessages(chatGUID, msgs);
       })
@@ -110,7 +111,15 @@ export function ChatPane({ paneId, chatGUID, isActive, canClose, showMobileBack 
     return () => {
       cancelled = true;
     };
-  }, [chatGUID, serverUrl, password, telegramReloadNonce]);
+    // The nonce is a Telegram-only signal. Keeping it unconditional re-ran this
+    // whole effect — including the BlueBubbles fetch — for every open iMessage
+    // pane each time Telegram reloaded.
+  }, [
+    chatGUID,
+    serverUrl,
+    password,
+    isTelegramChatGuid(chatGUID ?? "") ? telegramReloadNonce : 0,
+  ]);
 
   const empty = !chatGUID || !selectedChat;
 

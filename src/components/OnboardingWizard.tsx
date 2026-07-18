@@ -32,8 +32,17 @@ function generatePassword(): string {
   return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("");
 }
 
+/**
+ * Save the connection, then mark the app configured.
+ *
+ * The order matters: setConfig flips isConfigured, which unmounts the wizard.
+ * Swallowing a keychain failure here told the user the connection was saved and
+ * threw away the generated password while it was still on screen — secureConfig
+ * deliberately propagates exactly these errors (locked keychain, denied trust
+ * prompt), so let them reach the caller's error state.
+ */
 async function persistConnection(serverUrl: string, password: string, setConfig: (u: string, p: string) => void) {
-  await saveSecureConfig({ serverUrl, password }).catch(() => {});
+  await saveSecureConfig({ serverUrl, password });
   setConfig(serverUrl, password);
 }
 
@@ -153,7 +162,14 @@ export function OnboardingWizard() {
   // into the app). Deferred to the final step so the optional Telegram sign-in
   // can happen on the "done" screen first.
   async function finish() {
-    await persistConnection(`http://localhost:${portNum}`, password, setConfig);
+    setError(null);
+    try {
+      await persistConnection(`http://localhost:${portNum}`, password, setConfig);
+    } catch (e) {
+      // Stay on this screen: the generated password is still visible here, and
+      // leaving would lose it.
+      setError(`Could not save your connection: ${String(e)}`);
+    }
   }
 
   async function saveManual() {
@@ -161,8 +177,11 @@ export function OnboardingWizard() {
     const pwd = manualPwd.trim();
     if (!url || !pwd) return;
     setManualSaving(true);
+    setError(null);
     try {
       await persistConnection(url, pwd, setConfig);
+    } catch (e) {
+      setError(`Could not save your connection: ${String(e)}`);
     } finally {
       setManualSaving(false);
     }
@@ -357,7 +376,7 @@ export function OnboardingWizard() {
               </div>
               <h2 className="mt-4 text-base font-semibold">iMessage is set up</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                The BlueBubbles server is running in the background and your connection is saved.
+                The BlueBubbles server is running in the background.
               </p>
             </div>
 
@@ -374,6 +393,8 @@ export function OnboardingWizard() {
                 <TelegramAccounts />
               </div>
             )}
+
+            {error && <p className="mt-4 text-xs text-destructive">{error}</p>}
 
             <Button className="mt-6 w-full" onClick={() => void finish()}>
               {telegramAvailable ? "Finish" : "Open Messages"}
@@ -418,6 +439,8 @@ export function OnboardingWizard() {
                 <Input type="password" value={manualPwd} onChange={(e) => setManualPwd(e.target.value)} />
               </label>
             </div>
+            {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
+
             <Button
               className={cn("mt-6 w-full")}
               onClick={saveManual}

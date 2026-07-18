@@ -97,6 +97,11 @@ export function useWebSocket() {
       reconnecting = true;
       clearHandshakeTimer();
       setWsConnected(false);
+      // Release the dead socket before dropping the reference: close() is the
+      // only path that unregisters the plugin listener and tears down the Rust
+      // side. Without it every disconnect (sleep/wake, wifi change, server
+      // flap) leaked a listener plus its captured effect scope.
+      handle?.close();
       handle = null;
       attempt++;
       const delay = Math.min(attempt * 2000, 30000);
@@ -201,7 +206,6 @@ export function useWebSocket() {
             clearHandshakeTimer();
             handshakeTimer = setTimeout(() => {
               if (cancelled) return;
-              handle?.close();
               scheduleReconnect();
             }, 6000);
           },

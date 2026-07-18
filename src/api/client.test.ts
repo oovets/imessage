@@ -117,26 +117,94 @@ describe("enrichChatActivity fallback", () => {
     expect(onBatch).not.toHaveBeenCalled();
   });
 
-  it("probes only the chats that came back without one", async () => {
-    // Older servers ignore `with`, so lastMessage is absent and we must still
-    // fill activityAt — but only for those chats.
+  it("does not probe a conversation the server reported as empty", async () => {
+    // The server honoured `with` (another chat has a lastMessage), so a chat
+    // without one genuinely has no messages — probing it would return nothing
+    // and cost a request on every single load.
+    mockServer([
+      chat("iMessage;-;+46700000001", { text: "har", dateCreated: 10 }),
+      chat("iMessage;-;+46700000002", null),
+    ]);
+    const client = new BlueBubblesClient("http://s:1234", "pw");
+    const chats = await client.getChats();
+    calls = [];
+
+    await client.enrichChatActivity(chats, vi.fn());
+
+    expect(messageGets()).toHaveLength(0);
+    expect(chats.find((c) => c.guid.endsWith("2"))?.activityAt).toBe(0);
+  });
+
+  it("probes every chat when the server ignored `with` entirely", async () => {
+    // Older servers return no lastMessage at all. Ordering would collapse, so
+    // the fallback must still run — for all of them.
     mockServer(
-      [
-        chat("iMessage;-;+46700000001", { text: "har", dateCreated: 10 }),
-        chat("iMessage;-;+46700000002", null),
-      ],
+      [chat("iMessage;-;+46700000001", null), chat("iMessage;-;+46700000002", null)],
       () => [{ guid: "m1", text: "hämtad", dateCreated: 55, isFromMe: false, attachments: [] }]
     );
     const client = new BlueBubblesClient("http://s:1234", "pw");
     const chats = await client.getChats();
+    expect(chats.every((c) => c.activityAt === undefined)).toBe(true);
     calls = [];
 
     const onBatch = vi.fn();
     await client.enrichChatActivity(chats, onBatch);
 
-    // Exactly one chat lacked lastMessage -> exactly one probe.
-    expect(messageGets()).toHaveLength(1);
-    // And one list update, not one per batch.
+    expect(messageGets()).toHaveLength(2);
+    // One list update at the end, not one per batch.
     expect(onBatch).toHaveBeenCalledTimes(1);
+    expect(chats[0].activityAt).toBe(55);
+  });
+});
+
+describe("sendMessage method selection", () => {
+  function serverInfo(privateApi: boolean, helperConnected: boolean) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        calls.push({
+          url,
+          method: init?.method ?? "GET",
+          body: init?.body ? JSON.parse(String(init.body)) : undefined,
+        });
+        if (url.includes("/server/info")) {
+          return jsonResponse({ private_api: privateApi, helper_connected: helperConnected });
+        }
+        return jsonResponse({});
+      })
+    );
+  }
+
+  const sendBody = () =>
+    calls.find((c) => c.url.includes("/message/text"))?.body as Record<string, unknown>;
+
+  it("uses the Private API when the helper is connected", async () => {
+    // macOS 26 broke AppleScript sending, so hardcoding apple-script routed
+    // every plain message into a path that returns HTTP 500.
+    serverInfo(true, true);
+    await new BlueBubblesClient("http://s:1234", "pw").sendMessage("any;-;+46", "hej");
+    expect(sendBody().method).toBe("private-api");
+  });
+
+  it("falls back to AppleScript when the helper has dropped out", async () => {
+    // private_api can be true while the injected helper is gone.
+    serverInfo(true, false);
+    await new BlueBubblesClient("http://s:1234", "pw").sendMessage("any;-;+46", "hej");
+    expect(sendBody().method).toBe("apple-script");
+  });
+
+  it("keeps replies on the Private API regardless", async () => {
+    serverInfo(true, false);
+    await new BlueBubblesClient("http://s:1234", "pw").sendMessage("any;-;+46", "svar", "msg-1");
+    expect(sendBody().method).toBe("private-api");
+  });
+
+  it("re-checks availability instead of trusting a stale answer forever", async () => {
+    serverInfo(true, true);
+    const client = new BlueBubblesClient("http://s:1234", "pw");
+    await client.sendMessage("any;-;+46", "ett");
+    await client.sendMessage("any;-;+46", "två");
+    // Second send inside the TTL reuses the probe.
+    expect(calls.filter((c) => c.url.includes("/server/info"))).toHaveLength(1);
   });
 });
