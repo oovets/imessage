@@ -3,7 +3,8 @@ import { ArrowLeft, Bot, MessageCircleDashed, SplitSquareHorizontal, SplitSquare
 import { Button } from "@/components/ui/button";
 import { MessageList } from "@/components/MessageList";
 import { MessageInput } from "@/components/MessageInput";
-import { useAppStore, isTelegramChatGuid } from "@/store/useAppStore";
+import { useAppStore } from "@/store/useAppStore";
+import { isSource } from "@/lib/source";
 import { getClient } from "@/api/clientFactory";
 import { getChatDisplayName, getChatInitials, formatMessageTime } from "@/types";
 import { tg } from "@/telegram/api";
@@ -59,7 +60,7 @@ export function ChatPane({ paneId, chatGUID, isActive, canClose, showMobileBack 
     if (!hasCached) setLoadingMessages(true);
 
     // Telegram chats load through the tg_* commands, not BlueBubbles.
-    if (isTelegramChatGuid(chatGUID)) {
+    if (isSource(chatGUID, "telegram")) {
       const { accountId, chatId } = parseTgChatGuid(chatGUID);
       tg.messages(accountId, chatId, undefined, 50)
         .then((tgMsgs) => {

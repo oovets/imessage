@@ -3,7 +3,8 @@ import { ChevronDown, MessagesSquare } from "lucide-react";
 import { MessageBubble } from "@/components/MessageBubble";
 import { MessageListSkeleton } from "@/components/MessageListSkeleton";
 import { TypingIndicator } from "@/components/TypingIndicator";
-import { useAppStore, isTelegramChatGuid } from "@/store/useAppStore";
+import { useAppStore } from "@/store/useAppStore";
+import { isSource } from "@/lib/source";
 import { getClient } from "@/api/clientFactory";
 import { tg } from "@/telegram/api";
 import { parseTgChatGuid } from "@/telegram/adapters";
@@ -136,7 +137,7 @@ export function MessageList({ chatGUID }: MessageListProps) {
     // Telegram: map the iMessage tapback to the nearest Telegram emoji and
     // send it through the Telegram core (no optimistic tapback child-message;
     // the authoritative aggregate arrives via tg:core-event).
-    if (isTelegramChatGuid(chatGUID)) {
+    if (isSource(chatGUID, "telegram")) {
       const emoji = TAPBACK_TO_EMOJI[reactionKey];
       if (!emoji) return;
       const { accountId, chatId } = parseTgChatGuid(chatGUID);

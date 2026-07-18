@@ -1,6 +1,7 @@
 import { useState, useRef, type KeyboardEvent } from "react";
 import { ArrowUp, Paperclip, X, Reply, Smile } from "lucide-react";
-import { useAppStore, isTelegramChatGuid } from "@/store/useAppStore";
+import { useAppStore } from "@/store/useAppStore";
+import { isSource } from "@/lib/source";
 import { getClient } from "@/api/clientFactory";
 import { tg } from "@/telegram/api";
 import { parseTgChatGuid } from "@/telegram/adapters";
@@ -57,7 +58,7 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
   async function sendFile(file: File) {
     setAttaching(true);
     try {
-      if (isTelegramChatGuid(chatGUID)) {
+      if (isSource(chatGUID, "telegram")) {
         const { accountId, chatId } = parseTgChatGuid(chatGUID);
         const bytes = new Uint8Array(await file.arrayBuffer());
         // The composer text (if any) rides along as the caption.
@@ -113,7 +114,7 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
     // Telegram: the core does its own optimistic-pending + reconcile and
     // drives the UI via tg:core-event, so we just fire the send and clear
     // the input (no frontend optimistic message — it would duplicate).
-    if (isTelegramChatGuid(chatGUID)) {
+    if (isSource(chatGUID, "telegram")) {
       const { accountId, chatId } = parseTgChatGuid(chatGUID);
       const replyId = replyTarget ? Number(replyTarget.guid.split(":").pop()) : NaN;
       const replyTo = Number.isFinite(replyId) && replyId > 0 ? replyId : undefined;

@@ -9,6 +9,7 @@ import {
   type ThemeTokenKey,
 } from "@/lib/appearance";
 import type { Chat, LinkPreview, Message } from "@/types";
+import { sourceOfGuid, type ChatSource } from "@/lib/source";
 import {
   collectOpenChatGuids,
   evictMessageCache,
@@ -348,6 +349,8 @@ interface AppState {
   setPaneLayout: (groupId: string, sizes: number[]) => void;
   repairPaneState: () => void;
 
+  /** Replace one source's chats, keeping every other source's untouched. */
+  setChatsForSource: (source: ChatSource, chats: Chat[]) => void;
   setChats: (chats: Chat[]) => void;
   setMessages: (chatGUID: string, messages: Message[]) => void;
   mergeMessages: (chatGUID: string, newMessages: Message[]) => void;
@@ -372,20 +375,24 @@ function deriveSelectedChat(tree: PaneNode, activePaneId: string): string | null
   return fallbackLeaf.type === "leaf" ? fallbackLeaf.chatGUID : null;
 }
 
-// Unified inbox: Telegram chats live in the same `chats` array as iMessage
-// chats, distinguished by a `tg:` GUID prefix. Each source updates only its
-// own slice so the two never clobber each other, and the merged list is
-// sorted by most-recent activity so conversations interleave by time.
-const TG_GUID_PREFIX = "tg:";
-export function isTelegramChatGuid(guid: string): boolean {
-  return guid.startsWith(TG_GUID_PREFIX);
-}
+// Unified inbox: every source's chats live in the same `chats` array,
+// distinguished by the GUID prefix (see lib/source.ts). Each source replaces
+// only its own slice so sources never clobber each other, and the merged list
+// is sorted by most-recent activity so conversations interleave by time.
 function chatActivity(chat: Chat): number {
   return chat.activityAt ?? chat.lastMessage?.dateCreated ?? 0;
 }
+// Tie-break for chats with equal/unknown activity (e.g. before iMessage
+// enrichment fills activityAt). Without it the order would depend on which
+// source happened to refresh last; this keeps it deterministic.
+const SOURCE_ORDER: Record<ChatSource, number> = { imessage: 0, telegram: 1, slack: 2 };
+
 function sortChatsByRecency(list: Chat[]): Chat[] {
-  // Stable sort keeps each source's incoming order among equal/unknown times.
-  return [...list].sort((a, b) => chatActivity(b) - chatActivity(a));
+  return [...list].sort(
+    (a, b) =>
+      chatActivity(b) - chatActivity(a) ||
+      SOURCE_ORDER[sourceOfGuid(a.guid)] - SOURCE_ORDER[sourceOfGuid(b.guid)]
+  );
 }
 
 export const useAppStore = create<AppState>()(
@@ -653,23 +660,20 @@ export const useAppStore = create<AppState>()(
         });
       },
 
-      // iMessage source: replace all non-Telegram chats, keep Telegram ones.
-      setChats: (chats) =>
+      // Replace one source's slice of the unified list, leaving every other
+      // source untouched. Scales to any number of sources — adding one needs no
+      // change here (unlike per-source setters, which each had to know about
+      // every other source).
+      setChatsForSource: (source, sourceChats) =>
         set((s) => ({
           chats: sortChatsByRecency([
-            ...chats,
-            ...s.chats.filter((c) => isTelegramChatGuid(c.guid)),
+            ...s.chats.filter((c) => sourceOfGuid(c.guid) !== source),
+            ...sourceChats,
           ]),
         })),
 
-      // Telegram source: replace all Telegram chats, keep iMessage ones.
-      setTelegramChats: (tgChats) =>
-        set((s) => ({
-          chats: sortChatsByRecency([
-            ...s.chats.filter((c) => !isTelegramChatGuid(c.guid)),
-            ...tgChats,
-          ]),
-        })),
+      setChats: (chats) => get().setChatsForSource("imessage", chats),
+      setTelegramChats: (tgChats) => get().setChatsForSource("telegram", tgChats),
 
       setTelegramAvailable: (v) => set({ telegramAvailable: v }),
 

@@ -3,7 +3,8 @@
 // chats/users without a photo, or when avatars are disabled in settings.
 
 import { useEffect, useState } from "react";
-import { isTelegramChatGuid, useAppStore } from "@/store/useAppStore";
+import { useAppStore } from "@/store/useAppStore";
+import { isSource } from "@/lib/source";
 import { tg } from "./api";
 import { parseTgChatGuid } from "./adapters";
 
@@ -16,7 +17,7 @@ export function useTelegramAvatar(guid: string): string | null {
   const [url, setUrl] = useState<string | null>(() => cache.get(guid) ?? null);
 
   useEffect(() => {
-    if (!showAvatars || !isTelegramChatGuid(guid)) return;
+    if (!showAvatars || !isSource(guid, "telegram")) return;
     if (cache.has(guid)) {
       setUrl(cache.get(guid) ?? null);
       return;
@@ -48,7 +49,7 @@ export function useTelegramSenderAvatar(
   const showAvatars = useAppStore((s) => s.showAvatars);
   const userId = senderAddress ? Number(senderAddress) : NaN;
   const eligible =
-    showAvatars && isTelegramChatGuid(chatGuid) && Number.isFinite(userId) && userId > 0;
+    showAvatars && isSource(chatGuid, "telegram") && Number.isFinite(userId) && userId > 0;
   const key = eligible ? `user:${parseTgChatGuid(chatGuid).accountId}:${userId}` : "";
   const [url, setUrl] = useState<string | null>(() => (key ? (cache.get(key) ?? null) : null));
 

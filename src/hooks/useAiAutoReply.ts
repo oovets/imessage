@@ -10,7 +10,8 @@
 //     from the user, the chat goes quiet until the user writes something
 
 import { useEffect, useRef } from "react";
-import { useAppStore, isTelegramChatGuid } from "@/store/useAppStore";
+import { useAppStore } from "@/store/useAppStore";
+import { isSource } from "@/lib/source";
 import { getClient } from "@/api/clientFactory";
 import { generateReply } from "@/lib/aiReply";
 import { preferredSendGuid } from "@/lib/chatThreadMerge";
@@ -81,7 +82,7 @@ export function useAiAutoReply() {
       if (st.aiTexts.size > 20) st.aiTexts.delete(st.aiTexts.values().next().value as string);
 
       try {
-        if (isTelegramChatGuid(guid)) {
+        if (isSource(guid, "telegram")) {
           const { accountId, chatId } = parseTgChatGuid(guid);
           await tg.sendMessage(accountId, chatId, text, undefined);
         } else {
