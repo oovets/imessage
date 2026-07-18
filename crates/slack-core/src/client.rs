@@ -15,6 +15,14 @@ fn log_debug(msg: &str) {
     tracing::debug!(target: "slack", "{msg}");
 }
 
+/// First 200 *characters* of a payload, for debug logging.
+///
+/// Counted in chars rather than bytes: `&text[..200]` panics when the cut lands
+/// inside a multi-byte character, and Slack payloads are full of emoji.
+fn log_head(text: &str) -> String {
+    text.chars().take(200).collect()
+}
+
 /// Updates received from Slack
 #[derive(Debug, Clone, Serialize)]
 pub enum SlackUpdate {
@@ -50,32 +58,26 @@ pub enum SlackUpdate {
 
 /// Fan-out for realtime updates.
 ///
-/// The TUI drained `get_pending_updates()` from its render loop. The app needs
-/// to *await* instead, so every update is also published on a broadcast channel
-/// the host bridges to the webview — mirroring `telegram_core::Core::subscribe`.
+/// Broadcast-only, deliberately. The TUI this code came from drained a
+/// `Vec<SlackUpdate>` from its render loop; the app instead bridges
+/// `subscribe()` to the webview as `sl:core-event`, so nothing ever drained
+/// that Vec and it grew for the whole lifetime of a connection. A bounded
+/// channel is the right shape here: slow subscribers lag and lose old updates
+/// rather than costing unbounded memory. Mirrors `telegram_core::Core`.
 #[derive(Clone)]
 struct Updates {
-    queued: Arc<Mutex<Vec<SlackUpdate>>>,
     tx: broadcast::Sender<SlackUpdate>,
 }
 
 impl Updates {
     fn new() -> Self {
         let (tx, _rx) = broadcast::channel(256);
-        Self {
-            queued: Arc::new(Mutex::new(Vec::new())),
-            tx,
-        }
+        Self { tx }
     }
 
-    async fn push(&self, update: SlackUpdate) {
-        // Send first: a lagging subscriber must not block the queue.
-        let _ = self.tx.send(update.clone());
-        self.queued.lock().await.push(update);
-    }
-
-    async fn drain(&self) -> Vec<SlackUpdate> {
-        std::mem::take(&mut *self.queued.lock().await)
+    fn push(&self, update: SlackUpdate) {
+        // Err just means nobody is subscribed yet; the update is not owed to anyone.
+        let _ = self.tx.send(update);
     }
 }
 
@@ -469,7 +471,7 @@ impl SlackClient {
                         next = ws_stream.next() => {
                             match next {
                                 Some(Ok(Message::Text(text))) => {
-                                    log_debug(&format!("Received WebSocket message: {}", &text[..text.len().min(200)]));
+                                    log_debug(&format!("Received WebSocket message: {}", log_head(&text)));
                                     if let Ok(envelope) = serde_json::from_str::<serde_json::Value>(&text) {
                                         let env_type = envelope.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
@@ -594,7 +596,7 @@ impl SlackClient {
                                         channel_id: channel_id.to_string(),
                                         ts: ts.to_string(),
                                         new_text: new_text.to_string(),
-                                    }).await;
+                                    });
                                 }
                             }
                             return;
@@ -608,7 +610,7 @@ impl SlackClient {
                                 pending_updates.push(SlackUpdate::MessageDeleted {
                                     channel_id: channel_id.to_string(),
                                     ts: deleted_ts.to_string(),
-                                }).await;
+                                });
                             }
                             return;
                         }
@@ -709,7 +711,7 @@ impl SlackClient {
                             forwarded,
                             mentions_me,
                             files,
-                        }).await;
+                        });
                     }
                 }
                 "user_typing" => {
@@ -737,7 +739,7 @@ impl SlackClient {
                         pending_updates.push(SlackUpdate::UserTyping {
                             channel_id: channel_id.to_string(),
                             user_name,
-                        }).await;
+                        });
                     }
                 }
                 _ => {}
@@ -1354,10 +1356,6 @@ impl SlackClient {
         self.pending_updates.tx.subscribe()
     }
 
-    pub async fn get_pending_updates(&self) -> Vec<SlackUpdate> {
-        self.pending_updates.drain().await
-    }
-
     /// Gracefully shutdown the background WebSocket task.
     pub async fn shutdown(&self) {
         log_debug("shutdown() called");
@@ -1373,5 +1371,45 @@ impl SlackClient {
             let _ = tokio::time::timeout(std::time::Duration::from_secs(2), handle).await;
         log_debug("WebSocket task finished");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug_truncation_survives_multibyte_text() {
+        // Regression: the log line byte-sliced `&text[..text.len().min(200)]`,
+        // which panics when byte 200 lands inside a multi-byte character. A
+        // Slack payload of emoji is the realistic trigger.
+        assert_eq!(log_head(&"🎉".repeat(300)).chars().count(), 200);
+        // Shorter than the limit is returned whole, multi-byte or not.
+        assert_eq!(log_head("hej 👋"), "hej 👋");
+        assert_eq!(log_head(""), "");
+    }
+
+    #[test]
+    fn a_slow_subscriber_lags_instead_of_retaining_every_update() {
+        // Regression: every update was *also* pushed onto an unbounded Vec that
+        // nothing ever drained (the app bridges `subscribe()` to the webview
+        // instead), so a connection retained every message it had ever seen.
+        // Buffering is now the broadcast channel's fixed 256 slots and no more.
+        let updates = Updates::new();
+        let mut rx = updates.tx.subscribe();
+
+        for i in 0..10_000 {
+            updates.push(SlackUpdate::MessageDeleted {
+                channel_id: "C1".into(),
+                ts: i.to_string(),
+            });
+        }
+
+        // The subscriber never read, so it is told it lagged rather than being
+        // handed 10 000 retained updates.
+        assert!(matches!(
+            rx.try_recv(),
+            Err(broadcast::error::TryRecvError::Lagged(_))
+        ));
     }
 }

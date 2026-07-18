@@ -84,24 +84,42 @@ done
 # --- uninstall -------------------------------------------------------------
 uninstall() {
   step "Uninstalling the demo"
-  osascript -e 'tell application "BlueBubbles" to quit' >/dev/null 2>&1 || pkill -x BlueBubbles 2>/dev/null || true
-  osascript -e 'tell application "Messages Desktop" to quit' >/dev/null 2>&1 || pkill -f "Messages Desktop" 2>/dev/null || true
-  sleep 1
+  [ "$DRY_RUN" = "1" ] && bold "  (dry run — nothing will be quit, removed, or deleted)"
+
+  if [ "$DRY_RUN" = "1" ]; then
+    would "quit BlueBubbles and Messages Desktop"
+  else
+    osascript -e 'tell application "BlueBubbles" to quit' >/dev/null 2>&1 || pkill -x BlueBubbles 2>/dev/null || true
+    osascript -e 'tell application "Messages Desktop" to quit' >/dev/null 2>&1 || pkill -f "Messages Desktop" 2>/dev/null || true
+    sleep 1
+  fi
 
   for app in "BlueBubbles.app" "Messages Desktop.app"; do
     if [ -d "/Applications/$app" ]; then
-      rm -rf "/Applications/$app" && ok "Removed /Applications/$app"
+      if [ "$DRY_RUN" = "1" ]; then
+        would "remove /Applications/$app"
+      else
+        rm -rf "/Applications/$app" && ok "Removed /Applications/$app"
+      fi
     fi
   done
 
   if security find-generic-password -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" >/dev/null 2>&1; then
-    security delete-generic-password -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" >/dev/null 2>&1 \
-      && ok "Removed saved connection from keychain"
+    if [ "$DRY_RUN" = "1" ]; then
+      would "remove the saved connection from the keychain"
+    else
+      security delete-generic-password -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" >/dev/null 2>&1 \
+        && ok "Removed saved connection from keychain"
+    fi
   fi
 
   if [ "$PURGE" = "1" ]; then
-    rm -rf "$BB_SUPPORT" && ok "Deleted BlueBubbles data ($BB_SUPPORT)"
-    rm -rf "$HOME/Library/Application Support/$KEYCHAIN_SERVICE" 2>/dev/null || true
+    if [ "$DRY_RUN" = "1" ]; then
+      would "delete BlueBubbles data ($BB_SUPPORT)"
+    else
+      rm -rf "$BB_SUPPORT" && ok "Deleted BlueBubbles data ($BB_SUPPORT)"
+      rm -rf "$HOME/Library/Application Support/$KEYCHAIN_SERVICE" 2>/dev/null || true
+    fi
   else
     warn "Kept BlueBubbles data at $BB_SUPPORT (re-run with --purge to delete it)."
   fi
