@@ -7,6 +7,7 @@ members = [
     "crates/cache",
     "crates/telegram-api",
     "crates/telegram-core",
+    "crates/slack-core",
 ]
 
 # Shared package metadata for the Telegram crates (the host `app` crate in
@@ -25,6 +26,7 @@ database = { path = "crates/database" }
 cache = { path = "crates/cache" }
 telegram-api = { path = "crates/telegram-api" }
 telegram-core = { path = "crates/telegram-core" }
+slack-core = { path = "crates/slack-core" }
 
 # Async runtime
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "fs", "io-util", "signal"] }
@@ -59,6 +61,11 @@ chacha20poly1305 = "0.10"
 rand = "0.9"
 sha2 = "0.10"
 base64 = "0.22"
+
+# Slack (Web API over HTTP + realtime over Socket Mode). Versions match what the
+# Tauri http/websocket plugins already pull in, so nothing is compiled twice.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio-tungstenite = { version = "0.28", default-features = false, features = ["connect", "rustls-tls-native-roots"] }
 
 # Misc
 chrono = { version = "0.4", features = ["serde"] }

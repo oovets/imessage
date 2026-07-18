@@ -5,7 +5,7 @@
 import { useEffect } from "react";
 import { useAppStore } from "@/store/useAppStore";
 import { onTelegramEvent } from "@/telegram/api";
-import { tgChatToChat, tgMessageGuid, tgMessageToMessage } from "@/telegram/adapters";
+import { tgChatGuid, tgChatToChat, tgMessageGuid, tgMessageToMessage } from "@/telegram/adapters";
 import type { TgChat, TgMessage } from "@/telegram/types";
 
 type CoreEvent =
@@ -48,7 +48,7 @@ export function useTelegramEvents() {
             chat_id: number;
             message_ids: number[];
           };
-          const chatGuid = `tg:${e.account_id}:${e.chat_id}`;
+          const chatGuid = tgChatGuid(e.account_id, e.chat_id);
           for (const id of e.message_ids) {
             store.removeMessage(chatGuid, tgMessageGuid(e.account_id, e.chat_id, id));
           }
@@ -65,7 +65,7 @@ export function useTelegramEvents() {
           const e = event as { account_id: number; chat_id: number };
           // setTyping stores a future expiry timestamp; Telegram only signals
           // "started", so each event refreshes the window.
-          store.setTyping(`tg:${e.account_id}:${e.chat_id}`, true);
+          store.setTyping(tgChatGuid(e.account_id, e.chat_id), true);
           break;
         }
 
@@ -80,7 +80,7 @@ export function useTelegramEvents() {
           };
           // A private chat's GUID is tg:<account>:<userId>, so presence keys
           // straight onto the conversation.
-          const guid = `tg:${e.account_id}:${e.user_id}`;
+          const guid = tgChatGuid(e.account_id, e.user_id);
           store.setTelegramPresence(guid, {
             online: e.presence.status === "online",
             lastSeen:

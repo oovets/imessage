@@ -22,5 +22,16 @@ export default tseslint.config(
       "no-empty": ["error", { allowEmptyCatch: true }],
       "preserve-caught-error": "off",
     },
+  },
+  {
+    // Offline tooling (distiller, benchmark) runs under Node, not the webview.
+    files: ["scripts/**/*.mjs"],
+    languageOptions: {
+      ecmaVersion: "latest",
+      sourceType: "module",
+      globals: {
+        ...globals.node,
+      },
+    },
   }
 );

@@ -10,7 +10,8 @@
 
 import { useEffect, useState } from "react";
 import type { Chat } from "@/types";
-import { useAppStore, isTelegramChatGuid } from "@/store/useAppStore";
+import { useAppStore } from "@/store/useAppStore";
+import { supports } from "@/lib/source";
 import { getClient } from "@/api/clientFactory";
 
 const THUMB_SIZE = 64;
@@ -140,6 +141,6 @@ export function useContactAvatarForAddress(address: string | null): string | nul
  */
 export function useContactAvatar(chat: Chat): string | null {
   const participants = chat.participants ?? [];
-  const eligible = !isTelegramChatGuid(chat.guid) && participants.length === 1;
+  const eligible = supports(chat.guid, "contactAvatars") && participants.length === 1;
   return useContactAvatarForAddress(eligible ? (participants[0].address ?? null) : null);
 }

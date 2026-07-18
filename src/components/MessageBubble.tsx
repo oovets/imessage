@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Copy, Reply, Smile, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { type Message, decodeEscapedUnicode, formatMessageTime } from "@/types";
-import { useAppStore, isTelegramChatGuid } from "@/store/useAppStore";
+import { useAppStore } from "@/store/useAppStore";
+import { supports } from "@/lib/source";
 import { useTelegramSenderAvatar } from "@/telegram/useTelegramAvatar";
 import { useContactAvatarForAddress } from "@/lib/contactAvatars";
 import { getClient } from "@/api/clientFactory";
@@ -175,7 +176,7 @@ export function MessageBubble({
   const chatGuid = message.chatGUID ?? "";
   const tgSenderAvatar = useTelegramSenderAvatar(chatGuid, senderAddress);
   const contactSenderAvatar = useContactAvatarForAddress(
-    chatGuid && !isTelegramChatGuid(chatGuid) ? senderAddress : null
+    chatGuid && supports(chatGuid, "contactAvatars") ? senderAddress : null
   );
   const senderAvatar = tgSenderAvatar ?? contactSenderAvatar;
 

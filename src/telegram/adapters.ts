@@ -6,10 +6,13 @@
 // message router use to tell the two sources apart.
 
 import type { Attachment, Chat, Message } from "@/types";
+import { SOURCE_PREFIX } from "@/lib/source";
 import type { TgChat, TgMedia, TgMessage } from "./types";
 
+const PREFIX = SOURCE_PREFIX.telegram;
+
 export function tgChatGuid(accountId: number, chatId: number): string {
-  return `tg:${accountId}:${chatId}`;
+  return `${PREFIX}${accountId}:${chatId}`;
 }
 
 export function tgMessageGuid(
@@ -17,12 +20,12 @@ export function tgMessageGuid(
   chatId: number,
   messageId: number,
 ): string {
-  return `tg:${accountId}:${chatId}:${messageId}`;
+  return `${PREFIX}${accountId}:${chatId}:${messageId}`;
 }
 
 /** Parse `tg:<accountId>:<chatId>` back into its numeric parts. */
 export function parseTgChatGuid(guid: string): { accountId: number; chatId: number } {
-  const [account, chat] = guid.slice(3).split(":");
+  const [account, chat] = guid.slice(PREFIX.length).split(":");
   return { accountId: Number(account), chatId: Number(chat) };
 }
 
