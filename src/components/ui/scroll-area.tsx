@@ -13,7 +13,12 @@ const ScrollArea = React.forwardRef<
     className={cn("relative overflow-hidden", className)}
     {...props}
   >
-    <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit]">
+    {/* Radix wraps children in a div with inline `display: table`, which
+        sizes to max-content: one row with a long nowrap name (`truncate`)
+        widens the whole list past the viewport, clipping everything at the
+        right edge — stars, timestamps. This app only ever scrolls
+        vertically, so force block layout and let rows truncate instead. */}
+    <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] [&>div]:!block [&>div]:!min-w-0">
       {children}
     </ScrollAreaPrimitive.Viewport>
     <ScrollBar />

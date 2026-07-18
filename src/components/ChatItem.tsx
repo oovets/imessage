@@ -161,7 +161,7 @@ function ChatItemComponent({
           {isTyping ? (
             <p className="text-xs truncate text-primary italic">typing…</p>
           ) : (
-            <p className={cn("text-xs min-w-0 line-clamp-2 text-muted-foreground", chat.unreadCount > 0 && "text-foreground")}>
+            <p className={cn("text-xs min-w-0 line-clamp-2 break-words [overflow-wrap:anywhere] text-muted-foreground", chat.unreadCount > 0 && "text-foreground")}>
               {preview || " "}
             </p>
           )}
