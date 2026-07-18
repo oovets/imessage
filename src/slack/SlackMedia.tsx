@@ -13,14 +13,14 @@ import type { Attachment } from "@/types";
 import { sl } from "./api";
 import { parseSlFileGuid } from "./adapters";
 
-/** Stable temp-file name — the file id is already unique per workspace. */
-function tempName(fileId: string, transferName: string): string {
+/** Stable temp-file name; the key is unique per file (see slFileToAttachment). */
+function tempName(fileKey: string, transferName: string): string {
   const ext = transferName.includes(".") ? transferName.split(".").pop() : "";
-  return ext ? `${fileId}.${ext}` : fileId;
+  return ext ? `${fileKey}.${ext}` : fileKey;
 }
 
 export function SlackMedia({ att }: { att: Attachment }) {
-  const { workspaceId, fileId } = parseSlFileGuid(att.guid);
+  const { workspaceId, fileKey } = parseSlFileGuid(att.guid);
   const mime = att.mimeType ?? "";
   const isVideo = mime.startsWith("video/");
   const isImage = mime.startsWith("image/");
@@ -34,7 +34,7 @@ export function SlackMedia({ att }: { att: Attachment }) {
     // channel full of large files doesn't download them all on scroll.
     if (!isImage && !isVideo) return;
 
-    sl.downloadFile(workspaceId, att.url, tempName(fileId, att.transferName))
+    sl.downloadFile(workspaceId, att.url, tempName(fileKey, att.transferName))
       .then((path) => {
         if (!cancelled) setUrl(convertFileSrc(path));
       })
@@ -103,7 +103,7 @@ export function SlackMedia({ att }: { att: Attachment }) {
           const path = await sl.downloadFile(
             workspaceId,
             att.url,
-            tempName(fileId, att.transferName)
+            tempName(fileKey, att.transferName)
           );
           window.open(convertFileSrc(path), "_blank");
         } catch {

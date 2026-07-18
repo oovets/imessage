@@ -38,9 +38,10 @@ export interface SlChat {
   section: SlChatSection;
 }
 
+/** Every field is optional on the wire — Slack omits them for some file types. */
 export interface SlFile {
-  id: string;
-  name: string;
+  id: string | null;
+  name: string | null;
   mimetype: string | null;
   url_private: string | null;
   size: number | null;

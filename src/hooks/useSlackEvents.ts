@@ -4,7 +4,12 @@
 import { useEffect } from "react";
 import { useAppStore } from "@/store/useAppStore";
 import { onSlackEvent } from "@/slack/api";
-import { slChatGuid, slFileGuid, slMessageGuid, slTsToMillis } from "@/slack/adapters";
+import {
+  slChatGuid,
+  slFileToAttachment,
+  slMessageGuid,
+  slTsToMillis,
+} from "@/slack/adapters";
 import { slackTextToPlain } from "@/slack/mrkdwn";
 import { getChatDisplayName } from "@/types";
 import { notifyIncomingMessage } from "@/lib/desktopNotifications";
@@ -32,16 +37,11 @@ export function useSlackEvents() {
           isFromMe: nm.is_self,
           dateCreated: slTsToMillis(nm.ts),
           handle: nm.user_name ? { address: nm.user_name, firstName: nm.user_name } : null,
-          // Same shape the history adapter produces, so a message looks the
-          // same whether it arrived live or was loaded from history.
+          // Same helper the history adapter uses, so a message looks the same
+          // whether it arrived live or was loaded from history.
           attachments: (nm.files ?? [])
-            .filter((f) => f.url_private)
-            .map((f) => ({
-              guid: slFileGuid(ws, f.id),
-              transferName: f.name,
-              mimeType: f.mimetype ?? "",
-              url: f.url_private ?? "",
-            })),
+            .map((f) => slFileToAttachment(ws, f))
+            .filter(Boolean),
           associatedMessageGuid: "",
           associatedMessageType: "",
           chatGUID,

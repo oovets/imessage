@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { slackTextToPlain } from "./mrkdwn";
 import { extractFirstUrl } from "@/lib/linkPreview";
+import { slFileToAttachment } from "./adapters";
+import type { SlFile } from "./types";
 
 describe("slackTextToPlain", () => {
   it("resolves user mentions to names", () => {
@@ -57,5 +59,33 @@ describe("link previews on Slack text", () => {
     expect(extractFirstUrl(slackTextToPlain("<https://example.com|the docs>", {}))).toBe(
       "https://example.com/"
     );
+  });
+});
+
+describe("slFileToAttachment", () => {
+  const file = (over: Partial<SlFile>): SlFile => ({
+    id: null,
+    name: null,
+    mimetype: null,
+    url_private: null,
+    size: null,
+    ...over,
+  });
+
+  it("keys on the file id when Slack sends one", () => {
+    const att = slFileToAttachment("work", file({ id: "F123", url_private: "https://x/a.png" }));
+    expect(att?.guid).toBe("slfile:work:F123");
+  });
+
+  it("drops a file with no url, since it cannot be fetched", () => {
+    expect(slFileToAttachment("work", file({ id: "F123" }))).toBeNull();
+  });
+
+  it("gives id-less files distinct keys, so their caches never collide", () => {
+    // The key becomes the temp filename — a shared fallback would make two
+    // different images overwrite each other on disk.
+    const a = slFileToAttachment("work", file({ url_private: "https://x/a.png" }));
+    const b = slFileToAttachment("work", file({ url_private: "https://x/b.png" }));
+    expect(a?.guid).not.toBe(b?.guid);
   });
 });

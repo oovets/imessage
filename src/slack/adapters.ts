@@ -5,9 +5,9 @@
 // messages. Slack timestamps are "1700000000.123456" — seconds with
 // microseconds — so they convert to epoch millis rather than parse as dates.
 
-import type { Chat, Message } from "@/types";
+import type { Attachment, Chat, Message } from "@/types";
 import { slackTextToPlain } from "./mrkdwn";
-import type { SlChat, SlChatSection, SlMessage } from "./types";
+import type { SlChat, SlChatSection, SlFile, SlMessage } from "./types";
 
 export function slChatGuid(workspaceId: string, channelId: string): string {
   return `sl:${workspaceId}:${channelId}`;
@@ -58,16 +58,45 @@ export function slChatToChat(workspaceId: string, chat: SlChat): Chat {
 }
 
 /** Attachment guid that routes to <SlackMedia>, carrying what it needs to fetch. */
-export function slFileGuid(workspaceId: string, fileId: string): string {
-  return `slfile:${workspaceId}:${fileId}`;
+export function slFileGuid(workspaceId: string, fileKey: string): string {
+  return `slfile:${workspaceId}:${fileKey}`;
 }
 
 export function parseSlFileGuid(guid: string): {
   workspaceId: string;
-  fileId: string;
+  fileKey: string;
 } {
-  const [, workspaceId = "", fileId = ""] = guid.split(":");
-  return { workspaceId, fileId };
+  const [, workspaceId = "", fileKey = ""] = guid.split(":");
+  return { workspaceId, fileKey };
+}
+
+/** Stable, collision-resistant key from a url, for files Slack sends without an id. */
+function hashKey(value: string): string {
+  let hash = 0;
+  for (let i = 0; i < value.length; i++) hash = (hash * 31 + value.charCodeAt(i)) | 0;
+  return (hash >>> 0).toString(36);
+}
+
+/**
+ * One Slack file -> one attachment, shared by the history adapter and the
+ * realtime handler so a message looks identical either way.
+ *
+ * `id` and `name` are optional on the wire. Falling back to a hash of the url
+ * matters more than it looks: the key becomes the cache filename, so a shared
+ * constant would make two different images collide on disk and render as each
+ * other. Files with no url can't be fetched at all, so they are dropped.
+ */
+export function slFileToAttachment(
+  workspaceId: string,
+  f: SlFile
+): Attachment | null {
+  if (!f.url_private) return null;
+  return {
+    guid: slFileGuid(workspaceId, f.id ?? hashKey(f.url_private)),
+    transferName: f.name ?? "Attachment",
+    mimeType: f.mimetype ?? "",
+    url: f.url_private,
+  } as Attachment;
 }
 
 export function slMessageToMessage(
@@ -80,13 +109,8 @@ export function slMessageToMessage(
   // Slack file URLs need the workspace token, which the webview doesn't hold —
   // the url rides along on the attachment and SlackMedia fetches it host-side.
   const attachments = (m.files ?? [])
-    .filter((f) => f.url_private)
-    .map((f) => ({
-      guid: slFileGuid(workspaceId, f.id),
-      transferName: f.name,
-      mimeType: f.mimetype ?? "",
-      url: f.url_private ?? "",
-    }));
+    .map((f) => slFileToAttachment(workspaceId, f))
+    .filter((a): a is Attachment => a !== null);
   return {
     guid: slMessageGuid(workspaceId, channelId, m.ts),
     text: slackTextToPlain(m.text ?? "", userNames),
