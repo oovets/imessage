@@ -32,7 +32,44 @@ const HARD_RULES =
   "the same language as the conversation; never use nicknames, pet names or terms of address " +
   "unless they appear in the examples for THIS contact; output ONLY the reply text.";
 
-function cardLines(card: StyleCard | null | undefined): string[] {
+/**
+ * Rough Swedish-vs-English detector. Idioms and signature phrases don't survive
+ * translation — offering Swedish ones while the conversation runs in English is
+ * what produced replies like "Skitfett wrong idea." Cheap heuristics are plenty
+ * here: we only need to know whether a phrase belongs in this conversation.
+ */
+const SV_WORDS =
+  /\b(och|att|det|jag|inte|är|för|med|som|har|men|kan|ska|vad|här|där|hur|när|jävla|fan|typ|asså|jo|nej|hej)\b/gi;
+const EN_WORDS =
+  /\b(the|and|you|that|have|for|not|with|this|are|was|but|can|what|how|when|there|here|dude|yeah|okay)\b/gi;
+
+function detectLang(text: string): "sv" | "en" | "unknown" {
+  const t = text.toLowerCase();
+  const sv = (t.match(SV_WORDS)?.length ?? 0) + (t.match(/[åäö]/g)?.length ?? 0);
+  const en = t.match(EN_WORDS)?.length ?? 0;
+  if (sv > en) return "sv";
+  if (en > sv) return "en";
+  return "unknown";
+}
+
+/** The language the conversation is actually being held in. */
+function conversationLang(history: Message[]): "sv" | "en" | "unknown" {
+  let sv = 0;
+  let en = 0;
+  for (const m of history.slice(-8)) {
+    const l = detectLang(m.text ?? "");
+    if (l === "sv") sv++;
+    else if (l === "en") en++;
+  }
+  if (sv > en) return "sv";
+  if (en > sv) return "en";
+  return "unknown";
+}
+
+function cardLines(
+  card: StyleCard | null | undefined,
+  lang: "sv" | "en" | "unknown" = "unknown"
+): string[] {
   if (!card) return [];
   const out: string[] = [];
   if (card.summary) out.push(card.summary);
@@ -49,8 +86,13 @@ function cardLines(card: StyleCard | null | undefined): string[] {
     if (typeof v === "number") nums.push(`${label} ${v}/10`);
   }
   if (nums.length) out.push(nums.join(", "));
-  if (card.signature_phrases?.length)
-    out.push(`Signature phrases: ${card.signature_phrases.slice(0, 8).join(", ")}`);
+  // Only offer phrases written in the language this conversation is using.
+  const phrases = (card.signature_phrases ?? []).filter((p) => {
+    if (lang === "unknown") return true;
+    const l = detectLang(p);
+    return l === "unknown" || l === lang;
+  });
+  if (phrases.length) out.push(`Signature phrases: ${phrases.slice(0, 8).join(", ")}`);
   if (card.do?.length) out.push(`Do: ${card.do.slice(0, 5).join("; ")}`);
   if (card.dont?.length) out.push(`Don't: ${card.dont.slice(0, 5).join("; ")}`);
   return out;
@@ -95,23 +137,33 @@ function emojiDirective(profiles: AiProfiles | null): string {
 export function buildSystemPrompt(
   userPrompt: string,
   chatName: string,
-  profiles: AiProfiles | null
+  profiles: AiProfiles | null,
+  lang: "sv" | "en" | "unknown" = "unknown"
 ): string {
   const sections: string[] = [];
   sections.push(`${userPrompt.trim()}\n${HARD_RULES}`);
 
   const style = profiles?.style;
   if (style) {
-    const lines = [...cardLines(style.card), ...statLines(style.stats)];
+    const lines = [...cardLines(style.card, lang), ...statLines(style.stats)];
     if (lines.length) sections.push(`MY WRITING STYLE:\n- ${lines.join("\n- ")}`);
   }
 
   const rel = profiles?.relationship;
   if (rel) {
-    const lines = [...cardLines(rel.card), ...statLines(rel.stats)];
+    const lines = [...cardLines(rel.card, lang), ...statLines(rel.stats)];
     if (lines.length)
       sections.push(`HOW I WRITE TO ${rel.name ?? chatName}:\n- ${lines.join("\n- ")}`);
-    const pool = rel.examples ?? [];
+    let pool = rel.examples ?? [];
+    // Examples teach rhythm and vocabulary — in another language they teach the
+    // wrong vocabulary, so prefer ones written in the conversation's language.
+    if (lang !== "unknown") {
+      const matching = pool.filter((e) => {
+        const l = detectLang(e);
+        return l === "unknown" || l === lang;
+      });
+      if (matching.length >= 3) pool = matching;
+    }
     if (pool.length) {
       const step = Math.max(1, Math.floor(pool.length / FEW_SHOT_EXAMPLES));
       const picked = pool.filter((_, i) => i % step === 0).slice(0, FEW_SHOT_EXAMPLES);
@@ -121,6 +173,20 @@ export function buildSystemPrompt(
           picked.map((e) => `- ${e}`).join("\n")
       );
     }
+  }
+
+  // My idioms are Swedish; when the conversation isn't, say so explicitly —
+  // the style (rhythm, length, casing, bluntness) still carries over, the
+  // vocabulary must not.
+  const profileLang = detectLang(
+    (profiles?.style?.card?.signature_phrases ?? []).join(" ") || "och att det"
+  );
+  if (lang !== "unknown" && profileLang !== "unknown" && lang !== profileLang) {
+    sections.push(
+      `LANGUAGE: this conversation is in ${lang === "en" ? "English" : "Swedish"}. Reply only in that language — ` +
+        "never mix in words or idioms from my other language, however characteristic they are. " +
+        "Keep my rhythm, message length, casing and bluntness; translate the attitude, not the words."
+    );
   }
 
   const emoji = emojiDirective(profiles);
@@ -166,7 +232,15 @@ export async function generateReply(
         model: cfg.model.trim(),
         max_tokens: MAX_TOKENS,
         messages: [
-          { role: "system", content: buildSystemPrompt(cfg.systemPrompt, chatName, profiles) },
+          {
+            role: "system",
+            content: buildSystemPrompt(
+              cfg.systemPrompt,
+              chatName,
+              profiles,
+              conversationLang(history)
+            ),
+          },
           ...context,
         ],
       }),
