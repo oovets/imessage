@@ -467,6 +467,20 @@ export function SettingsDialog(_props: SettingsDialogProps) {
                     generation, critique, rewrite, your verdict) to Jaeger/Tempo/Grafana.
                   </p>
                 </div>
+                <div className="grid gap-1">
+                  <Label htmlFor="ai-emoji" className="text-xs">Emoji</Label>
+                  <select
+                    id="ai-emoji"
+                    className="h-8 rounded-md border bg-transparent px-2 text-sm"
+                    value={aiReply.emojiMode ?? "auto"}
+                    onChange={(e) =>
+                      setAiReplyConfig({ emojiMode: e.target.value as "auto" | "never" })
+                    }
+                  >
+                    <option value="auto">Match how often I actually use them</option>
+                    <option value="never">Never use emoji</option>
+                  </select>
+                </div>
                 <div className="grid gap-1.5 rounded-md border p-2">
                   <p className="text-xs font-medium">Delivery</p>
                   <p className="text-[11px] text-muted-foreground -mt-1">

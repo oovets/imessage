@@ -29,6 +29,9 @@ export interface StyleStats {
   terminalPeriodRate?: number;
   emojiPerMessage?: number;
   topEmoji?: string[];
+  emojiAtEndRate?: number;
+  laughEmojiRate?: number;
+  laughTextRate?: number;
   favoriteExpressions?: Array<{ phrase: string; count: number }>;
 }
 

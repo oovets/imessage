@@ -20,6 +20,7 @@ export interface AiReplyConfig {
   systemPrompt: string;
   selfCritique?: boolean;
   tone?: { humor: number; sarcasm: number; warmth: number; energy: number; formality: number };
+  emojiMode?: "auto" | "never";
 }
 
 const MAX_CONTEXT_MESSAGES = 20;
@@ -119,20 +120,72 @@ function statLines(stats: StyleStats | null | undefined): string[] {
  * and hand the model a binary instruction — over many replies the observed
  * frequency matches the real one. The relationship rate wins when present.
  */
-function emojiDirective(profiles: AiProfiles | null): string {
-  const rate =
-    profiles?.relationship?.stats?.emojiPerMessage ??
-    profiles?.style?.stats?.emojiPerMessage;
-  if (rate === undefined) return "";
-  if (Math.random() < Math.min(1, rate)) {
-    const favs = (
-      profiles?.relationship?.stats?.topEmoji ?? profiles?.style?.stats?.topEmoji ?? []
-    ).slice(0, 4);
-    return `EMOJI: this reply may end with a SINGLE emoji if it genuinely fits${
-      favs.length ? ` (mine: ${favs.join(" ")})` : ""
-    } — never more than one.`;
+const EMOJI_G = /\p{Extended_Pictographic}\uFE0F?/gu;
+const LAUGH_EMOJI = /[\u{1F602}\u{1F923}\u{1F606}\u{1F605}\u{1F604}\u{1F603}]/u;
+
+interface EmojiPolicy {
+  /** May this particular reply carry one emoji? */
+  allow: boolean;
+  /** This person types their laughter instead of drawing it. */
+  laughterIsText: boolean;
+  directive: string;
+}
+
+/**
+ * Decide this reply's emoji policy (§10 delivery, measured in §2).
+ *
+ * A model can't hold a frequency across replies — asked for "one in five" it
+ * puts one in every reply — so the rate is rolled per message and the outcome
+ * is enforced afterwards rather than requested. Measured on gemma3:12b: naming
+ * the user's favourite emoji in the prompt produced a laughing emoji in 6 of 6
+ * replies (stacked, 😂😘); asking it not to still left 3 of 6. Prompts are a
+ * preference, the filter is the guarantee.
+ */
+function emojiPolicy(
+  profiles: AiProfiles | null,
+  mode: "auto" | "never" = "auto"
+): EmojiPolicy {
+  const stats = profiles?.relationship?.stats ?? profiles?.style?.stats;
+  const laughterIsText = (stats?.laughTextRate ?? 0) > (stats?.laughEmojiRate ?? 0);
+
+  if (mode === "never") {
+    return { allow: false, laughterIsText, directive: "EMOJI: never use emoji. Not one, ever." };
   }
-  return "EMOJI: write this reply with NO emoji at all.";
+  const rate = stats?.emojiPerMessage;
+  if (rate === undefined) return { allow: true, laughterIsText, directive: "" };
+
+  const laughLine = laughterIsText
+    ? " I write laughter as text (haha), not as a laughing emoji."
+    : "";
+  // Deliberately no list of "favourite" emoji: naming them makes the model
+  // reach for whichever is most generic, and the top of that list is skewed by
+  // the people I'm most affectionate with.
+  const allow = Math.random() < Math.min(1, rate);
+  return {
+    allow,
+    laughterIsText,
+    directive: allow
+      ? `EMOJI: this reply may include a SINGLE emoji if it genuinely fits — never more than one, never as decoration.${laughLine}`
+      : `EMOJI: write this reply with NO emoji at all.${laughLine}`,
+  };
+}
+
+/** Make the policy true of the text, whatever the model decided to do. */
+function enforceEmojiPolicy(text: string, policy: EmojiPolicy): string {
+  let out = text;
+  if (!policy.allow) {
+    out = out.replace(EMOJI_G, "");
+  } else {
+    if (policy.laughterIsText) out = out.replace(EMOJI_G, (e) => (LAUGH_EMOJI.test(e) ? "" : e));
+    // Keep at most one, wherever it sits.
+    let seen = false;
+    out = out.replace(EMOJI_G, (e) => {
+      if (seen) return "";
+      seen = true;
+      return e;
+    });
+  }
+  return out.replace(/\s+/g, " ").trim();
 }
 
 /**
@@ -162,7 +215,10 @@ export function buildSystemPrompt(
   chatName: string,
   profiles: AiProfiles | null,
   lang: "sv" | "en" | "unknown" = "unknown",
-  tone?: AiReplyConfig["tone"]
+  tone?: AiReplyConfig["tone"],
+  emojiMode: "auto" | "never" = "auto",
+  /** Receives the policy so the caller can enforce it on the output. */
+  onPolicy?: (p: EmojiPolicy) => void
 ): string {
   const sections: string[] = [];
   sections.push(`${userPrompt.trim()}\n${HARD_RULES}`);
@@ -216,8 +272,9 @@ export function buildSystemPrompt(
   const dials = toneLines(tone);
   if (dials.length) sections.push(dials[0]);
 
-  const emoji = emojiDirective(profiles);
-  if (emoji) sections.push(emoji);
+  const policy = emojiPolicy(profiles, emojiMode);
+  onPolicy?.(policy);
+  if (policy.directive) sections.push(policy.directive);
 
   sections.push(`Conversation: "${chatName}".`);
   return sections.join("\n\n");
@@ -340,12 +397,17 @@ export async function generateReply(
   const base = cfg.endpoint.trim().replace(/\/$/, "");
   if (!base || !cfg.model.trim()) return null;
 
+  let policy: EmojiPolicy | null = null;
   const systemPrompt = buildSystemPrompt(
     cfg.systemPrompt,
     chatName,
     profiles,
     conversationLang(history),
-    cfg.tone
+    cfg.tone,
+    cfg.emojiMode ?? "auto",
+    (p) => {
+      policy = p;
+    }
   );
   const context = history
     .filter((m) => (m.text ?? "").trim().length > 0)
@@ -385,9 +447,13 @@ export async function generateReply(
     }
     const json = await res.json();
     const text: unknown = json?.choices?.[0]?.message?.content;
-    const reply = typeof text === "string" ? text.trim() : "";
+    let reply = typeof text === "string" ? text.trim() : "";
+    if (reply && policy) reply = enforceEmojiPolicy(reply, policy);
     return reply.length > 0 ? { text: reply, systemPrompt } : null;
   } finally {
     clearTimeout(timer);
   }
 }
+
+/** Internals exposed for tests only. */
+export const __testing = { enforceEmojiPolicy };

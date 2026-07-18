@@ -295,6 +295,8 @@ interface AppState {
      */
     /** OTLP/HTTP collector for pipeline traces (§17); empty disables tracing. */
     otlpEndpoint: string;
+    /** "auto" matches the measured rate; "never" forbids emoji outright. */
+    emojiMode: "auto" | "never";
     tone: {
       humor: number;
       sarcasm: number;
@@ -495,6 +497,7 @@ export const useAppStore = create<AppState>()(
         maxConsecutive: 10,
         selfCritique: true,
         otlpEndpoint: "",
+        emojiMode: "auto",
         tone: { humor: 0, sarcasm: 0, warmth: 0, energy: 0, formality: 0 },
       },
       aiReplyChats: {},

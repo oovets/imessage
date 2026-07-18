@@ -20,7 +20,7 @@
 //     [--max-contacts 25] [--min-sent 30] [--skip-llm]
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -41,6 +41,15 @@ const SKIP_LLM = has("skip-llm");
 const TG_DB = join(homedir(), "Library/Application Support/dev.stefan.TelegramGui/telegram_gui.db");
 
 const log = (msg) => console.log(`[distiller] ${msg}`);
+
+/** Previously written profile, if any — used to preserve cards on stat-only runs. */
+function readExisting(path) {
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return null;
+  }
+}
 
 // ---------------------------------------------------------------- credentials
 /**
@@ -207,6 +216,10 @@ function tgConversations() {
 
 // ---------------------------------------------------------------- stats
 const EMOJI_RE = /\p{Extended_Pictographic}/gu;
+const LAUGH_EMOJI_RE = /[\u{1F602}\u{1F923}\u{1F606}\u{1F605}\u{1F604}\u{1F603}]/u;
+// How this person laughs in writing. Models default to a laughing emoji; many
+// people type it instead, and which one wins is measurable.
+const LAUGH_TEXT_RE = /\b(ha){2,}\b|\blol\b|\bhehe\b|\basg\b|\blmao\b/i;
 const URL_RE = /https?:\/\/\S+/;
 
 function median(xs) {
@@ -253,6 +266,14 @@ function computeStats(sent, incomingTimes) {
     }
   }
 
+  // Where emoji land, and whether laughter is typed or drawn.
+  const endsWithEmoji = texts.filter((t) => {
+    const tail = t.trim().slice(-2);
+    return tail && EMOJI_RE.test(tail);
+  }).length;
+  const laughEmoji = texts.filter((t) => LAUGH_EMOJI_RE.test(t)).length;
+  const laughText = texts.filter((t) => LAUGH_TEXT_RE.test(t)).length;
+
   const uniq = new Set(texts.flatMap((t) => t.toLowerCase().split(/\s+/))).size;
   return {
     sentCount: n,
@@ -265,6 +286,9 @@ function computeStats(sent, incomingTimes) {
     lowercaseStartRate: +(texts.filter((t) => /^[a-zåäö]/.test(t)).length / n).toFixed(3),
     emojiPerMessage: +(emojiPerMsg.reduce((a, b) => a + b, 0) / n).toFixed(2),
     topEmoji: [...emojiCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([e]) => e),
+    emojiAtEndRate: +(endsWithEmoji / n).toFixed(3),
+    laughEmojiRate: +(laughEmoji / n).toFixed(3),
+    laughTextRate: +(laughText / n).toFixed(3),
     favoriteExpressions,
     vocabularyUniqueWords: uniq,
     medianReplyLatencySec: Math.round(median(latencies) / 1000),
@@ -351,7 +375,10 @@ log(`corpus: ${allSent.length} sent messages total`);
 
 // -------- global profile
 const globalStats = computeStats(allSent, []);
-let globalCard = null;
+// --skip-llm refreshes statistics only; keep any card already distilled rather
+// than overwriting it with null (that silently guts existing profiles).
+const prevGlobal = readExisting(join(OUT, "style_profile.json"));
+let globalCard = prevGlobal?.card ?? null;
 if (!SKIP_LLM) {
   log("distilling global style card…");
   const sample = pickExamples(allSent, 150);
@@ -383,13 +410,14 @@ const index = [];
 for (const conv of top) {
   const stats = computeStats(conv.sent, conv.incomingTimes);
   const examples = pickExamples(conv.sent, 20);
-  let card = null;
+  const safe = conv.guid.replace(/[^A-Za-z0-9+@.-]/g, "_");
+  const prevRel = readExisting(join(OUT, `relationships/${safe}.json`));
+  let card = prevRel?.card ?? null;
   if (!SKIP_LLM) {
     card = await distillWithRetry(pickExamples(conv.sent, 60), "relationship", conv.name).catch(
       (e) => (log(`  ! ${conv.name}: ${e.message}`), null)
     );
   }
-  const safe = conv.guid.replace(/[^A-Za-z0-9+@.-]/g, "_");
   const file = `relationships/${safe}.json`;
   writeFileSync(
     join(OUT, file),
