@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { Copy, Reply, Smile, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { type Message, decodeEscapedUnicode, formatMessageTime } from "@/types";
-import { useAppStore } from "@/store/useAppStore";
+import { useAppStore, isTelegramChatGuid } from "@/store/useAppStore";
+import { useTelegramSenderAvatar } from "@/telegram/useTelegramAvatar";
+import { useContactAvatarForAddress } from "@/lib/contactAvatars";
 import { getClient } from "@/api/clientFactory";
 import { extractFirstUrl, fetchLinkPreview } from "@/lib/linkPreview";
 import { LinkPreviewCard } from "@/components/LinkPreviewCard";
@@ -165,6 +167,17 @@ export function MessageBubble({
   const linkPreviewCache = useAppStore((s) => s.linkPreviewCache);
   const setLinkPreview = useAppStore((s) => s.setLinkPreview);
 
+  // Mini sender avatar (incoming messages): Telegram sender photo or the
+  // iMessage contact photo, falling back to the initials circle below. The
+  // hooks gate on the global "show avatars" setting internally.
+  const senderAddress = !isMe ? (message.handle?.address ?? null) : null;
+  const chatGuid = message.chatGUID ?? "";
+  const tgSenderAvatar = useTelegramSenderAvatar(chatGuid, senderAddress);
+  const contactSenderAvatar = useContactAvatarForAddress(
+    chatGuid && !isTelegramChatGuid(chatGuid) ? senderAddress : null
+  );
+  const senderAvatar = tgSenderAvatar ?? contactSenderAvatar;
+
   const [copied, setCopied] = useState(false);
   const [showReactions, setShowReactions] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -261,9 +274,18 @@ export function MessageBubble({
         <div className={cn(superlightMode ? "w-full" : "flex items-end gap-2 w-full", isMe && "justify-end")}>
           {!isMe && !superlightMode && (
             isLastInGroup ? (
-              <div className="h-7 w-7 shrink-0 rounded-full bg-[#5e84c9] text-white text-[10px] font-semibold flex items-center justify-center select-none">
-                {senderInitials}
-              </div>
+              senderAvatar ? (
+                <img
+                  src={senderAvatar}
+                  alt=""
+                  className="h-7 w-7 shrink-0 rounded-full object-cover select-none"
+                  draggable={false}
+                />
+              ) : (
+                <div className="h-7 w-7 shrink-0 rounded-full bg-[#5e84c9] text-white text-[10px] font-semibold flex items-center justify-center select-none">
+                  {senderInitials}
+                </div>
+              )
             ) : (
               <div className="w-7 shrink-0" aria-hidden="true" />
             )

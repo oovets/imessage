@@ -50,6 +50,8 @@ export function SettingsDialog(_props: SettingsDialogProps) {
     setLaunchOnLogin,
     showTimestamps,
     setShowTimestamps,
+    showAvatars,
+    setShowAvatars,
     linkPreviewsEnabled,
     setLinkPreviewsEnabled,
     clearLinkPreviewCache,
@@ -309,6 +311,22 @@ export function SettingsDialog(_props: SettingsDialogProps) {
                     className="h-4 w-4"
                   />
                   Show message timestamps
+                </label>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="show-avatars">Avatars</Label>
+                <label
+                  htmlFor="show-avatars"
+                  className="inline-flex items-center gap-2 text-sm text-muted-foreground"
+                >
+                  <input
+                    id="show-avatars"
+                    type="checkbox"
+                    checked={showAvatars}
+                    onChange={(e) => setShowAvatars(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  Show profile photos (off = initials only)
                 </label>
               </div>
               <div className="grid gap-2">

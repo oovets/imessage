@@ -107,17 +107,16 @@ function ensureBuilt(serverUrl: string, password: string): void {
 }
 
 /**
- * The contact avatar (thumbnail data URL) for a 1-on-1 iMessage chat, or null
- * (Telegram chats have their own hook; group chats keep initials).
+ * The contact avatar (thumbnail data URL) for an iMessage address, or null.
+ * Respects the global "show avatars" setting (off = no fetch, initials only).
  */
-export function useContactAvatar(chat: Chat): string | null {
+export function useContactAvatarForAddress(address: string | null): string | null {
   const serverUrl = useAppStore((s) => s.serverUrl);
   const password = useAppStore((s) => s.password);
+  const showAvatars = useAppStore((s) => s.showAvatars);
   const [, bump] = useState(0);
 
-  const participants = chat.participants ?? [];
-  const eligible =
-    !isTelegramChatGuid(chat.guid) && participants.length === 1 && !!serverUrl;
+  const eligible = showAvatars && !!address && !!serverUrl;
 
   useEffect(() => {
     if (!eligible) return;
@@ -131,6 +130,16 @@ export function useContactAvatar(chat: Chat): string | null {
   }, [eligible, serverUrl, password]);
 
   if (!eligible || !avatarMap) return null;
-  const key = normalizeAddress(participants[0].address ?? "");
+  const key = normalizeAddress(address);
   return (key && avatarMap.get(key)) || null;
+}
+
+/**
+ * The contact avatar for a 1-on-1 iMessage chat, or null (Telegram chats have
+ * their own hook; group chats keep initials).
+ */
+export function useContactAvatar(chat: Chat): string | null {
+  const participants = chat.participants ?? [];
+  const eligible = !isTelegramChatGuid(chat.guid) && participants.length === 1;
+  return useContactAvatarForAddress(eligible ? (participants[0].address ?? null) : null);
 }

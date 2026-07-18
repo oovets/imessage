@@ -260,6 +260,8 @@ interface AppState {
   connectionNotice: string | null;
   superlightMode: boolean;
   showTimestamps: boolean;
+  // Show contact/Telegram profile photos; off = initials only.
+  showAvatars: boolean;
   sidebarHidden: boolean;
   appearance: AppearanceSettings;
   linkPreviewsEnabled: boolean;
@@ -307,6 +309,7 @@ interface AppState {
   setConnectionNotice: (v: string | null) => void;
   setSuperlightMode: (v: boolean) => void;
   setShowTimestamps: (v: boolean) => void;
+  setShowAvatars: (v: boolean) => void;
   setSidebarHidden: (v: boolean) => void;
   toggleSidebarHidden: () => void;
   setFontScale: (value: number) => void;
@@ -383,6 +386,7 @@ export const useAppStore = create<AppState>()(
       connectionNotice: null,
       superlightMode: false,
       showTimestamps: true,
+      showAvatars: true,
       sidebarHidden: false,
       appearance: DEFAULT_APPEARANCE,
       linkPreviewsEnabled: true,
@@ -447,6 +451,7 @@ export const useAppStore = create<AppState>()(
       setConnectionNotice: (v) => set({ connectionNotice: v }),
       setSuperlightMode: (v) => set({ superlightMode: v }),
       setShowTimestamps: (v) => set({ showTimestamps: v }),
+      setShowAvatars: (v) => set({ showAvatars: v }),
       setSidebarHidden: (v) => set({ sidebarHidden: v }),
       toggleSidebarHidden: () => set((s) => ({ sidebarHidden: !s.sidebarHidden })),
       setFontScale: (value) =>
@@ -770,6 +775,7 @@ export const useAppStore = create<AppState>()(
       partialize: (s) => ({
         superlightMode: s.superlightMode,
         showTimestamps: s.showTimestamps,
+        showAvatars: s.showAvatars,
         onboardingDismissed: s.onboardingDismissed,
         sidebarHidden: s.sidebarHidden,
         appearance: s.appearance,
