@@ -38,7 +38,6 @@ function cardLines(card: StyleCard | null | undefined): string[] {
   if (card.summary) out.push(card.summary);
   if (card.humor) out.push(`Humor: ${card.humor}`);
   if (card.energy) out.push(`Energy: ${card.energy}`);
-  if (card.emoji_style) out.push(`Emoji: ${card.emoji_style}`);
   if (card.language_notes) out.push(`Language: ${card.language_notes}`);
   const nums: string[] = [];
   for (const [label, v] of [
@@ -64,9 +63,32 @@ function statLines(stats: StyleStats | null | undefined): string[] {
     out.push(`Typical message length: ~${stats.medianWords} words (avg ${stats.avgWords}).`);
   if ((stats.lowercaseStartRate ?? 0) > 0.4) out.push("Often starts messages in lowercase.");
   if ((stats.terminalPeriodRate ?? 1) < 0.1) out.push("Almost never ends messages with a period.");
-  if (stats.emojiPerMessage !== undefined && stats.topEmoji?.length)
-    out.push(`Emoji ~${stats.emojiPerMessage}/message; favorites: ${stats.topEmoji.slice(0, 6).join(" ")}`);
+  // Emoji frequency is handled separately (emojiDirective) — models can't
+  // self-regulate a rate, so we decide per reply instead.
   return out;
+}
+
+/**
+ * Emoji use is a per-message coin flip, not something a model can average over
+ * a conversation: asking for "roughly one in five" yields one in every reply,
+ * while banning them yields none. Roll the user's measured rate for THIS reply
+ * and hand the model a binary instruction — over many replies the observed
+ * frequency matches the real one. The relationship rate wins when present.
+ */
+function emojiDirective(profiles: AiProfiles | null): string {
+  const rate =
+    profiles?.relationship?.stats?.emojiPerMessage ??
+    profiles?.style?.stats?.emojiPerMessage;
+  if (rate === undefined) return "";
+  if (Math.random() < Math.min(1, rate)) {
+    const favs = (
+      profiles?.relationship?.stats?.topEmoji ?? profiles?.style?.stats?.topEmoji ?? []
+    ).slice(0, 4);
+    return `EMOJI: this reply may end with a SINGLE emoji if it genuinely fits${
+      favs.length ? ` (mine: ${favs.join(" ")})` : ""
+    } — never more than one.`;
+  }
+  return "EMOJI: write this reply with NO emoji at all.";
 }
 
 /** Layered system prompt (§5): RULES / STYLE / RELATIONSHIP / EXAMPLES. Exported for the simulator's prompt inspector. */
@@ -100,6 +122,9 @@ export function buildSystemPrompt(
       );
     }
   }
+
+  const emoji = emojiDirective(profiles);
+  if (emoji) sections.push(emoji);
 
   sections.push(`Conversation: "${chatName}".`);
   return sections.join("\n\n");
