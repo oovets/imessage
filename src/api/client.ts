@@ -160,7 +160,9 @@ export class BlueBubblesClient {
       res = await httpFetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        // Ask for the last message inline: without it every chat needed its
+        // own limit-1 probe afterwards (600+ requests on a real account).
+        body: JSON.stringify({ with: ["lastMessage"] }),
       });
     } catch (err) {
       throw new Error(`getChats network error for ${this.baseUrl}: ${String(err)}`);
@@ -186,6 +188,12 @@ export class BlueBubblesClient {
           if (name) p.firstName = name;
         }
       }
+      // Sort key + preview straight from the server's lastMessage, so the list
+      // is complete without any follow-up requests.
+      if (chat.lastMessage?.dateCreated) {
+        chat.activityAt = chat.lastMessage.dateCreated;
+        chat.lastMessageText ??= chat.lastMessage.text ?? "";
+      }
     }
 
     // Collapse split per-service DM threads (pre-macOS-26 hosts) into one
@@ -193,18 +201,23 @@ export class BlueBubblesClient {
     return mergeChatThreads(chats);
   }
 
+  /**
+   * Fallback for servers that ignore `with: ["lastMessage"]` (older
+   * BlueBubbles): fill activityAt/preview for the chats that came back without
+   * one, probing only those and updating the list once when done. On a server
+   * that honours the flag this makes no requests at all.
+   */
   async enrichChatActivity(
     chats: Chat[],
     onBatch: (sortedChats: Chat[]) => void
   ): Promise<void> {
-    type Entry = { chat: Chat; lastMsgTime: number };
-    const entries: Entry[] = chats.map((chat) => ({ chat, lastMsgTime: 0 }));
+    const missing = chats.filter((c) => !c.activityAt && !c.lastMessage?.dateCreated);
+    if (missing.length === 0) return;
 
     const MAX_CONCURRENT = 5;
-    for (let i = 0; i < chats.length; i += MAX_CONCURRENT) {
+    for (let i = 0; i < missing.length; i += MAX_CONCURRENT) {
       await Promise.all(
-        chats.slice(i, i + MAX_CONCURRENT).map(async (chat, batchIdx) => {
-          const idx = i + batchIdx;
+        missing.slice(i, i + MAX_CONCURRENT).map(async (chat) => {
           try {
             // A merged conversation spans several underlying threads; the
             // preview must reflect whichever thread saw the latest message.
@@ -218,21 +231,20 @@ export class BlueBubblesClient {
               }
             }
             if (newest) {
-              entries[idx].lastMsgTime = newest.dateCreated;
-              entries[idx].chat.lastMessageText = newest.text ?? "";
-              // Record the activity time used for unified chat-list ordering.
-              entries[idx].chat.activityAt = newest.dateCreated;
+              chat.lastMessageText = newest.text ?? "";
+              chat.activityAt = newest.dateCreated;
               // Replies should go out on the service the contact last used.
               notePreferredSendGuid(newestVariant);
             }
           } catch {}
         })
       );
-      const sorted = [...entries]
-        .sort((a, b) => b.lastMsgTime - a.lastMsgTime)
-        .map((e) => e.chat);
-      onBatch(sorted);
     }
+
+    const sorted = [...chats].sort(
+      (a, b) => (b.activityAt ?? 0) - (a.activityAt ?? 0)
+    );
+    onBatch(sorted);
   }
 
   private async _getMessages(
