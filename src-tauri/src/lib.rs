@@ -316,6 +316,7 @@ pub fn run() {
             onboarding::bb_configure,
             onboarding::bb_open_privacy,
             onboarding::bb_start_and_check,
+            onboarding::bb_go_headless,
         ])
         .setup(|app| {
             let app_handle = app.handle();

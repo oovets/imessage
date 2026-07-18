@@ -3,6 +3,7 @@ import { invoke, Channel } from "@tauri-apps/api/core";
 import { Check, Loader2, ServerCog, Wand2, ArrowLeft, ExternalLink, AlertTriangle, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { TelegramAccounts } from "@/components/TelegramAccounts";
 import { useAppStore } from "@/store/useAppStore";
 import { saveSecureConfig } from "@/lib/secureConfig";
 import { cn } from "@/lib/utils";
@@ -138,7 +139,9 @@ export function OnboardingWizard() {
       });
       setCheck(result);
       if (result.canReadDb) {
-        await persistConnection(`http://localhost:${portNum}`, password, setConfig);
+        // The visible first run granted the Local Network prompt; now hide the
+        // server for good. Best-effort — don't block completion on it.
+        await invoke("bb_go_headless", { port: portNum, log: logChannel() }).catch(() => {});
         setPhase("done");
       }
     } catch (e) {
@@ -146,6 +149,13 @@ export function OnboardingWizard() {
     } finally {
       setBusyMsg("");
     }
+  }
+
+  // Save the connection (flips isConfigured, which unmounts the wizard and drops
+  // into the app). Deferred to the final step so the optional Telegram sign-in
+  // can happen on the "done" screen first.
+  async function finish() {
+    await persistConnection(`http://localhost:${portNum}`, password, setConfig);
   }
 
   async function saveManual() {
@@ -179,7 +189,7 @@ export function OnboardingWizard() {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background p-6">
       <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-10" />
-      <div className="w-full max-w-md">
+      <div className="w-full max-w-md max-h-full overflow-y-auto">
         {mode !== "choose" && phase !== "done" && (
           <button
             onClick={() => { setMode("choose"); setPhase("form"); setError(null); }}
@@ -337,16 +347,36 @@ export function OnboardingWizard() {
           </div>
         )}
 
-        {/* --- auto: done --- */}
+        {/* --- auto: done + optional Telegram --- */}
         {mode === "auto" && phase === "done" && (
-          <div className="flex flex-col items-center py-8 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-green-500/15 text-green-600 dark:text-green-400">
-              <Check className="h-7 w-7" />
+          <div>
+            <div className="flex flex-col items-center text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-green-500/15 text-green-600 dark:text-green-400">
+                <Check className="h-7 w-7" />
+              </div>
+              <h2 className="mt-4 text-base font-semibold">iMessage is set up</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                The BlueBubbles server is running in the background and your connection is saved.
+              </p>
             </div>
-            <h2 className="mt-4 text-base font-semibold">You're all set</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              The server is running and your connection is saved. Loading your chats…
-            </p>
+
+            {telegramAvailable && (
+              <div className="mt-6 border-t pt-4">
+                <h3 className="flex items-center gap-1.5 text-sm font-medium">
+                  <Send className="h-4 w-4 text-primary" /> Add Telegram
+                  <span className="font-normal text-muted-foreground">(optional)</span>
+                </h3>
+                <p className="mb-3 mt-1 text-xs text-muted-foreground">
+                  Sign in to see Telegram chats in the same inbox. You can also do this later in
+                  Settings.
+                </p>
+                <TelegramAccounts />
+              </div>
+            )}
+
+            <Button className="mt-6 w-full" onClick={() => void finish()}>
+              {telegramAvailable ? "Finish" : "Open Messages"}
+            </Button>
           </div>
         )}
 

@@ -412,6 +412,33 @@ fn start_and_check_blocking(password: String, port: u16, log: Log) -> ServerChec
     }
 }
 
+/// After a successful, visible first run (so the macOS Local Network prompt was
+/// granted), switch the server to headless + minimized + hidden dock icon and
+/// restart it so it stays out of the way on every future launch. The Local
+/// Network permission is per-app and persists, so the headless relaunch still
+/// binds the port.
+fn go_headless_blocking(_port: u16, log: Log) -> Result<(), String> {
+    let db = config_db_path()?;
+    let db_s = path_str(&db)?;
+    logln(&log, "Switching the server to headless (hidden) mode…");
+    seed(db_s, "headless", "1")?;
+    seed(db_s, "start_minimized", "1")?;
+    seed(db_s, "hide_dock_icon", "1")?;
+    let _ = run("osascript", &["-e", "tell application \"BlueBubbles\" to quit"]);
+    let _ = run("pkill", &["-x", "BlueBubbles"]);
+    thread::sleep(Duration::from_secs(2));
+    open_bluebubbles()?;
+    logln(&log, "Server restarted in the background.");
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn bb_go_headless(port: u16, log: Log) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || go_headless_blocking(port, log))
+        .await
+        .map_err(|e| format!("go-headless task failed: {e}"))?
+}
+
 #[tauri::command]
 pub async fn bb_start_and_check(password: String, port: u16, log: Log) -> ServerCheck {
     tauri::async_runtime::spawn_blocking(move || start_and_check_blocking(password, port, log))
