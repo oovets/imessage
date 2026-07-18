@@ -348,6 +348,14 @@ interface AppState {
   slackSelfUserIds: Record<string, string>;
   setSlackSelfUserId: (workspaceId: string, userId: string) => void;
   setTelegramAvailable: (v: boolean) => void;
+
+  // Account grouping in the chat list. Labels come from whichever backend owns
+  // the account; collapse state is the user's and persists across restarts.
+  /** account key (see lib/accounts) -> human name, e.g. "slack:work" -> "Work". */
+  accountLabels: Record<string, string>;
+  setAccountLabel: (key: string, label: string) => void;
+  collapsedAccounts: string[];
+  toggleAccountCollapsed: (key: string) => void;
   setTelegramChats: (chats: Chat[]) => void;
   upsertChat: (chat: Chat) => void;
   // Bumped to re-run the Telegram chat loader (e.g. after adding an account).
@@ -525,6 +533,8 @@ export const useAppStore = create<AppState>()(
       chats: [],
       telegramAvailable: false,
       slackAvailable: false,
+      accountLabels: {},
+      collapsedAccounts: [],
       slackReloadNonce: 0,
       slackSelfUserIds: {},
       telegramPresence: {},
@@ -802,6 +812,19 @@ export const useAppStore = create<AppState>()(
       setSlackSelfUserId: (workspaceId, userId) =>
         set((s) => ({ slackSelfUserIds: { ...s.slackSelfUserIds, [workspaceId]: userId } })),
 
+      setAccountLabel: (key, label) =>
+        set((s) =>
+          s.accountLabels[key] === label
+            ? s
+            : { accountLabels: { ...s.accountLabels, [key]: label } }
+        ),
+      toggleAccountCollapsed: (key) =>
+        set((s) => ({
+          collapsedAccounts: s.collapsedAccounts.includes(key)
+            ? s.collapsedAccounts.filter((k) => k !== key)
+            : [...s.collapsedAccounts, key],
+        })),
+
       reloadTelegram: () =>
         set((s) => ({ telegramReloadNonce: s.telegramReloadNonce + 1 })),
 
@@ -982,6 +1005,8 @@ export const useAppStore = create<AppState>()(
         ),
         messageOrder: s.messageOrder,
         messageFetchedAt: s.messageFetchedAt,
+        accountLabels: s.accountLabels,
+        collapsedAccounts: s.collapsedAccounts,
       }),
     }
   )

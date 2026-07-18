@@ -6,6 +6,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "@/store/useAppStore";
 import { tg } from "@/telegram/api";
 import { tgChatToChat } from "@/telegram/adapters";
+import { accountKey } from "@/lib/accounts";
 import type { Chat } from "@/types";
 
 export function useTelegramInbox() {
@@ -37,6 +38,16 @@ export function useTelegramInbox() {
         const accounts = (await tg.listAccounts()).filter((a) => a.authorized);
         const all: Chat[] = [];
         for (const account of accounts) {
+          const label = [account.first_name, account.last_name]
+            .filter(Boolean)
+            .join(" ")
+            .trim();
+          useAppStore
+            .getState()
+            .setAccountLabel(
+              accountKey("telegram", String(account.id)),
+              label || account.username || account.phone || `Telegram ${account.id}`
+            );
           const chats = await tg.chatList(account.id);
           for (const chat of chats) all.push(tgChatToChat(account.id, chat));
         }

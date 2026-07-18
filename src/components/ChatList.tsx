@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { PanelLeftClose, PanelLeftOpen, RefreshCw, MessageCircle, Search, X } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, RefreshCw, MessageCircle, Search, X, ChevronRight } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { SettingsDialog } from "@/components/SettingsDialog";
@@ -9,6 +9,7 @@ import { ChatItem } from "@/components/ChatItem";
 import { ChatListSkeleton } from "@/components/ChatListSkeleton";
 import { useAppStore } from "@/store/useAppStore";
 import { getClient } from "@/api/clientFactory";
+import { groupChatsByAccount } from "@/lib/accounts";
 import { decodeEscapedUnicode, getChatDisplayName, type Chat } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -31,8 +32,13 @@ export function ChatList() {
   const password = useAppStore((s) => s.password);
   const isConfigured = useAppStore((s) => s.isConfigured);
   const telegramAvailable = useAppStore((s) => s.telegramAvailable);
-  // The list is shown if either messaging source is available.
-  const hasAnySource = isConfigured || telegramAvailable;
+  const slackAvailable = useAppStore((s) => s.slackAvailable);
+  // The list is shown if ANY messaging source is available — a Slack-only or
+  // Telegram-only setup is as valid as an iMessage one.
+  const hasAnySource = isConfigured || telegramAvailable || slackAvailable;
+  const accountLabels = useAppStore((s) => s.accountLabels);
+  const collapsedAccounts = useAppStore((s) => s.collapsedAccounts);
+  const toggleAccountCollapsed = useAppStore((s) => s.toggleAccountCollapsed);
   const wsConnected = useAppStore((s) => s.wsConnected);
   const pollingFallback = useAppStore((s) => s.pollingFallback);
   const superlightMode = useAppStore((s) => s.superlightMode);
@@ -99,6 +105,24 @@ export function ChatList() {
     });
   }, [chats, query]);
 
+  // Group by account (iMessage, each Telegram login, each Slack workspace).
+  // With a single account there is nothing to separate, so the headers are
+  // skipped entirely rather than showing one redundant "iMessage" row.
+  const groups = useMemo(
+    () => groupChatsByAccount(filteredChats, accountLabels),
+    [filteredChats, accountLabels]
+  );
+  const grouped = groups.length > 1;
+
+  // Keyboard navigation must follow what is actually on screen — skipping
+  // chats hidden inside a collapsed group.
+  const visibleChats = useMemo(() => {
+    if (!grouped) return filteredChats;
+    return groups.flatMap((g) =>
+      collapsedAccounts.includes(g.ref.key) ? [] : g.chats
+    );
+  }, [grouped, groups, collapsedAccounts, filteredChats]);
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const meta = e.metaKey || e.ctrlKey;
@@ -121,19 +145,19 @@ export function ChatList() {
       }
 
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-        if (filteredChats.length === 0) return;
+        if (visibleChats.length === 0) return;
         e.preventDefault();
-        const idx = filteredChats.findIndex((c) => c.guid === selectedChatGUID);
+        const idx = visibleChats.findIndex((c) => c.guid === selectedChatGUID);
         const next =
           e.key === "ArrowDown"
-            ? Math.min(filteredChats.length - 1, idx + 1)
+            ? Math.min(visibleChats.length - 1, idx + 1)
             : Math.max(0, idx - 1);
-        selectChat(filteredChats[next < 0 ? 0 : next].guid);
+        selectChat(visibleChats[next < 0 ? 0 : next].guid);
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [filteredChats, selectedChatGUID, selectChat]);
+  }, [visibleChats, selectedChatGUID, selectChat]);
 
   return (
     <div className={cn("app-sidebar flex flex-col h-full", superlightMode ? "bg-background" : "border-r bg-background/95 backdrop-blur-xl")}>
@@ -278,7 +302,7 @@ export function ChatList() {
               {query ? `No chats match "${query}".` : "No chats found."}
             </div>
           )
-        ) : (
+        ) : !grouped || sidebarHidden ? (
           filteredChats.map((chat) => (
             <ChatItem
               key={chat.guid}
@@ -288,6 +312,49 @@ export function ChatList() {
               compact={sidebarHidden}
             />
           ))
+        ) : (
+          groups.map((group) => {
+            const collapsed = collapsedAccounts.includes(group.ref.key);
+            return (
+              <div key={group.ref.key}>
+                <button
+                  onClick={() => toggleAccountCollapsed(group.ref.key)}
+                  aria-expanded={!collapsed}
+                  className={cn(
+                    "sticky top-0 z-[5] flex w-full items-center gap-1.5 px-3 py-1.5",
+                    "text-[11px] font-semibold uppercase tracking-wider text-muted-foreground",
+                    "bg-background/95 backdrop-blur-sm hover:text-foreground"
+                  )}
+                >
+                  <ChevronRight
+                    className={cn(
+                      "h-3 w-3 shrink-0 transition-transform",
+                      !collapsed && "rotate-90"
+                    )}
+                  />
+                  <span className="truncate">{group.label}</span>
+                  <span className="ml-auto flex items-center gap-1.5 font-normal tabular-nums">
+                    {group.unread > 0 && (
+                      <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-medium text-primary-foreground">
+                        {group.unread}
+                      </span>
+                    )}
+                    <span className="text-muted-foreground/60">{group.chats.length}</span>
+                  </span>
+                </button>
+                {!collapsed &&
+                  group.chats.map((chat) => (
+                    <ChatItem
+                      key={chat.guid}
+                      chat={chat}
+                      isSelected={chat.guid === selectedChatGUID}
+                      onSelect={selectChat}
+                      compact={false}
+                    />
+                  ))}
+              </div>
+            );
+          })
         )}
       </ScrollArea>
     </div>

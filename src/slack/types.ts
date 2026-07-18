@@ -13,15 +13,22 @@ export interface SlStatus {
   importedFromFile: boolean;
 }
 
-/** Slack's own grouping; drives which conversations we show and how. */
-export enum SlChatSection {
-  Public = 0,
-  Private = 1,
-  Shared = 2,
-  Group = 3,
-  DirectMessage = 4,
-  Bot = 5,
-}
+/**
+ * Slack's own grouping; drives which conversations we show and how.
+ *
+ * These are strings, not numbers, even though the Rust `ChatSection` carries
+ * explicit discriminants (`Public = 0`, …). Serde ignores those for unit
+ * variants and serialises the variant *name*, so a numeric enum here silently
+ * matches nothing — which is exactly how every Slack conversation once got
+ * filtered out of the list.
+ */
+export type SlChatSection =
+  | "Public"
+  | "Private"
+  | "Shared"
+  | "Group"
+  | "DirectMessage"
+  | "Bot";
 
 export interface SlChat {
   id: string;

@@ -6,7 +6,7 @@
 // microseconds — so they convert to epoch millis rather than parse as dates.
 
 import type { Chat, Message } from "@/types";
-import { SlChatSection, type SlChat, type SlMessage } from "./types";
+import type { SlChat, SlChatSection, SlMessage } from "./types";
 
 export function slChatGuid(workspaceId: string, channelId: string): string {
   return `sl:${workspaceId}:${channelId}`;
@@ -30,13 +30,15 @@ export function slTsToMillis(ts: string): number {
   return Number.isFinite(seconds) ? Math.round(seconds * 1000) : 0;
 }
 
+const CHANNEL_SECTIONS: ReadonlySet<SlChatSection> = new Set<SlChatSection>([
+  "Public",
+  "Private",
+  "Shared",
+]);
+
 /** Channels get a leading #; DMs and groups keep their name as-is. */
 export function slDisplayName(chat: SlChat): string {
-  const isChannel =
-    chat.section === SlChatSection.Public ||
-    chat.section === SlChatSection.Private ||
-    chat.section === SlChatSection.Shared;
-  return isChannel ? `#${chat.name}` : chat.name;
+  return CHANNEL_SECTIONS.has(chat.section) ? `#${chat.name}` : chat.name;
 }
 
 export function slChatToChat(workspaceId: string, chat: SlChat): Chat {

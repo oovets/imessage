@@ -30,6 +30,22 @@ impl ChatSection {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The webview matches on these strings. Serde ignores the explicit
+    /// discriminants above for unit variants and emits the variant *name* — a
+    /// frontend that assumed the numbers filtered out every conversation, so
+    /// pin the wire format here rather than rediscovering it in the UI.
+    #[test]
+    fn sections_serialize_as_their_variant_names() {
+        let json = serde_json::to_string(&ChatSection::DirectMessage).unwrap();
+        assert_eq!(json, "\"DirectMessage\"");
+        assert_eq!(serde_json::to_string(&ChatSection::Public).unwrap(), "\"Public\"");
+    }
+}
+
 /// A conversation as listed by `conversations.list` / `users.conversations`.
 #[derive(Debug, Clone, Serialize)]
 pub struct ChatInfo {
