@@ -89,3 +89,19 @@ describe("slFileToAttachment", () => {
     expect(a?.guid).not.toBe(b?.guid);
   });
 });
+
+describe("emoji shortcodes", () => {
+  it("converts a known shortcode to its character", () => {
+    expect(slackTextToPlain("ses imorrn :heart:", {})).toBe("ses imorrn ❤️");
+  });
+
+  it("leaves workspace-custom emoji alone, since they have no character", () => {
+    expect(slackTextToPlain("nice :aspace-logo:", {})).toBe("nice :aspace-logo:");
+  });
+
+  it("keeps shortcodes out of text the emoji policy would have to filter", () => {
+    // enforceEmojiPolicy strips emoji characters, not ":heart:" — so an
+    // unconverted shortcode slips past every emoji guardrail.
+    expect(slackTextToPlain("tack :heart:", {})).not.toContain(":heart:");
+  });
+});

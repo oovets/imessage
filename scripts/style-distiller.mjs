@@ -311,8 +311,31 @@ async function slackUserName(token, userId, names) {
  * Mirrors src/slack/mrkdwn.ts — duplicated because this script is plain Node
  * and cannot import the app's TypeScript.
  */
+/**
+ * Shortcode -> emoji, read out of the app's own table.
+ *
+ * The corpus must not contain ":heart:": the model would learn to write it
+ * literally, and enforceEmojiPolicy only strips emoji *characters* — so the
+ * shortcode would bypass every emoji guardrail. Parsed from emoji.ts rather
+ * than duplicated so the two can't drift; if parsing ever fails, shortcodes are
+ * simply left alone.
+ */
+const EMOJI_BY_NAME = (() => {
+  const map = new Map();
+  try {
+    const src = readFileSync(join(import.meta.dirname, "../src/lib/emoji.ts"), "utf8");
+    for (const m of src.matchAll(/\{\s*char:\s*"([^"]+)",\s*name:\s*"([^"]+)"/g)) {
+      map.set(m[2], m[1]);
+    }
+  } catch {
+    /* leave shortcodes as-is */
+  }
+  return map;
+})();
+
 function stripSlackMrkdwn(text, userNames = {}) {
   return text
+    .replace(/:([a-z0-9_+-]+):/g, (whole, name) => EMOJI_BY_NAME.get(name) ?? whole)
     .replace(/<@([UVW][A-Z0-9]+)(?:\|([^>]*))?>/g, (_m, id, label) => `@${label || userNames[id] || id}`)
     .replace(/<#(C[A-Z0-9]+)(?:\|([^>]*))?>/g, (_m, id, name) => `#${name || id}`)
     .replace(/<!([^>|]+)(?:\|([^>]*))?>/g, (_m, kind, label) => `@${label || kind.split("^")[0]}`)
