@@ -1,5 +1,5 @@
 import { useState, useRef, type KeyboardEvent } from "react";
-import { ArrowUp, Paperclip, X, Reply, Smile } from "lucide-react";
+import { ArrowUp, Paperclip, X, Reply, Smile, Sparkles } from "lucide-react";
 import { useAppStore, isTelegramChatGuid } from "@/store/useAppStore";
 import { getClient } from "@/api/clientFactory";
 import { tg } from "@/telegram/api";
@@ -48,6 +48,8 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
   const upsertMessage = useAppStore((s) => s.upsertMessage);
   const replaceMessage = useAppStore((s) => s.replaceMessage);
   const updateChatPreview = useAppStore((s) => s.updateChatPreview);
+  const aiDraft = useAppStore((s) => s.aiDrafts[chatGUID]);
+  const clearAiDraft = useAppStore((s) => s.clearAiDraft);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [attaching, setAttaching] = useState(false);
@@ -109,6 +111,7 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
   function send() {
     const trimmed = text.trim();
     if (!trimmed) return;
+    clearAiDraft(chatGUID);
 
     // Telegram: the core does its own optimistic-pending + reconcile and
     // drives the UI via tg:core-event, so we just fire the send and clear
@@ -196,6 +199,34 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
 
   return (
     <div className={cn("px-2 md:px-4 py-2.5", superlightMode ? "bg-background" : "border-t bg-background/80 backdrop-blur-xl")}>
+      {aiDraft && (
+        <div className={cn("mb-2 flex items-start gap-2 px-3 py-2", superlightMode ? "" : "border border-primary/30 rounded-lg bg-primary/5 animate-in fade-in slide-in-from-bottom-1 duration-150")}>
+          {!superlightMode && <Sparkles className="h-3.5 w-3.5 mt-0.5 text-primary shrink-0" />}
+          <div className="flex-1 min-w-0">
+            <p className="text-[11px] text-muted-foreground">AI suggestion — edit before sending</p>
+            <p className="text-xs whitespace-pre-wrap text-foreground/90">{aiDraft}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              handleChange(aiDraft);
+              clearAiDraft(chatGUID);
+              requestAnimationFrame(() => textareaRef.current?.focus());
+            }}
+            className="shrink-0 rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            Use
+          </button>
+          <button
+            type="button"
+            onClick={() => clearAiDraft(chatGUID)}
+            className={cn("h-6 w-6 flex items-center justify-center text-muted-foreground", !superlightMode && "rounded-full hover:bg-muted")}
+            aria-label="Dismiss AI suggestion"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
       {replyTarget && (
         <div className={cn("mb-2 flex items-start gap-2 px-3 py-2", superlightMode ? "" : "border rounded-lg bg-muted/40 animate-in fade-in slide-in-from-bottom-1 duration-150")}>
           {!superlightMode && <Reply className="h-3.5 w-3.5 mt-0.5 text-primary shrink-0" />}

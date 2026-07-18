@@ -274,7 +274,11 @@ interface AppState {
     /** Auto-replies in a row before going quiet until a manual message; 0 = no limit. */
     maxConsecutive: number;
   };
-  aiReplyChats: Record<string, true>;
+  // Per-chat AI mode: "draft" (suggestion lands in the composer, default) or
+  // "auto" (sends by itself). Legacy persisted `true` means "draft".
+  aiReplyChats: Record<string, "draft" | "auto" | true>;
+  // Transient AI suggestions per chat (not persisted).
+  aiDrafts: Record<string, string>;
   sidebarHidden: boolean;
   appearance: AppearanceSettings;
   linkPreviewsEnabled: boolean;
@@ -324,7 +328,9 @@ interface AppState {
   setShowTimestamps: (v: boolean) => void;
   setShowAvatars: (v: boolean) => void;
   setAiReplyConfig: (patch: Partial<AppState["aiReply"]>) => void;
-  toggleAiReplyChat: (guid: string) => void;
+  cycleAiReplyChat: (guid: string) => void;
+  setAiDraft: (guid: string, text: string) => void;
+  clearAiDraft: (guid: string) => void;
   setSidebarHidden: (v: boolean) => void;
   toggleSidebarHidden: () => void;
   setFontScale: (value: number) => void;
@@ -412,6 +418,7 @@ export const useAppStore = create<AppState>()(
         maxConsecutive: 10,
       },
       aiReplyChats: {},
+      aiDrafts: {},
       sidebarHidden: false,
       appearance: DEFAULT_APPEARANCE,
       linkPreviewsEnabled: true,
@@ -478,12 +485,24 @@ export const useAppStore = create<AppState>()(
       setShowTimestamps: (v) => set({ showTimestamps: v }),
       setShowAvatars: (v) => set({ showAvatars: v }),
       setAiReplyConfig: (patch) => set((s) => ({ aiReply: { ...s.aiReply, ...patch } })),
-      toggleAiReplyChat: (guid) =>
+      // off -> draft -> auto -> off (legacy `true` counts as draft)
+      cycleAiReplyChat: (guid) =>
         set((s) => {
           const next = { ...s.aiReplyChats };
-          if (next[guid]) delete next[guid];
-          else next[guid] = true;
+          const cur = next[guid] === true ? "draft" : next[guid];
+          if (!cur) next[guid] = "draft";
+          else if (cur === "draft") next[guid] = "auto";
+          else delete next[guid];
           return { aiReplyChats: next };
+        }),
+      setAiDraft: (guid, text) =>
+        set((s) => ({ aiDrafts: { ...s.aiDrafts, [guid]: text } })),
+      clearAiDraft: (guid) =>
+        set((s) => {
+          if (!(guid in s.aiDrafts)) return {};
+          const next = { ...s.aiDrafts };
+          delete next[guid];
+          return { aiDrafts: next };
         }),
       setSidebarHidden: (v) => set({ sidebarHidden: v }),
       toggleSidebarHidden: () => set((s) => ({ sidebarHidden: !s.sidebarHidden })),
@@ -829,3 +848,13 @@ export const useAppStore = create<AppState>()(
     }
   )
 );
+
+/** Normalized AI mode for a chat ("off" | "draft" | "auto"); legacy `true` = draft. */
+export function aiModeFor(
+  chats: Record<string, "draft" | "auto" | true>,
+  guid: string
+): "off" | "draft" | "auto" {
+  const v = chats[guid];
+  if (!v) return "off";
+  return v === true ? "draft" : v;
+}

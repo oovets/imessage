@@ -3,7 +3,7 @@ import { ArrowLeft, Bot, MessageCircleDashed, SplitSquareHorizontal, SplitSquare
 import { Button } from "@/components/ui/button";
 import { MessageList } from "@/components/MessageList";
 import { MessageInput } from "@/components/MessageInput";
-import { useAppStore, isTelegramChatGuid } from "@/store/useAppStore";
+import { useAppStore, isTelegramChatGuid, aiModeFor } from "@/store/useAppStore";
 import { getClient } from "@/api/clientFactory";
 import { getChatDisplayName, getChatInitials, formatMessageTime } from "@/types";
 import { tg } from "@/telegram/api";
@@ -41,8 +41,8 @@ export function ChatPane({ paneId, chatGUID, isActive, canClose, showMobileBack 
   const aiConfigured = useAppStore(
     (s) => s.aiReply.endpoint.trim().length > 0 && s.aiReply.model.trim().length > 0
   );
-  const aiEnabled = useAppStore((s) => (chatGUID ? !!s.aiReplyChats[chatGUID] : false));
-  const toggleAiReplyChat = useAppStore((s) => s.toggleAiReplyChat);
+  const aiMode = useAppStore((s) => (chatGUID ? aiModeFor(s.aiReplyChats, chatGUID) : "off"));
+  const cycleAiReplyChat = useAppStore((s) => s.cycleAiReplyChat);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const paneRef = useRef<HTMLDivElement>(null);
 
@@ -187,11 +187,19 @@ export function ChatPane({ paneId, chatGUID, isActive, canClose, showMobileBack 
               size="icon"
               className={cn(
                 "h-7 w-7",
-                aiEnabled ? "text-primary" : "text-muted-foreground"
+                aiMode === "off" && "text-muted-foreground",
+                aiMode === "draft" && "text-primary",
+                aiMode === "auto" && "text-amber-500"
               )}
-              onClick={() => chatGUID && toggleAiReplyChat(chatGUID)}
-              aria-label={aiEnabled ? "Disable AI auto-reply" : "Enable AI auto-reply"}
-              title={aiEnabled ? "AI auto-reply is ON for this chat" : "Enable AI auto-reply for this chat"}
+              onClick={() => chatGUID && cycleAiReplyChat(chatGUID)}
+              aria-label="Cycle AI reply mode"
+              title={
+                aiMode === "off"
+                  ? "AI replies off — click for draft mode (suggestions in the composer)"
+                  : aiMode === "draft"
+                    ? "AI draft mode: suggestions land in the composer — click for auto-send"
+                    : "AI auto-send is ON for this chat — click to turn off"
+              }
             >
               <Bot className="h-4 w-4" />
             </Button>

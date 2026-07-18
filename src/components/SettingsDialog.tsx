@@ -361,9 +361,10 @@ export function SettingsDialog(_props: SettingsDialogProps) {
               <div className="grid gap-2 rounded-md border p-3">
                 <Label>AI auto-reply</Label>
                 <p className="text-xs text-muted-foreground">
-                  An OpenAI-compatible endpoint (vLLM, Ollama, …) answers as you in chats where
-                  you enable the robot icon in the chat header. Replies are capped and cool down
-                  automatically.
+                  An OpenAI-compatible endpoint (vLLM, Ollama, …) writes replies as you in chats
+                  where you enable the robot icon in the chat header. One click = draft mode
+                  (suggestions land in the composer for you to edit and send); another click =
+                  auto-send. The limits below apply to auto-send only.
                 </p>
                 <div className="grid gap-2 sm:grid-cols-2">
                   <div className="grid gap-1">

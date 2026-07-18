@@ -10,7 +10,7 @@
 //     from the user, the chat goes quiet until the user writes something
 
 import { useEffect, useRef } from "react";
-import { useAppStore, isTelegramChatGuid } from "@/store/useAppStore";
+import { useAppStore, isTelegramChatGuid, aiModeFor } from "@/store/useAppStore";
 import { getClient } from "@/api/clientFactory";
 import { generateReply } from "@/lib/aiReply";
 import { preferredSendGuid } from "@/lib/chatThreadMerge";
@@ -47,16 +47,20 @@ export function useAiAutoReply() {
       st.timer = null;
       if (!s.aiReplyChats[guid]) return;
 
+      const mode = aiModeFor(s.aiReplyChats, guid);
       const msgs = s.messages[guid] ?? [];
       const newest = msgs[msgs.length - 1];
       if (!newest || newest.isFromMe || newest.guid === st.lastHandled) return;
       st.lastHandled = newest.guid;
 
-      // User-configurable guardrails (0 = that limit is off).
+      // Guardrails apply to auto-send only — a draft sends nothing, so a fresh
+      // suggestion per incoming message is exactly what we want.
       const cooldownMs = Math.max(0, s.aiReply.cooldownSeconds ?? 10) * 1000;
       const maxConsecutive = Math.max(0, s.aiReply.maxConsecutive ?? 10);
-      if (cooldownMs > 0 && Date.now() < st.cooldownUntil) return;
-      if (maxConsecutive > 0 && st.consecutive >= maxConsecutive) return;
+      if (mode === "auto") {
+        if (cooldownMs > 0 && Date.now() < st.cooldownUntil) return;
+        if (maxConsecutive > 0 && st.consecutive >= maxConsecutive) return;
+      }
 
       const chat = s.chats.find((c) => c.guid === guid);
       const name = chat ? getChatDisplayName(chat) : "chat";
@@ -73,7 +77,14 @@ export function useAiAutoReply() {
 
       // Re-check the toggle — it may have been turned off while generating.
       const now = useAppStore.getState();
-      if (!now.aiReplyChats[guid]) return;
+      const nowMode = aiModeFor(now.aiReplyChats, guid);
+      if (nowMode === "off") return;
+
+      // Draft mode (the default): put the suggestion in the composer and stop.
+      if (nowMode === "draft") {
+        now.setAiDraft(guid, text);
+        return;
+      }
 
       st.cooldownUntil = Date.now() + cooldownMs;
       st.consecutive += 1;
