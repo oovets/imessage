@@ -127,6 +127,32 @@ export class BlueBubblesClient {
     }
   }
 
+  /**
+   * Raw contact avatars from the server's macOS Contacts database (no Private
+   * API involved). Returns base64 image data per contact with every address
+   * (phones + emails) it should match; callers downscale and cache.
+   */
+  async getContactAvatarsRaw(): Promise<Array<{ addresses: string[]; avatar: string }>> {
+    const url = `${this.baseUrl}/api/v1/contact?${this.authParam()}&extraProperties=avatar`;
+    const res = await httpFetch(url);
+    if (!res.ok) return [];
+    const json = await res.json();
+    const contacts: Array<{
+      avatar?: string | null;
+      phoneNumbers?: Array<{ address?: string | null }>;
+      emails?: Array<{ address?: string | null }>;
+    }> = json?.data ?? [];
+    const out: Array<{ addresses: string[]; avatar: string }> = [];
+    for (const c of contacts) {
+      if (!c.avatar) continue;
+      const addresses = [...(c.phoneNumbers ?? []), ...(c.emails ?? [])]
+        .map((e) => e.address ?? "")
+        .filter(Boolean);
+      if (addresses.length > 0) out.push({ addresses, avatar: c.avatar });
+    }
+    return out;
+  }
+
   async getChats(): Promise<Chat[]> {
     const url = `${this.baseUrl}/api/v1/chat/query?${this.authParam()}`;
     let res: Response;

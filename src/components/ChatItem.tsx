@@ -3,6 +3,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 import { cn } from "@/lib/utils";
 import { useTelegramAvatar } from "@/telegram/useTelegramAvatar";
+import { useContactAvatar } from "@/lib/contactAvatars";
 import {
   decodeEscapedUnicode,
   getChatDisplayName,
@@ -27,7 +28,9 @@ function ChatItemComponent({ chat, isSelected, onSelect, compact = false }: Chat
   );
   const name = getChatDisplayName(chat);
   const initials = getChatInitials(chat);
-  const avatarUrl = useTelegramAvatar(chat.guid);
+  const tgAvatarUrl = useTelegramAvatar(chat.guid);
+  const contactAvatarUrl = useContactAvatar(chat);
+  const avatarUrl = tgAvatarUrl ?? contactAvatarUrl;
   const lastTime = chat.lastMessage?.dateCreated
     ? formatMessageTime(chat.lastMessage.dateCreated)
     : "";
