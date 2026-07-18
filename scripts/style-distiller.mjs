@@ -268,7 +268,9 @@ async function distill(samples, kind, name) {
             '{"summary":string,"humor":string,"sarcasm_0_10":number,"warmth_0_10":number,' +
             '"directness_0_10":number,"formality_0_10":number,"energy":string,' +
             '"signature_phrases":string[],"emoji_style":string,"language_notes":string,' +
-            '"do":string[],"dont":string[]}. Describe style only — never quote facts, names or events from the messages.',
+            '"do":string[],"dont":string[]}. Describe style only — never quote facts, names or events from the messages. ' +
+            'signature_phrases must be general expressions only — NEVER nicknames, pet names or terms of address ' +
+            '(those are relationship-specific and belong only in a relationship profile, and only when analyzing that relationship).',
         },
         { role: "user", content: `${prompt}\n\n${samples.map((s) => `- ${s}`).join("\n")}` },
       ],

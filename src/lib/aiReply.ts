@@ -29,7 +29,8 @@ const FEW_SHOT_EXAMPLES = 5;
 const HARD_RULES =
   "Hard rules: never copy any previous message verbatim; never invent facts, plans or " +
   "commitments; never mention being an AI or assistant; never explain yourself; reply in " +
-  "the same language as the conversation; output ONLY the reply text.";
+  "the same language as the conversation; never use nicknames, pet names or terms of address " +
+  "unless they appear in the examples for THIS contact; output ONLY the reply text.";
 
 function cardLines(card: StyleCard | null | undefined): string[] {
   if (!card) return [];
