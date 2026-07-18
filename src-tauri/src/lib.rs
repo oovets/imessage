@@ -327,6 +327,7 @@ pub fn run() {
             slack::sl_user_avatar,
             ai::ai_retrieve_context,
             ai::ai_conversation_state,
+            ai::ai_social_graph,
             media_actions::img_save,
             media_actions::img_open,
             media_actions::img_copy,

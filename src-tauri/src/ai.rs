@@ -268,3 +268,11 @@ pub async fn ai_conversation_state(app: tauri::AppHandle, chat_guid: String) -> 
     }
     None
 }
+
+/// The social graph (scripts/social-graph.mjs) as raw JSON.
+#[tauri::command]
+pub async fn ai_social_graph(app: tauri::AppHandle) -> Option<String> {
+    tokio::fs::read_to_string(ai_dir(&app)?.join("graph.json"))
+        .await
+        .ok()
+}

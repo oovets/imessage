@@ -20,11 +20,11 @@
 //   node scripts/conversation-indexer.mjs --search "padel" --chat pelle
 //                                                          # retrieval spot-check
 
-import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { collectIMessage, collectTelegram, collectSlack } from "./lib/collect.mjs";
 
 const arg = (n, d) => {
   const i = process.argv.indexOf(`--${n}`);
@@ -87,247 +87,8 @@ async function embed(inputs) {
   return (await res.json()).embeddings;
 }
 
-// ---------------------------------------------------------------- collection
-//
-// Same sources and credential paths as the style distiller, but keeping BOTH
-// sides of each conversation — retrieval needs what they said, not only what
-// I answered.
-
-function bbPassword() {
-  const flag = arg("password", null);
-  if (flag) return flag;
-  try {
-    const raw = execFileSync(
-      "security",
-      ["find-generic-password", "-s", "com.oovets.messages", "-a", "secure-config", "-w"],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }
-    ).trim();
-    const pw = JSON.parse(raw).password;
-    if (pw) return pw;
-  } catch { /* locked or denied */ }
-  try {
-    const db = join(homedir(), "Library/Application Support/bluebubbles-server/config.db");
-    const pw = execFileSync(
-      "sqlite3", ["-readonly", db, "SELECT value FROM config WHERE name='password';"],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }
-    ).trim();
-    if (pw) return pw;
-  } catch { /* no local server */ }
-  return null;
-}
-
-async function bbFetch(path) {
-  const res = await fetch(`${SERVER}${path}`);
-  if (!res.ok) throw new Error(`${path.split("?")[0]}: HTTP ${res.status}`);
-  return res.json();
-}
-
-/** address -> contact display name, same source the distiller uses. */
-async function bbContactNames(pw) {
-  try {
-    const json = await bbFetch(`/api/v1/contact?password=${pw}`);
-    const map = new Map();
-    for (const c of json?.data ?? []) {
-      const name = [c.firstName, c.lastName].filter(Boolean).join(" ") || c.displayName;
-      if (!name) continue;
-      for (const e of [...(c.phoneNumbers ?? []), ...(c.emails ?? [])]) {
-        const a = (e.address ?? "").trim();
-        if (!a) continue;
-        map.set(a.includes("@") ? a.toLowerCase() : a.replace(/\D/g, "").slice(-9), name);
-      }
-    }
-    return map;
-  } catch {
-    return new Map();
-  }
-}
-
-async function imessageConversations() {
-  const pw = bbPassword();
-  if (!pw) {
-    log("! iMessage: no BlueBubbles password found, skipping");
-    return [];
-  }
-  const names = await bbContactNames(pw);
-  let chats;
-  try {
-    const json = await fetch(`${SERVER}/api/v1/chat/query?password=${pw}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ limit: 1000 }),
-    }).then((r) => r.json());
-    chats = json?.data ?? [];
-  } catch (e) {
-    log(`! iMessage: ${e.message}`);
-    return [];
-  }
-
-  // Merge split iMessage/SMS threads per address, like the app and distiller.
-  const byAddress = new Map();
-  for (const c of chats) {
-    const m = /^(any|iMessage|SMS|RCS);-;(.+)$/.exec(c.guid ?? "");
-    if (!m) continue;
-    const entry = byAddress.get(m[2]) ?? { address: m[2], guids: [], name: null };
-    entry.guids.push(c.guid);
-    const p = (c.participants ?? [])[0];
-    const key = m[2].includes("@") ? m[2].toLowerCase() : m[2].replace(/\D/g, "").slice(-9);
-    entry.name ||= c.displayName
-      || (p && [p.firstName, p.lastName].filter(Boolean).join(" "))
-      || names.get(key)
-      || m[2];
-    byAddress.set(m[2], entry);
-  }
-
-  const out = [];
-  for (const e of byAddress.values()) {
-    const canonical = e.guids.find((g) => g.startsWith("iMessage;") || g.startsWith("any;")) ?? e.guids[0];
-    const messages = [];
-    for (const guid of e.guids) {
-      for (let offset = 0; offset < 5000; offset += 1000) {
-        let json;
-        try {
-          json = await bbFetch(
-            `/api/v1/chat/${encodeURIComponent(guid)}/message?password=${pw}&limit=1000&offset=${offset}`
-          );
-        } catch { break; }
-        const msgs = json?.data ?? [];
-        for (const m of msgs) {
-          if (m.associatedMessageGuid) continue; // tapbacks aren't conversation
-          const t = (m.text ?? "").trim();
-          if (!t) continue;
-          messages.push({ at: m.dateCreated ?? 0, fromMe: !!m.isFromMe, text: t });
-        }
-        if (msgs.length < 1000) break;
-      }
-    }
-    if (messages.length === 0) continue;
-    messages.sort((a, b) => a.at - b.at);
-    out.push({ guid: canonical, guids: e.guids, name: e.name, messages });
-  }
-  return out;
-}
-
-function telegramConversations() {
-  if (!existsSync(TG_DB)) return [];
-  const q = (sql) => {
-    try {
-      const raw = execFileSync("sqlite3", ["-json", "-readonly", TG_DB, sql], { encoding: "utf8" }).trim();
-      return raw ? JSON.parse(raw) : [];
-    } catch { return []; }
-  };
-  const cols = q("SELECT name FROM pragma_table_info('chats');").map((r) => r.name);
-  const titleCol = ["title", "name", "display_name"].find((c) => cols.includes(c));
-  const idCol = cols.includes("id") ? "id" : "chat_id";
-  const rows = q(`
-    SELECT m.account_id AS account_id, m.chat_id AS chat_id, m.text AS text,
-           m.date AS date, m.outgoing AS outgoing
-    FROM messages m WHERE m.text != '' ORDER BY m.date ASC;`);
-  const titles = new Map(
-    titleCol ? q(`SELECT ${idCol} AS id, ${titleCol} AS t FROM chats;`).map((r) => [String(r.id), r.t]) : []
-  );
-  const byChat = new Map();
-  for (const r of rows) {
-    const key = `tg:${r.account_id}:${r.chat_id}`;
-    const entry = byChat.get(key) ?? {
-      guid: key, guids: [key],
-      name: titles.get(String(r.chat_id)) || `Telegram ${r.chat_id}`,
-      messages: [],
-    };
-    entry.messages.push({ at: Date.parse(r.date) || 0, fromMe: !!r.outgoing, text: r.text.trim() });
-    byChat.set(key, entry);
-  }
-  return [...byChat.values()];
-}
-
-function slackWorkspaces() {
-  try {
-    const raw = execFileSync(
-      "security",
-      ["find-generic-password", "-s", "dev.stefan.TelegramGui", "-a", "secrets", "-w"],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }
-    );
-    for (const line of raw.split("\n")) {
-      const [name, b64] = line.split("\t");
-      if (name !== "slack-workspaces" || !b64) continue;
-      return JSON.parse(Buffer.from(b64.trim(), "base64").toString("utf8"));
-    }
-  } catch { /* fall through */ }
-  try {
-    const path = join(homedir(), ".slack_config.json");
-    if (existsSync(path)) return JSON.parse(readFileSync(path, "utf8")).workspaces;
-  } catch { /* none */ }
-  return [];
-}
-
-async function slackApi(token, method, params = {}) {
-  const url = new URL(`https://slack.com/api/${method}`);
-  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-  const json = await res.json();
-  if (!json.ok) throw new Error(`${method}: ${json.error}`);
-  return json;
-}
-
-async function slackConversations() {
-  const out = [];
-  for (const ws of slackWorkspaces()) {
-    if (!ws.token) continue;
-    let me, userNames = {};
-    try {
-      me = (await slackApi(ws.token, "auth.test")).user_id;
-      let cursor;
-      do {
-        const res = await slackApi(ws.token, "users.list", { limit: 200, ...(cursor ? { cursor } : {}) });
-        for (const u of res.members ?? []) {
-          userNames[u.id] = u.profile?.display_name?.trim() || u.real_name?.trim() || u.name || u.id;
-        }
-        cursor = res.response_metadata?.next_cursor || "";
-      } while (cursor);
-    } catch (e) {
-      log(`! slack ${ws.name}: ${e.message}`);
-      continue;
-    }
-    let channels;
-    try {
-      channels = (await slackApi(ws.token, "users.conversations", {
-        types: "public_channel,private_channel,im,mpim",
-        exclude_archived: true, limit: 200,
-      })).channels ?? [];
-    } catch (e) {
-      log(`! slack ${ws.name} conversations: ${e.message}`);
-      continue;
-    }
-    const wsId = ws.id ?? ws.name;
-    for (const ch of channels) {
-      try {
-        const res = await slackApi(ws.token, "conversations.history", { channel: ch.id, limit: 400 });
-        const messages = [];
-        for (const m of res.messages ?? []) {
-          if (m.subtype && m.subtype !== "thread_broadcast") continue;
-          const text = (m.text ?? "")
-            .replace(/<@([UVW][A-Z0-9]+)(?:\|([^>]*))?>/g, (_x, id, l) => `@${l || userNames[id] || id}`)
-            .replace(/<#(C[A-Z0-9]+)(?:\|([^>]*))?>/g, (_x, id, n) => `#${n || id}`)
-            .replace(/<((?:https?|mailto):[^>|]+)(?:\|([^>]*))?>/g, (_x, u, l) => l || u)
-            .trim();
-          if (!text) continue;
-          messages.push({
-            at: Math.round(Number.parseFloat(m.ts) * 1000),
-            fromMe: m.user === me,
-            text,
-            who: m.user ? userNames[m.user] : undefined,
-          });
-        }
-        if (messages.length === 0) continue;
-        messages.sort((a, b) => a.at - b.at);
-        const name = ch.is_im
-          ? (userNames[ch.user] ?? ch.id)
-          : `#${ch.name ?? ch.id}`;
-        out.push({ guid: `sl:${wsId}:${ch.id}`, guids: [`sl:${wsId}:${ch.id}`], name, messages });
-      } catch { /* not_in_channel etc */ }
-    }
-  }
-  return out;
-}
+// Collection lives in lib/collect.mjs — shared with social-graph.mjs so the
+// credential lookups, thread merging and Slack mrkdwn handling exist once.
 
 // ---------------------------------------------------------------- episodes
 
@@ -405,9 +166,9 @@ async function main() {
   mkdirSync(OUT, { recursive: true });
   log("collecting conversations (both sides)…");
   const convs = [
-    ...(await imessageConversations()),
-    ...telegramConversations(),
-    ...(await slackConversations()),
+    ...(await collectIMessage({ server: SERVER, password: arg("password", null), log })),
+    ...collectTelegram(),
+    ...(await collectSlack({ log })),
   ]
     .filter((c) => c.messages.length >= MIN_MSGS)
     .sort((a, b) => b.messages.length - a.messages.length)
@@ -460,11 +221,24 @@ async function main() {
     log(`  ${conv.name}: ${out.length} episoder → ${file}`);
   }
 
+  // MERGE with the existing index, never replace it. A partial run
+  // (--max-conversations, --min-messages, a crash) would otherwise silently
+  // shrink the index to whatever this run happened to touch, and every
+  // consumer — retrieval, state, the social graph — would quietly lose
+  // conversations whose embedding files are still sitting right there.
+  const priorIndex = existsSync(join(OUT, "index.json"))
+    ? (JSON.parse(readFileSync(join(OUT, "index.json"), "utf8")).conversations ?? [])
+    : [];
+  const merged = new Map(priorIndex.map((c) => [c.guid, c]));
+  for (const entry of indexEntries) merged.set(entry.guid, entry);
+  // Drop entries whose data file has since been removed.
+  const conversations = [...merged.values()].filter((c) => existsSync(join(OUT, c.file)));
+
   writeFileSync(
     join(OUT, "index.json"),
-    JSON.stringify({ model: MODEL, updatedAt: Date.now(), conversations: indexEntries }, null, 2)
+    JSON.stringify({ model: MODEL, updatedAt: Date.now(), conversations }, null, 2)
   );
-  log(`done — ${embedded} embedded, ${reused} reused, ${indexEntries.length} conversations`);
+  log(`done — ${embedded} embedded, ${reused} reused, ${indexEntries.length} this run, ${conversations.length} indexed`);
 }
 
 await main();
