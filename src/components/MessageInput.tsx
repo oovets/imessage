@@ -6,6 +6,7 @@ import { tg } from "@/telegram/api";
 import { parseTgChatGuid } from "@/telegram/adapters";
 import { cn } from "@/lib/utils";
 import { autoConvertEmoticons } from "@/lib/emoticons";
+import { preferredSendGuid } from "@/lib/chatThreadMerge";
 import type { Message } from "@/types";
 import { decodeEscapedUnicode } from "@/types";
 import { EmojiSuggestions } from "@/components/EmojiSuggestions";
@@ -64,7 +65,7 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
         setText("");
       } else {
         await getClient(serverUrl, password).sendAttachment(
-          chatGUID,
+          preferredSendGuid(chatGUID),
           file,
           file.name || "upload",
         );
@@ -147,7 +148,9 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
     void (async () => {
       try {
         const client = getClient(serverUrl, password);
-        await client.sendMessage(chatGUID, trimmed, replyGuid, optimistic.tempGuid);
+        // Merged iMessage/SMS conversation: send on the thread the contact
+        // last used, so the reply goes out over the right service.
+        await client.sendMessage(preferredSendGuid(chatGUID), trimmed, replyGuid, optimistic.tempGuid);
         replaceMessage(chatGUID, optimistic.guid, { ...optimistic, pending: false });
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);

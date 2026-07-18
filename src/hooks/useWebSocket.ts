@@ -5,6 +5,7 @@ import { notifyIncomingMessage } from "@/lib/desktopNotifications";
 import { getChatDisplayName } from "@/types";
 import { openSocket, type SocketHandle } from "@/lib/wsTransport";
 import { getClient } from "@/api/clientFactory";
+import { canonicalChatGuid, notePreferredSendGuid } from "@/lib/chatThreadMerge";
 
 // U+FFFC is the object-replacement char iMessage uses as the stand-in "body" of
 // an attachment message, so strip it before deciding a message is bodyless.
@@ -121,6 +122,17 @@ export function useWebSocket() {
           if (type === "new-message" || type === "updated-message") {
             const m = extractMessage(data);
             if (m) {
+              // Split iMessage/SMS threads are merged into one conversation;
+              // events arrive tagged with the underlying thread's guid. Remap
+              // to the canonical guid (and remember which service the contact
+              // used, so replies go out the same way).
+              if (m.chatGUID) {
+                const canonical = canonicalChatGuid(m.chatGUID);
+                if (canonical !== m.chatGUID) {
+                  notePreferredSendGuid(m.chatGUID);
+                  m.chatGUID = canonical;
+                }
+              }
               upsertMessage(m);
               // Socket events drop attachment data, so an attachment-only
               // message arrives empty and would render as nothing. Backfill it
@@ -150,7 +162,8 @@ export function useWebSocket() {
             }
           } else if (type === "typing-indicator") {
             const d = (data ?? {}) as { guid?: string; display?: boolean };
-            if (typeof d.guid === "string") setTyping(d.guid, d.display === true);
+            if (typeof d.guid === "string")
+              setTyping(canonicalChatGuid(d.guid), d.display === true);
           }
         } catch {}
       }
