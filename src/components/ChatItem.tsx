@@ -23,6 +23,7 @@ interface ChatItemProps {
 function ChatItemComponent({ chat, isSelected, onSelect, compact = false }: ChatItemProps) {
   const onClick = () => onSelect(chat.guid);
   const superlightMode = useAppStore((s) => s.superlightMode);
+  const showAvatars = useAppStore((s) => s.showAvatars);
   const isTyping = useAppStore(
     (s) => (s.typingChats[chat.guid] ?? 0) > Date.now()
   );
@@ -72,7 +73,12 @@ function ChatItemComponent({ chat, isSelected, onSelect, compact = false }: Chat
       aria-pressed={isSelected}
       className={cn(
         "w-full flex items-center gap-3 pl-5 pr-4 py-2.5 text-left relative active:bg-accent/80",
-        superlightMode ? "hover:bg-muted/30" : "transition-[background-color,transform] duration-150 ease-out hover:bg-accent/60 active:scale-[0.99] after:absolute after:left-[4.5rem] after:right-4 after:bottom-0 after:h-px after:bg-border/70",
+        superlightMode
+          ? "hover:bg-muted/30"
+          : cn(
+              "transition-[background-color,transform] duration-150 ease-out hover:bg-accent/60 active:scale-[0.99] after:absolute after:right-4 after:bottom-0 after:h-px after:bg-border/70",
+              showAvatars ? "after:left-[4.5rem]" : "after:left-5"
+            ),
         isSelected && (superlightMode ? "bg-muted/40" : "bg-accent")
       )}
     >
@@ -85,7 +91,9 @@ function ChatItemComponent({ chat, isSelected, onSelect, compact = false }: Chat
           aria-label={`${chat.unreadCount} unread`}
         />
       )}
-      {!superlightMode && (
+      {/* Avatars off = text only: no circle, no reserved space. (The compact
+          icon-only sidebar keeps its circle — it's the whole row there.) */}
+      {!superlightMode && showAvatars && (
         <Avatar className="h-10 w-10 shrink-0">
           {avatarUrl && <AvatarImage src={avatarUrl} alt={name} />}
           <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">

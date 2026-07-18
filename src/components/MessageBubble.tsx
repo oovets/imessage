@@ -163,6 +163,7 @@ export function MessageBubble({
   const serverUrl = useAppStore((s) => s.serverUrl);
   const password = useAppStore((s) => s.password);
   const superlightMode = useAppStore((s) => s.superlightMode);
+  const showAvatars = useAppStore((s) => s.showAvatars);
   const linkPreviewsEnabled = useAppStore((s) => s.linkPreviewsEnabled);
   const linkPreviewCache = useAppStore((s) => s.linkPreviewCache);
   const setLinkPreview = useAppStore((s) => s.setLinkPreview);
@@ -272,7 +273,9 @@ export function MessageBubble({
         )}
 
         <div className={cn(superlightMode ? "w-full" : "flex items-end gap-2 w-full", isMe && "justify-end")}>
-          {!isMe && !superlightMode && (
+          {/* Avatars off = text only: neither the circle nor its reserved
+              column renders, so bubbles sit flush left. */}
+          {!isMe && !superlightMode && showAvatars && (
             isLastInGroup ? (
               senderAvatar ? (
                 <img

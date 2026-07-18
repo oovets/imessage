@@ -140,9 +140,6 @@ export function OnboardingWizard() {
       });
       setCheck(result);
       if (result.canReadDb) {
-        // The visible first run granted the Local Network prompt; now hide the
-        // server for good. Best-effort — don't block completion on it.
-        await invoke("bb_go_headless", { port: portNum, log: logChannel() }).catch(() => {});
         setPhase("done");
       }
     } catch (e) {

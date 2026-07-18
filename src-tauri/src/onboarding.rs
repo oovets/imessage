@@ -307,6 +307,9 @@ fn configure_blocking(
     seed(db_s, "socket_port", &port.to_string())?;
     seed(db_s, "tutorial_is_done", "1")?;
     seed(db_s, "check_for_updates", "0")?;
+    // Electron GPU acceleration is pointless for a background server and is
+    // flaky in VMs — render on the CPU.
+    seed(db_s, "disable_gpu", "1")?;
     // Serve on localhost/LAN only — no Cloudflare (or other) tunnel, so the demo
     // server is never exposed to the internet. The client connects via
     // http://localhost:<port>. (BlueBubbles ProxyServices: "lan-url".)
@@ -458,30 +461,6 @@ fn start_and_check_blocking(password: String, port: u16, log: Log) -> ServerChec
     }
 }
 
-/// After a successful, visible first run (so the macOS Local Network prompt was
-/// granted), seed headless + minimized + hidden dock icon so the server stays
-/// out of the way from its NEXT launch on. Deliberately no restart here: the
-/// server just came up verified, and every restart is another chance for it to
-/// come back not listening. The visible window this one time is harmless.
-fn go_headless_blocking(_port: u16, log: Log) -> Result<(), String> {
-    let db = config_db_path()?;
-    let db_s = path_str(&db)?;
-    seed(db_s, "headless", "1")?;
-    seed(db_s, "start_minimized", "1")?;
-    seed(db_s, "hide_dock_icon", "1")?;
-    logln(
-        &log,
-        "Server set to start hidden from its next launch (leaving it running now — keep it open).",
-    );
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn bb_go_headless(port: u16, log: Log) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || go_headless_blocking(port, log))
-        .await
-        .map_err(|e| format!("go-headless task failed: {e}"))?
-}
 
 #[tauri::command]
 pub async fn bb_start_and_check(password: String, port: u16, log: Log) -> ServerCheck {

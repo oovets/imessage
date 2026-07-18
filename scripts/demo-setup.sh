@@ -227,6 +227,7 @@ seed_config socket_port "$PORT"
 seed_config tutorial_is_done "1"
 seed_config check_for_updates "0"
 seed_config proxy_service "lan-url"   # localhost/LAN only — no Cloudflare tunnel
+seed_config disable_gpu "1"           # CPU rendering — GPU accel is flaky in VMs
 seed_config auto_caffeinate "1"
 seed_config start_minimized "1"
 seed_config auto_start "$SET_LOGIN"

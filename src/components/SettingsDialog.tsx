@@ -326,7 +326,7 @@ export function SettingsDialog(_props: SettingsDialogProps) {
                     onChange={(e) => setShowAvatars(e.target.checked)}
                     className="h-4 w-4"
                   />
-                  Show profile photos (off = initials only)
+                  Show avatars (off = text only, no circles)
                 </label>
               </div>
               <div className="grid gap-2">
