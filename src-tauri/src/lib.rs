@@ -351,6 +351,11 @@ pub fn run() {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
                         .level(log::LevelFilter::Info)
+                        // grammers logs one INFO line per FLOOD_WAIT retry.
+                        // That's Telegram's normal 1s throttle on media-fetch
+                        // bursts, handled correctly by sleeping — a line per
+                        // retry is noise. Real problems there are WARN+.
+                        .level_for("grammers_client::client::net", log::LevelFilter::Warn)
                         .build(),
                 )?;
             }
