@@ -43,14 +43,46 @@ const TG_DB = join(homedir(), "Library/Application Support/dev.stefan.TelegramGu
 const log = (msg) => console.log(`[distiller] ${msg}`);
 
 // ---------------------------------------------------------------- credentials
+/**
+ * The server password, tried in order: --password, the app's keychain entry,
+ * then the BlueBubbles server's own config database. The keychain is the
+ * natural source but is denied to non-interactive processes, so scheduled
+ * runs (§19) rely on the last one.
+ */
 function bbPassword() {
   const flag = arg("password", null);
   if (flag) return flag;
-  // Keychain read can be denied in some process contexts; --password overrides.
-  const raw = execFileSync("security", [
-    "find-generic-password", "-s", "com.oovets.messages", "-a", "secure-config", "-w",
-  ], { encoding: "utf8" }).trim();
-  return JSON.parse(raw).password;
+
+  try {
+    const raw = execFileSync(
+      "security",
+      ["find-generic-password", "-s", "com.oovets.messages", "-a", "secure-config", "-w"],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }
+    ).trim();
+    const pw = JSON.parse(raw).password;
+    if (pw) return pw;
+  } catch {
+    /* locked or denied — fall through */
+  }
+
+  try {
+    const db = join(
+      homedir(),
+      "Library/Application Support/bluebubbles-server/config.db"
+    );
+    const pw = execFileSync(
+      "sqlite3",
+      ["-readonly", db, "SELECT value FROM config WHERE name='password';"],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }
+    ).trim();
+    if (pw) return pw;
+  } catch {
+    /* no local server */
+  }
+
+  throw new Error(
+    "Could not determine the BlueBubbles password — pass --password, or run where the server lives."
+  );
 }
 
 // ---------------------------------------------------------------- collection

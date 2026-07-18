@@ -286,6 +286,18 @@ interface AppState {
     maxConsecutive: number;
     /** Score each draft and rewrite once if it doesn't sound like the user (§6). */
     selfCritique: boolean;
+    /**
+     * Delivery dials (§10), as offsets from the distilled profile rather than
+     * absolute levels — 0 means "however I normally am", so turning one up
+     * adapts the delivery without overwriting the personality.
+     */
+    tone: {
+      humor: number;
+      sarcasm: number;
+      warmth: number;
+      energy: number;
+      formality: number;
+    };
   };
   // Per-chat AI mode: "draft" (suggestion lands in the composer, default) or
   // "auto" (sends by itself). Legacy persisted `true` means "draft".
@@ -478,6 +490,7 @@ export const useAppStore = create<AppState>()(
         cooldownSeconds: 10,
         maxConsecutive: 10,
         selfCritique: true,
+        tone: { humor: 0, sarcasm: 0, warmth: 0, energy: 0, formality: 0 },
       },
       aiReplyChats: {},
       aiDrafts: {},

@@ -452,6 +452,46 @@ export function SettingsDialog(_props: SettingsDialogProps) {
                   />
                   Self-critique — score each draft and rewrite once if it sounds off
                 </label>
+                <div className="grid gap-1.5 rounded-md border p-2">
+                  <p className="text-xs font-medium">Delivery</p>
+                  <p className="text-[11px] text-muted-foreground -mt-1">
+                    Offsets from your own style — centre means “however I normally am”.
+                  </p>
+                  {(
+                    [
+                      ["humor", "serious", "playful"],
+                      ["sarcasm", "sincere", "sarcastic"],
+                      ["warmth", "cool", "warm"],
+                      ["energy", "calm", "energetic"],
+                      ["formality", "casual", "formal"],
+                    ] as const
+                  ).map(([key, low, high]) => (
+                    <div key={key} className="flex items-center gap-2">
+                      <span className="w-16 shrink-0 text-[11px] text-muted-foreground">{low}</span>
+                      <input
+                        type="range"
+                        min={-2}
+                        max={2}
+                        step={1}
+                        className="flex-1"
+                        value={aiReply.tone?.[key] ?? 0}
+                        onChange={(e) =>
+                          setAiReplyConfig({
+                            tone: {
+                              ...(aiReply.tone ?? {
+                                humor: 0, sarcasm: 0, warmth: 0, energy: 0, formality: 0,
+                              }),
+                              [key]: parseInt(e.target.value, 10),
+                            },
+                          })
+                        }
+                      />
+                      <span className="w-16 shrink-0 text-right text-[11px] text-muted-foreground">
+                        {high}
+                      </span>
+                    </div>
+                  ))}
+                </div>
                 <p className="text-[11px] text-muted-foreground">
                   Self-critique roughly doubles the wait for a reply. The cap resets whenever you
                   send something yourself. Setting both to 0 removes

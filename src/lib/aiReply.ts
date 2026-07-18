@@ -19,6 +19,7 @@ export interface AiReplyConfig {
   model: string;
   systemPrompt: string;
   selfCritique?: boolean;
+  tone?: { humor: number; sarcasm: number; warmth: number; energy: number; formality: number };
 }
 
 const MAX_CONTEXT_MESSAGES = 20;
@@ -134,12 +135,34 @@ function emojiDirective(profiles: AiProfiles | null): string {
   return "EMOJI: write this reply with NO emoji at all.";
 }
 
+/**
+ * Turn the tone dials into instructions (§10). Offsets, not absolutes: a dial
+ * at 0 says nothing at all, so the distilled personality carries as-is and
+ * only deliberate deviations reach the model.
+ */
+function toneLines(tone: AiReplyConfig["tone"]): string[] {
+  if (!tone) return [];
+  const label = (n: number, less: string, more: string) =>
+    n === 0 ? null : `${Math.abs(n) > 1 ? "much " : ""}${n > 0 ? more : less}`;
+  const parts = [
+    label(tone.humor, "more serious", "more playful"),
+    label(tone.sarcasm, "less sarcastic", "more sarcastic"),
+    label(tone.warmth, "cooler", "warmer"),
+    label(tone.energy, "calmer", "more energetic"),
+    label(tone.formality, "more casual", "more formal"),
+  ].filter(Boolean);
+  return parts.length
+    ? [`Right now, be ${parts.join(", ")} than usual — same person, different mood.`]
+    : [];
+}
+
 /** Layered system prompt (§5): RULES / STYLE / RELATIONSHIP / EXAMPLES. Exported for the simulator's prompt inspector. */
 export function buildSystemPrompt(
   userPrompt: string,
   chatName: string,
   profiles: AiProfiles | null,
-  lang: "sv" | "en" | "unknown" = "unknown"
+  lang: "sv" | "en" | "unknown" = "unknown",
+  tone?: AiReplyConfig["tone"]
 ): string {
   const sections: string[] = [];
   sections.push(`${userPrompt.trim()}\n${HARD_RULES}`);
@@ -189,6 +212,9 @@ export function buildSystemPrompt(
         "Keep my rhythm, message length, casing and bluntness; translate the attitude, not the words."
     );
   }
+
+  const dials = toneLines(tone);
+  if (dials.length) sections.push(dials[0]);
 
   const emoji = emojiDirective(profiles);
   if (emoji) sections.push(emoji);
@@ -318,7 +344,8 @@ export async function generateReply(
     cfg.systemPrompt,
     chatName,
     profiles,
-    conversationLang(history)
+    conversationLang(history),
+    cfg.tone
   );
   const context = history
     .filter((m) => (m.text ?? "").trim().length > 0)
