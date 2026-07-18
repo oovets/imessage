@@ -19,8 +19,8 @@ import { parseTgChatGuid } from "@/telegram/adapters";
 import { getChatDisplayName, type Message } from "@/types";
 
 const DEBOUNCE_MS = 4_000;
-const COOLDOWN_MS = 30_000;
-const MAX_CONSECUTIVE = 5;
+const COOLDOWN_MS = 10_000;
+const MAX_CONSECUTIVE = 10;
 
 interface ChatState {
   lastHandled: string | null;
