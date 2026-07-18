@@ -409,9 +409,11 @@ export const useAppStore = create<AppState>()(
       showTimestamps: true,
       showAvatars: true,
       aiReply: {
-        endpoint: "",
+        // Local-dev defaults (own GPU box) — harmless elsewhere: if the
+        // endpoint isn't reachable the AI features just stay silent.
+        endpoint: "http://gpulab:11434/v1",
         apiKey: "",
-        model: "",
+        model: "gemma3:12b",
         systemPrompt:
           "You are replying as me in a personal chat. Match my tone and language, keep replies short and natural, never mention being an AI.",
         cooldownSeconds: 10,
