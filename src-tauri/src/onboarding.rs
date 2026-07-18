@@ -281,6 +281,10 @@ fn configure_blocking(
     seed(db_s, "socket_port", &port.to_string())?;
     seed(db_s, "tutorial_is_done", "1")?;
     seed(db_s, "check_for_updates", "0")?;
+    // Serve on localhost/LAN only — no Cloudflare (or other) tunnel, so the demo
+    // server is never exposed to the internet. The client connects via
+    // http://localhost:<port>. (BlueBubbles ProxyServices: "lan-url".)
+    seed(db_s, "proxy_service", "lan-url")?;
     seed(db_s, "auto_caffeinate", "1")?;
     seed(db_s, "auto_start", if login { "1" } else { "0" })?;
     seed(db_s, "headless", if headless { "1" } else { "0" })?;

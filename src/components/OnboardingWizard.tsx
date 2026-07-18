@@ -291,9 +291,14 @@ export function OnboardingWizard() {
         {/* --- auto: permissions --- */}
         {mode === "auto" && phase === "permissions" && (
           <div>
-            <h2 className="text-base font-semibold">Grant three macOS permissions</h2>
+            <h2 className="text-base font-semibold">Grant macOS permissions</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              macOS requires these by hand. Open each pane, enable <strong>BlueBubbles</strong>, then verify.
+              Open each pane and enable <strong>BlueBubbles</strong>. Full Disk Access is the one
+              verify needs; Automation appears on its own the first time the server sends.
+            </p>
+            <p className="mt-2 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+              When the server starts, macOS may ask to let BlueBubbles find devices on your local
+              network — click <strong>Allow</strong>. Without it the server can't listen.
             </p>
             {reusedInstall && (
               <p className="mt-2 text-xs text-muted-foreground">
