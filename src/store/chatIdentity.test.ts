@@ -113,6 +113,7 @@ describe("setChatsForSource", () => {
     activityAt: [{ activityAt: 9_999 }],
     avatarUrl: [{ avatarUrl: "https://example.test/a.png" }],
     slackSection: [{ slackSection: "Private" }],
+    mutedUntil: [{ mutedUntil: 9_999 }],
     participants: [{ participants: [{ address: "+1", firstName: "Ann" }] }],
     lastMessage: [
       { lastMessage: message("tg:1:2:last", 2_000, { text: "c" }) },
@@ -156,6 +157,25 @@ describe("setChatsForSource", () => {
     const updated = { ...fresh(stored), unreadCount: 0 };
     useAppStore.getState().upsertChat(updated);
     expect(useAppStore.getState().chats[0]).toBe(updated);
+  });
+
+  it("sees a mute lifted or moved", () => {
+    // Unmuted elsewhere: the reload drops mutedUntil. A read chat is reused
+    // whenever it compares equal, so the fresh object must win here or the
+    // chat would stay out of "Waiting on you" once a message arrives.
+    const muted = chat("tg:1:1", { activityAt: 3_000, mutedUntil: 5_000 });
+    useAppStore.getState().setTelegramChats([muted]);
+    const unmuted = fresh(muted);
+    delete unmuted.mutedUntil;
+    useAppStore.getState().setTelegramChats([unmuted]);
+    expect(useAppStore.getState().chats[0]).toBe(unmuted);
+
+    const remuted = { ...fresh(unmuted), mutedUntil: 6_000 };
+    useAppStore.getState().upsertChat(remuted);
+    expect(useAppStore.getState().chats[0]).toBe(remuted);
+    const moved = { ...fresh(remuted), mutedUntil: 7_000 };
+    useAppStore.getState().upsertChat(moved);
+    expect(useAppStore.getState().chats[0]).toBe(moved);
   });
 
   it("still re-sorts when only the order changed", () => {

@@ -9,7 +9,7 @@ use grammers_client::message::{InputMessage, InputReactions};
 use grammers_client::tl;
 use grammers_session::Session as _;
 use grammers_session::types::{PeerId, PeerKind, PeerRef};
-use shared::model::{Account, AccountId, Chat, ChatId, Message, MessageId};
+use shared::model::{Account, AccountId, Chat, ChatId, Message, MessageId, MuteDefaults};
 
 use crate::mapping;
 use crate::{TelegramClient, TgError, TgResult};
@@ -18,6 +18,9 @@ use crate::{TelegramClient, TgError, TgResult};
 pub struct DialogEntry {
     pub chat: Chat,
     pub last_message: Option<Message>,
+    /// The chat's own raw `mute_until` (`None` = follows the account
+    /// default), for persisting; `chat.muted_until` is already resolved.
+    pub mute_until: Option<i32>,
 }
 
 /// Byte-level progress callback for media transfers.
@@ -41,21 +44,47 @@ impl TelegramClient {
         Ok(mapping::map_account(&user))
     }
 
-    /// Fetch up to `limit` dialogs (chat list), most recent first.
+    /// The account's notification defaults per chat kind: three
+    /// `account.getNotifySettings` calls, issued concurrently.
+    pub async fn mute_defaults(&self) -> TgResult<MuteDefaults> {
+        use tl::enums::InputNotifyPeer;
+        let client = self.raw();
+        let get = |peer| tl::functions::account::GetNotifySettings { peer };
+        let (users, chats, broadcasts) = (
+            get(InputNotifyPeer::InputNotifyUsers),
+            get(InputNotifyPeer::InputNotifyChats),
+            get(InputNotifyPeer::InputNotifyBroadcasts),
+        );
+        let (private, group, channel) = tokio::try_join!(
+            client.invoke(&users),
+            client.invoke(&chats),
+            client.invoke(&broadcasts),
+        )?;
+        Ok(MuteDefaults {
+            private: mapping::raw_mute_until(&private),
+            group: mapping::raw_mute_until(&group),
+            channel: mapping::raw_mute_until(&channel),
+        })
+    }
+
+    /// Fetch up to `limit` dialogs (chat list), most recent first. Each
+    /// chat's mute is resolved against `defaults` (see [`Self::mute_defaults`]).
     pub async fn list_dialogs(
         &self,
         account_id: AccountId,
         limit: usize,
+        defaults: &MuteDefaults,
     ) -> TgResult<Vec<DialogEntry>> {
         let mut iter = self.raw().iter_dialogs();
         let mut entries = Vec::new();
         while let Some(dialog) = iter.next().await? {
-            if let Some(chat) = mapping::map_dialog(account_id, &dialog) {
+            if let Some(chat) = mapping::map_dialog(account_id, &dialog, defaults) {
                 entries.push(DialogEntry {
                     last_message: dialog
                         .last_message
                         .as_ref()
                         .map(|m| mapping::map_message(account_id, m)),
+                    mute_until: mapping::dialog_mute_until(&dialog),
                     chat,
                 });
             }

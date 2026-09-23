@@ -25,6 +25,9 @@ export interface TgChat {
   last_message_at: string | null;
   last_message_preview: string | null;
   avatar_key: string | null;
+  /** RFC 3339 instant the chat is muted until in Telegram (its own setting,
+   *  else the account default for its kind); null when it isn't muted. */
+  muted_until: string | null;
 }
 
 export type TgMedia =

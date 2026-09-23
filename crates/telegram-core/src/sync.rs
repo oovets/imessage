@@ -2,7 +2,8 @@
 //!
 //! One instance of [`run`] lives for each connected account. It:
 //!
-//! 1. announces `Connecting` → performs the initial dialog sync →
+//! 1. announces `Connecting` → performs the initial dialog sync (the
+//!    account's notification defaults, then the dialogs) →
 //!    `Synchronizing` → `UpToDate`;
 //! 2. consumes the ordered update stream, persisting every fact to the
 //!    database **before** broadcasting the matching [`CoreEvent`]
@@ -85,8 +86,29 @@ async fn sync_cycle(
         account_id,
         state: SyncState::Synchronizing,
     });
+    // Notification defaults first: chats without a mute of their own follow
+    // them. One fetch per sync, not per dialog; if it fails, the last known
+    // defaults still resolve the chat list.
+    let defaults = match client.mute_defaults().await {
+        Ok(defaults) => {
+            if let Err(e) = db.chats().set_mute_defaults(account_id, &defaults).await {
+                tracing::error!("failed to persist mute defaults: {e}");
+            }
+            defaults
+        }
+        Err(e) => {
+            if e.is_auth_revoked() {
+                return CycleEnd::LoggedOut;
+            }
+            tracing::warn!(account_id, "mute defaults unavailable, using stored: {e}");
+            db.chats()
+                .mute_defaults(account_id)
+                .await
+                .unwrap_or_default()
+        }
+    };
     match client
-        .list_dialogs(account_id, config.sync.dialogs_page_size)
+        .list_dialogs(account_id, config.sync.dialogs_page_size, &defaults)
         .await
     {
         Ok(entries) => {
@@ -94,6 +116,13 @@ async fn sync_cycle(
                 if let Err(e) = db.chats().upsert(&entry.chat).await {
                     tracing::error!("failed to persist chat: {e}");
                     continue;
+                }
+                if let Err(e) = db
+                    .chats()
+                    .set_mute_until(account_id, entry.chat.id, entry.mute_until)
+                    .await
+                {
+                    tracing::error!("failed to persist chat mute: {e}");
                 }
                 if let Some(message) = &entry.last_message {
                     if let Err(e) = db.messages().upsert(message).await {
@@ -252,6 +281,46 @@ async fn apply_event(account_id: AccountId, db: &Database, bus: &EventBus, event
                 presence,
             });
         }
+        ApiEvent::ChatMuteChanged {
+            chat_id,
+            mute_until,
+        } => {
+            if let Err(e) = db
+                .chats()
+                .set_mute_until(account_id, chat_id, mute_until)
+                .await
+            {
+                tracing::error!("persist chat mute failed: {e}");
+                return;
+            }
+            // Unknown chats (not in the synced dialog page) have no row.
+            if let Ok(Some(chat)) = db.chats().get(account_id, chat_id).await {
+                bus.publish(CoreEvent::ChatUpdated { chat });
+            }
+        }
+        ApiEvent::MuteDefaultChanged { kind, mute_until } => {
+            if let Err(e) = db
+                .chats()
+                .set_mute_default(account_id, kind, mute_until)
+                .await
+            {
+                tracing::error!("persist mute default failed: {e}");
+                return;
+            }
+            // Only chats without a mute of their own follow the default.
+            match db
+                .chats()
+                .list_following_mute_default(account_id, kind)
+                .await
+            {
+                Ok(chats) => {
+                    for chat in chats {
+                        bus.publish(CoreEvent::ChatUpdated { chat });
+                    }
+                }
+                Err(e) => tracing::error!("reload chats after mute default change failed: {e}"),
+            }
+        }
         ApiEvent::QrLoginAccepted | ApiEvent::Unhandled => {
             tracing::trace!("unhandled update kind");
         }
@@ -265,5 +334,199 @@ fn media_preview(message: &shared::model::Message) -> String {
         Some(shared::model::Media::Document { file_name, .. }) => format!("📎 {file_name}"),
         Some(shared::model::Media::Other { description }) => description.clone(),
         None => String::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use shared::model::{Account, Chat, ChatId, ChatKind, Message};
+    use tokio::sync::broadcast::error::TryRecvError;
+
+    async fn db_with_chats(chats: &[(ChatId, ChatKind)]) -> Database {
+        let db = Database::open_in_memory().await.expect("open");
+        db.accounts()
+            .upsert(&Account {
+                id: 1,
+                phone: None,
+                first_name: "t".into(),
+                last_name: None,
+                username: None,
+                authorized: true,
+            })
+            .await
+            .expect("account");
+        for &(id, kind) in chats {
+            db.chats()
+                .upsert(&Chat {
+                    account_id: 1,
+                    id,
+                    kind,
+                    title: format!("chat {id}"),
+                    username: None,
+                    unread_count: 0,
+                    pinned: false,
+                    last_message_at: None,
+                    last_message_preview: None,
+                    avatar_key: None,
+                    muted_until: None,
+                })
+                .await
+                .expect("chat");
+        }
+        db
+    }
+
+    fn forever() -> Option<chrono::DateTime<chrono::Utc>> {
+        chrono::DateTime::from_timestamp(i64::from(i32::MAX), 0)
+    }
+
+    /// Every ChatUpdated published so far, in order.
+    fn published_chats(rx: &mut tokio::sync::broadcast::Receiver<CoreEvent>) -> Vec<Chat> {
+        let mut chats = Vec::new();
+        loop {
+            match rx.try_recv() {
+                Ok(CoreEvent::ChatUpdated { chat }) => chats.push(chat),
+                Ok(_) => {}
+                Err(TryRecvError::Empty) => return chats,
+                Err(e) => panic!("bus: {e}"),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn chat_mute_change_persists_and_republishes() {
+        let db = db_with_chats(&[(10, ChatKind::Private)]).await;
+        let bus = EventBus::new();
+        let mut rx = bus.subscribe();
+
+        let mute = |mute_until| ApiEvent::ChatMuteChanged {
+            chat_id: 10,
+            mute_until,
+        };
+        apply_event(1, &db, &bus, mute(Some(i32::MAX))).await;
+        let published = published_chats(&mut rx);
+        assert_eq!(published.len(), 1);
+        assert_eq!(published[0].muted_until, forever());
+        assert_eq!(
+            db.chats()
+                .get(1, 10)
+                .await
+                .expect("get")
+                .expect("some")
+                .muted_until,
+            forever()
+        );
+
+        apply_event(1, &db, &bus, mute(Some(0))).await;
+        let published = published_chats(&mut rx);
+        assert_eq!(published.len(), 1);
+        assert_eq!(published[0].muted_until, None);
+    }
+
+    #[tokio::test]
+    async fn mute_change_for_an_unknown_chat_publishes_nothing() {
+        let db = db_with_chats(&[]).await;
+        let bus = EventBus::new();
+        let mut rx = bus.subscribe();
+        apply_event(
+            1,
+            &db,
+            &bus,
+            ApiEvent::ChatMuteChanged {
+                chat_id: 99,
+                mute_until: Some(i32::MAX),
+            },
+        )
+        .await;
+        assert!(published_chats(&mut rx).is_empty());
+    }
+
+    #[tokio::test]
+    async fn default_change_republishes_only_the_chats_that_follow_it() {
+        let db = db_with_chats(&[
+            (1, ChatKind::Private),
+            (2, ChatKind::Private),
+            (3, ChatKind::Group),
+        ])
+        .await;
+        // Chat 2 was unmuted on its own, so the private default skips it.
+        db.chats()
+            .set_mute_until(1, 2, Some(0))
+            .await
+            .expect("mute");
+        let bus = EventBus::new();
+        let mut rx = bus.subscribe();
+
+        apply_event(
+            1,
+            &db,
+            &bus,
+            ApiEvent::MuteDefaultChanged {
+                kind: ChatKind::Private,
+                mute_until: Some(i32::MAX),
+            },
+        )
+        .await;
+
+        let published = published_chats(&mut rx);
+        assert_eq!(published.iter().map(|c| c.id).collect::<Vec<_>>(), vec![1]);
+        assert_eq!(published[0].muted_until, forever());
+        assert_eq!(
+            db.chats().mute_defaults(1).await.expect("defaults").private,
+            Some(i32::MAX)
+        );
+        assert_eq!(
+            db.chats()
+                .get(1, 2)
+                .await
+                .expect("get")
+                .expect("some")
+                .muted_until,
+            None
+        );
+        assert_eq!(
+            db.chats()
+                .get(1, 3)
+                .await
+                .expect("get")
+                .expect("some")
+                .muted_until,
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn new_message_in_a_muted_chat_still_counts_as_unread() {
+        let db = db_with_chats(&[(10, ChatKind::Private)]).await;
+        db.chats()
+            .set_mute_until(1, 10, Some(i32::MAX))
+            .await
+            .expect("mute");
+        let bus = EventBus::new();
+        let mut rx = bus.subscribe();
+
+        let message = Message {
+            account_id: 1,
+            chat_id: 10,
+            id: 1,
+            sender_id: Some(10),
+            sender_name: None,
+            text: "hej".into(),
+            media: None,
+            reactions: Vec::new(),
+            reply_to: None,
+            date: chrono::Utc::now(),
+            edited: false,
+            outgoing: false,
+            send_state: SendState::Sent,
+        };
+        apply_event(1, &db, &bus, ApiEvent::MessageNew(message)).await;
+
+        let published = published_chats(&mut rx);
+        assert_eq!(published.len(), 1);
+        // Muting only changes where the UI queues the chat; the count stays.
+        assert_eq!(published[0].unread_count, 1);
+        assert_eq!(published[0].muted_until, forever());
     }
 }

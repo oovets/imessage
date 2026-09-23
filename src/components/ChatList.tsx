@@ -14,11 +14,12 @@ import { ChatListSkeleton } from "@/components/ChatListSkeleton";
 import { useAppStore } from "@/store/useAppStore";
 import { usePaneNumbers } from "@/hooks/usePaneNumbers";
 import { loadIMessageChats } from "@/lib/loadChats";
-import { filterChats, triage } from "@/lib/triage";
+import { filterChats, nextTriageChange, triage } from "@/lib/triage";
 import { isSource } from "@/lib/source";
 import { tg } from "@/telegram/api";
 import { parseTgChatGuid } from "@/telegram/adapters";
 import { cn } from "@/lib/utils";
+import { whenDue } from "@/types";
 
 /** Card fold-out duration for "E done" — matches the ChatItem transition. */
 const DONE_ANIMATION_MS = 160;
@@ -52,9 +53,10 @@ function SectionHeader({
 }
 
 /**
- * The sidebar as a triage queue: "Waiting on you" (unread, as cards), then
- * Starred, then Recent (everything else, all sources mixed by recency). The
- * search input lives in the toolbar's command bar; its query filters here.
+ * The sidebar as a triage queue: "Waiting on you" (unread and not muted, as
+ * cards), then Starred, then Recent (everything else, all sources mixed by
+ * recency). The search input lives in the toolbar's command bar; its query
+ * filters here.
  */
 export function ChatList() {
   // Narrow selectors: ChatList must not re-render on every WebSocket message,
@@ -106,9 +108,19 @@ export function ChatList() {
   }, []);
 
   const filteredChats = useMemo(() => filterChats(chats, query), [chats, query]);
-  const { waiting, starred, recent } = useMemo(
-    () => triage(filteredChats, starredChats),
-    [filteredChats, starredChats]
+  // A muted unread chat joins the queue once its mute lapses, and nothing
+  // re-renders the sidebar then; so triage is re-run at the earliest lapse
+  // (the effect below). The compact rail shows these same sections.
+  const [clockTick, setClockTick] = useState(0);
+  const { waiting, starred, recent, triagedAt } = useMemo(() => {
+    const now = Date.now();
+    return { ...triage(filteredChats, starredChats, now), triagedAt: now };
+    // clockTick: a mute lapsed since the last triage.
+  }, [filteredChats, starredChats, clockTick]);
+  useEffect(
+    () => whenDue(nextTriageChange(filteredChats, triagedAt), () => setClockTick((n) => n + 1)),
+    // triagedAt is the clock the shown sections were split at.
+    [filteredChats, triagedAt]
   );
 
   // Keyboard navigation follows what is on screen: queue → starred → recent,
@@ -226,10 +238,11 @@ export function ChatList() {
       </div>
     );
   } else if (sidebarHidden) {
-    // Compact rail: tiles only. The queue collapses to tiles with a signal dot.
+    // Compact rail: tiles only. The queue collapses to tiles with a signal dot
+    // (not a starred chat that is unread but muted).
     body = (
       <div className="flex flex-col items-center gap-1 py-2.5">
-        {[...waiting, ...starred].map((chat) => (
+        {[...waiting, ...starred].map((chat, i) => (
           <ChatItem
             key={chat.guid}
             chat={chat}
@@ -237,6 +250,7 @@ export function ChatList() {
             isSelected={chat.guid === selectedChatGUID}
             isCursor={chat.guid === cursorGUID}
             onSelect={open}
+            queued={i < waiting.length}
           />
         ))}
       </div>

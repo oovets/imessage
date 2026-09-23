@@ -23,6 +23,7 @@ function tgChat(id: number, extra: Partial<TgChat> = {}): TgChat {
     last_message_at: "2026-09-01T10:00:00Z",
     last_message_preview: "preview",
     avatar_key: null,
+    muted_until: null,
     ...extra,
   };
 }
@@ -119,6 +120,22 @@ describe("useTelegramEvents chat_updated coalescing", () => {
     setVisibility("hidden");
     document.dispatchEvent(new Event("visibilitychange"));
     expect(useAppStore.getState().chats).toHaveLength(1);
+  });
+
+  it("carries a mute change (and its lifting) onto the stored chat", () => {
+    renderHook(() => useTelegramEvents());
+    emit({ kind: "chat_updated", chat: tgChat(1) });
+    vi.advanceTimersByTime(16);
+    expect(useAppStore.getState().chats[0].mutedUntil).toBeUndefined();
+
+    // Muted on another device: the same read chat, now with a mute.
+    emit({ kind: "chat_updated", chat: tgChat(1, { muted_until: "2038-01-19T03:14:07Z" }) });
+    vi.advanceTimersByTime(16);
+    expect(useAppStore.getState().chats[0].mutedUntil).toBe(Date.UTC(2038, 0, 19, 3, 14, 7));
+
+    emit({ kind: "chat_updated", chat: tgChat(1) });
+    vi.advanceTimersByTime(16);
+    expect(useAppStore.getState().chats[0].mutedUntil).toBeUndefined();
   });
 
   it("applies held updates on unmount", () => {

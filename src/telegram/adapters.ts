@@ -47,6 +47,7 @@ export function tgChatToChat(accountId: number, c: TgChat): Chat {
   const guid = tgChatGuid(accountId, c.id);
   const preview = c.last_message_preview ?? "";
   const ts = c.last_message_at ? Date.parse(c.last_message_at) : 0;
+  const mutedUntil = c.muted_until ? Date.parse(c.muted_until) : NaN;
   return {
     guid,
     displayName: c.title,
@@ -69,6 +70,9 @@ export function tgChatToChat(accountId: number, c: TgChat): Chat {
           associatedMessageType: "",
         }
       : null,
+    // Only set while muted, so an unmuted chat is the same object shape as
+    // before (and as every other source's).
+    ...(Number.isFinite(mutedUntil) ? { mutedUntil } : {}),
   };
 }
 

@@ -36,6 +36,10 @@ interface ChatItemProps {
   onDone?: (guid: string) => void;
   /** Card is animating out after "done". */
   leaving?: boolean;
+  /** Compact tiles: in the "Waiting on you" queue, which the signal dot
+   *  marks. Defaults to having unread messages; a muted unread chat is not
+   *  queued. */
+  queued?: boolean;
   /** ⌘N of the pane showing this chat, if any. */
   paneKey?: number;
   /** That pane is the active one (chip is inverted). */
@@ -105,6 +109,7 @@ function ChatItemComponent({
   onSelect,
   onDone,
   leaving = false,
+  queued,
   paneKey,
   paneKeyActive = false,
   starred = false,
@@ -153,7 +158,7 @@ function ChatItemComponent({
         )}
       >
         <Tile chat={chat} name={name} />
-        {unread && (
+        {(queued ?? unread) && (
           <span
             className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-signal"
             aria-label={`${chat.unreadCount} unread`}

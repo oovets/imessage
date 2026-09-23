@@ -47,9 +47,10 @@ pub struct Account {
 pub enum ChatKind {
     /// One-to-one conversation with a user (or bot).
     Private,
-    /// Small or basic group.
+    /// Basic group or supergroup (megagroup). grammers files megagroups under
+    /// its `Group` peer even though MTProto models them as channels.
     Group,
-    /// Broadcast channel or supergroup.
+    /// Broadcast channel.
     Channel,
 }
 
@@ -71,6 +72,52 @@ pub struct Chat {
     /// Cache key for the chat's profile photo, or `None` if it has none.
     /// The bytes are fetched on demand and stored in the encrypted cache.
     pub avatar_key: Option<String>,
+    /// Until when the account has muted this chat in Telegram, or `None` when
+    /// it isn't muted. Already resolved (see [`resolve_mute`]): the chat's own
+    /// setting, else the account-wide default for its kind. "Muted forever"
+    /// is Telegram's `i32::MAX` instant (2038-01-19).
+    pub muted_until: Option<DateTime<Utc>>,
+}
+
+/// Telegram's account-wide notification defaults per chat kind (the
+/// "Notifications for private chats / groups / channels" settings), as raw
+/// `mute_until` unix seconds. `None`, 0 or a past instant = unmuted.
+///
+/// A chat without a mute setting of its own follows the default for its kind.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MuteDefaults {
+    /// Private chats (Telegram's `notifyUsers`).
+    pub private: Option<i32>,
+    /// Basic groups and supergroups (`notifyChats`), as official clients do.
+    pub group: Option<i32>,
+    /// Broadcast channels (`notifyBroadcasts`).
+    pub channel: Option<i32>,
+}
+
+impl MuteDefaults {
+    /// The default that chats of `kind` follow.
+    pub fn for_kind(&self, kind: ChatKind) -> Option<i32> {
+        match kind {
+            ChatKind::Private => self.private,
+            ChatKind::Group => self.group,
+            ChatKind::Channel => self.channel,
+        }
+    }
+}
+
+/// Resolve Telegram's raw `mute_until` settings to [`Chat::muted_until`].
+///
+/// `own` is the chat's own setting (`None` = follow the default), `default`
+/// the account default for its kind. Telegram unmutes with 0 and leaves a
+/// lapsed timed mute in place, so anything at or before `now` is not muted —
+/// and an own 0 still overrides a muted default.
+pub fn resolve_mute(
+    own: Option<i32>,
+    default: Option<i32>,
+    now: DateTime<Utc>,
+) -> Option<DateTime<Utc>> {
+    let until = DateTime::from_timestamp(i64::from(own.or(default)?), 0)?;
+    (until > now).then_some(until)
 }
 
 /// Media attached to a message.
@@ -190,4 +237,60 @@ pub enum LoginStage {
     },
     /// Login finished; the account is ready.
     Complete { account: Account },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn at(secs: i64) -> DateTime<Utc> {
+        DateTime::from_timestamp(secs, 0).expect("valid timestamp")
+    }
+
+    const NOW: i64 = 1_800_000_000;
+
+    #[test]
+    fn own_mute_overrides_the_default() {
+        let until = (NOW + 3_600) as i32;
+        assert_eq!(
+            resolve_mute(Some(until), None, at(NOW)),
+            Some(at(NOW + 3_600))
+        );
+        // An explicit unmute (0) beats a muted default.
+        assert_eq!(resolve_mute(Some(0), Some(i32::MAX), at(NOW)), None);
+    }
+
+    #[test]
+    fn default_applies_without_an_own_setting() {
+        assert_eq!(
+            resolve_mute(None, Some(i32::MAX), at(NOW)),
+            Some(at(i64::from(i32::MAX)))
+        );
+        assert_eq!(resolve_mute(None, None, at(NOW)), None);
+        assert_eq!(resolve_mute(None, Some(0), at(NOW)), None);
+    }
+
+    #[test]
+    fn lapsed_mute_is_not_muted() {
+        assert_eq!(resolve_mute(Some((NOW - 1) as i32), None, at(NOW)), None);
+        // Up to and including `now` counts as lapsed.
+        assert_eq!(resolve_mute(Some(NOW as i32), None, at(NOW)), None);
+        // A lapsed own mute is still the chat's own setting: no fallback.
+        assert_eq!(
+            resolve_mute(Some((NOW - 1) as i32), Some(i32::MAX), at(NOW)),
+            None
+        );
+    }
+
+    #[test]
+    fn defaults_are_picked_by_kind() {
+        let defaults = MuteDefaults {
+            private: Some(1),
+            group: Some(2),
+            channel: Some(3),
+        };
+        assert_eq!(defaults.for_kind(ChatKind::Private), Some(1));
+        assert_eq!(defaults.for_kind(ChatKind::Group), Some(2));
+        assert_eq!(defaults.for_kind(ChatKind::Channel), Some(3));
+    }
 }

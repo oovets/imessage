@@ -516,6 +516,7 @@ function sameChat(a: Chat, b: Chat): boolean {
     Object.is(a.activityAt, b.activityAt) &&
     a.avatarUrl === b.avatarUrl &&
     a.slackSection === b.slackSection &&
+    Object.is(a.mutedUntil, b.mutedUntil) &&
     sameParticipants(a.participants, b.participants) &&
     // Readers only ever look at lastMessage?.dateCreated / ?.text.
     (am === bm ||
@@ -806,6 +807,8 @@ function slimChat(c: Chat): Chat {
     activityAt: c.activityAt,
     avatarUrl: c.avatarUrl,
     slackSection: c.slackSection,
+    // Absent (so not written at all) unless the chat is muted.
+    mutedUntil: c.mutedUntil,
   } as Chat;
 }
 

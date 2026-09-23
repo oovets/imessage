@@ -46,6 +46,10 @@ export interface Chat {
   /** Slack's conversation grouping ("Public" | "DirectMessage" | …), used by
    *  the per-workspace sort. Absent on other sources. */
   slackSection?: string;
+  /** Telegram mute (ms epoch): while the clock is before this, an unread
+   *  chat stays out of "Waiting on you". Absent when not muted and on other
+   *  sources. */
+  mutedUntil?: number;
 }
 
 export interface LinkPreview {

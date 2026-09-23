@@ -10,8 +10,8 @@ use grammers_client::peer::{Peer, User};
 use grammers_client::{media, tl};
 use grammers_session::types::PeerId;
 use shared::model::{
-    Account, AccountId, Chat, ChatId, ChatKind, Media, Message, Presence, Reaction, SendState,
-    UserId,
+    Account, AccountId, Chat, ChatId, ChatKind, Media, Message, MuteDefaults, Presence, Reaction,
+    SendState, UserId,
 };
 
 /// Map the logged-in user to a local [`Account`].
@@ -45,17 +45,25 @@ pub fn map_chat_kind(peer: &Peer) -> ChatKind {
 }
 
 /// Map a dialog to a [`Chat`]. Returns `None` for folder pseudo-dialogs.
-pub fn map_dialog(account_id: AccountId, dialog: &grammers_client::peer::Dialog) -> Option<Chat> {
+///
+/// `defaults` are the account's notification defaults, which the chat's
+/// mute falls back to when it has no setting of its own.
+pub fn map_dialog(
+    account_id: AccountId,
+    dialog: &grammers_client::peer::Dialog,
+    defaults: &MuteDefaults,
+) -> Option<Chat> {
     let raw = match &dialog.raw {
         tl::enums::Dialog::Dialog(d) => d,
         tl::enums::Dialog::Folder(_) => return None,
     };
     let peer = dialog.peer();
     let last = dialog.last_message.as_ref();
+    let kind = map_chat_kind(peer);
     Some(Chat {
         account_id,
         id: chat_id_of(peer.id()),
-        kind: map_chat_kind(peer),
+        kind,
         title: peer
             .name()
             .filter(|n| !n.is_empty())
@@ -67,7 +75,34 @@ pub fn map_dialog(account_id: AccountId, dialog: &grammers_client::peer::Dialog)
         last_message_at: last.map(|m| m.date()),
         last_message_preview: last.map(preview_text),
         avatar_key: peer_photo_id(peer).map(|id| format!("avatar-{id}")),
+        muted_until: chat_muted_until(&raw.notify_settings, kind, defaults, Utc::now()),
     })
+}
+
+/// The raw `mute_until` of a notify-settings object: `None` when it defers to
+/// the account default, else unix seconds (0 or a past instant = unmuted).
+pub fn raw_mute_until(settings: &tl::enums::PeerNotifySettings) -> Option<i32> {
+    let tl::enums::PeerNotifySettings::Settings(settings) = settings;
+    settings.mute_until
+}
+
+/// A dialog's own raw `mute_until` (see [`raw_mute_until`]), for persisting.
+pub fn dialog_mute_until(dialog: &grammers_client::peer::Dialog) -> Option<i32> {
+    match &dialog.raw {
+        tl::enums::Dialog::Dialog(d) => raw_mute_until(&d.notify_settings),
+        tl::enums::Dialog::Folder(_) => None,
+    }
+}
+
+/// A chat's effective mute at `now`, from its own notify settings and the
+/// account default for its `kind` (see [`shared::model::resolve_mute`]).
+pub fn chat_muted_until(
+    settings: &tl::enums::PeerNotifySettings,
+    kind: ChatKind,
+    defaults: &MuteDefaults,
+    now: DateTime<Utc>,
+) -> Option<DateTime<Utc>> {
+    shared::model::resolve_mute(raw_mute_until(settings), defaults.for_kind(kind), now)
 }
 
 /// The profile-photo id of a peer, if it has a photo.
@@ -241,4 +276,131 @@ pub fn timestamp(secs: i32) -> DateTime<Utc> {
     Utc.timestamp_opt(secs as i64, 0)
         .single()
         .unwrap_or(DateTime::<Utc>::UNIX_EPOCH)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const NOW: i64 = 1_800_000_000;
+
+    fn now() -> DateTime<Utc> {
+        timestamp(NOW as i32)
+    }
+
+    fn settings(mute_until: Option<i32>) -> tl::enums::PeerNotifySettings {
+        tl::types::PeerNotifySettings {
+            show_previews: None,
+            silent: None,
+            mute_until,
+            ios_sound: None,
+            android_sound: None,
+            other_sound: None,
+            stories_muted: None,
+            stories_hide_sender: None,
+            stories_ios_sound: None,
+            stories_android_sound: None,
+            stories_other_sound: None,
+        }
+        .into()
+    }
+
+    /// Every kind's default muted forever.
+    const ALL_MUTED: MuteDefaults = MuteDefaults {
+        private: Some(i32::MAX),
+        group: Some(i32::MAX),
+        channel: Some(i32::MAX),
+    };
+
+    #[test]
+    fn raw_mute_until_passes_the_wire_value_through() {
+        assert_eq!(raw_mute_until(&settings(None)), None);
+        assert_eq!(raw_mute_until(&settings(Some(0))), Some(0));
+        assert_eq!(raw_mute_until(&settings(Some(i32::MAX))), Some(i32::MAX));
+    }
+
+    #[test]
+    fn peer_setting_overrides_the_default() {
+        let in_an_hour = (NOW + 3_600) as i32;
+        assert_eq!(
+            chat_muted_until(
+                &settings(Some(in_an_hour)),
+                ChatKind::Private,
+                &MuteDefaults::default(),
+                now()
+            ),
+            Some(timestamp(in_an_hour))
+        );
+        // Unmuted explicitly while the default mutes everything.
+        assert_eq!(
+            chat_muted_until(&settings(Some(0)), ChatKind::Group, &ALL_MUTED, now()),
+            None
+        );
+    }
+
+    #[test]
+    fn missing_peer_setting_follows_the_default_for_its_kind() {
+        let only = |kind: ChatKind| {
+            let mut d = MuteDefaults::default();
+            match kind {
+                ChatKind::Private => d.private = Some(i32::MAX),
+                ChatKind::Group => d.group = Some(i32::MAX),
+                ChatKind::Channel => d.channel = Some(i32::MAX),
+            }
+            d
+        };
+        for kind in [ChatKind::Private, ChatKind::Group, ChatKind::Channel] {
+            for other in [ChatKind::Private, ChatKind::Group, ChatKind::Channel] {
+                let muted = chat_muted_until(&settings(None), kind, &only(other), now());
+                assert_eq!(
+                    muted.is_some(),
+                    kind == other,
+                    "{kind:?} chat, {other:?} default"
+                );
+            }
+        }
+        assert_eq!(
+            chat_muted_until(
+                &settings(None),
+                ChatKind::Private,
+                &MuteDefaults::default(),
+                now()
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn expired_mute_is_unmuted() {
+        let a_minute_ago = (NOW - 60) as i32;
+        assert_eq!(
+            chat_muted_until(
+                &settings(Some(a_minute_ago)),
+                ChatKind::Private,
+                &ALL_MUTED,
+                now()
+            ),
+            None
+        );
+        let expired_default = MuteDefaults {
+            private: Some(a_minute_ago),
+            ..MuteDefaults::default()
+        };
+        assert_eq!(
+            chat_muted_until(&settings(None), ChatKind::Private, &expired_default, now()),
+            None
+        );
+    }
+
+    #[test]
+    fn forever_is_the_2038_instant() {
+        let muted = chat_muted_until(
+            &settings(Some(i32::MAX)),
+            ChatKind::Channel,
+            &MuteDefaults::default(),
+            now(),
+        );
+        assert_eq!(muted, Some(timestamp(i32::MAX)));
+        assert_eq!(muted.map(|t| t.timestamp()), Some(2_147_483_647));
+    }
 }

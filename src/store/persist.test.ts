@@ -212,6 +212,39 @@ describe("persisted messages", () => {
   });
 });
 
+describe("persisted chats", () => {
+  it("keep a Telegram mute across a restart, and add nothing to unmuted chats", async () => {
+    const base = {
+      displayName: "Group",
+      participants: [],
+      lastMessage: null,
+      unreadCount: 3,
+      lastMessageText: "",
+      activityAt: 1,
+    };
+    useAppStore.setState({
+      chats: [
+        { ...base, guid: "tg:1:5", chatIdentifier: "5", mutedUntil: 2_147_483_647_000 },
+        { ...base, guid: "tg:1:6", chatIdentifier: "6" },
+      ],
+    });
+    flushNow();
+
+    const [muted, unmuted] = lastWrittenState().chats as Record<string, unknown>[];
+    expect(muted.mutedUntil).toBe(2_147_483_647_000);
+    expect("mutedUntil" in unmuted).toBe(false);
+
+    // A cold start reads the chat list back from disk.
+    useAppStore.setState({ chats: [] });
+    await useAppStore.persist.rehydrate();
+    const chats = useAppStore.getState().chats;
+    expect(chats.map((c) => [c.guid, c.mutedUntil, c.unreadCount])).toEqual([
+      ["tg:1:5", 2_147_483_647_000, 3],
+      ["tg:1:6", undefined, 3],
+    ]);
+  });
+});
+
 describe("persisted message lists", () => {
   it("follow every replaced list, so a failed send is still failed after a restart", () => {
     const sent: Message = {
