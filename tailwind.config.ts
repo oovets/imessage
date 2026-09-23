@@ -11,7 +11,33 @@ const config: Config = {
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
+      // Command Center type scale, in rem so ⌘+/− font scaling still applies
+      // (root = 16px × fontScale). Pixel values are the design's at scale 1.
+      fontSize: {
+        "cc-h1": ["2.125rem", { lineHeight: "2.5rem", letterSpacing: "-0.03em" }], // 34/40
+        "cc-lead": ["0.9375rem", "1.375rem"], // 15/22
+        // The rest keep the 19px body line-height, as in the design (chips and
+        // meta inherit it, which is what sizes the key chips to 21px).
+        "cc-title": ["0.9375rem", "1.1875rem"], // 15
+        "cc-body": ["0.84375rem", "1.1875rem"], // 13.5/19
+        "cc-sender": ["0.71875rem", "1.1875rem"], // 11.5
+        "cc-meta": ["0.6875rem", "1.1875rem"], // 11
+        "cc-chip": ["0.65625rem", "1.1875rem"], // 10.5
+        "cc-time": ["0.625rem", "0.875rem"], // 10/14
+      },
+      // Named, not arbitrary: tailwindcss-animate also claims `duration-*`
+      // (animation-duration), so `duration-[120ms]` is ambiguous.
+      transitionDuration: {
+        120: "120ms",
+        160: "160ms",
+      },
+      fontFamily: {
+        sans: ["var(--app-font-family)"],
+        mono: ['"Geist Mono"', "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+      },
       colors: {
+        panel: "hsl(var(--panel))",
+        signal: "hsl(var(--signal))",
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
         card: {

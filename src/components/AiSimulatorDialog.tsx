@@ -15,6 +15,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { ghostIconButton } from "@/components/ui/icon-button";
 import { useAppStore } from "@/store/useAppStore";
 import { generateReply, buildSystemPrompt, critiqueReply, critiqueFails, type Critique } from "@/lib/aiReply";
 import { loadAiProfiles, type AiProfiles } from "@/lib/aiProfiles";
@@ -159,15 +160,15 @@ export function AiSimulatorDialog() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 text-muted-foreground"
+        <button
+          type="button"
+          className={ghostIconButton}
           aria-label="AI simulator"
           title="AI simulator — chat with your autopilot, nothing is sent"
+        
         >
-          <FlaskConical className="h-4 w-4" />
-        </Button>
+          <FlaskConical />
+        </button>
       </DialogTrigger>
       <DialogContent className="max-w-lg gap-3">
         <DialogHeader>

@@ -1,15 +1,17 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
-import { Check, Loader2, ServerCog, Wand2, ArrowLeft, ExternalLink, AlertTriangle, Send } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { AlertTriangle, Check, Loader2 } from "lucide-react";
 import { TelegramAccounts } from "@/components/TelegramAccounts";
+import { SlackWorkspaces } from "@/components/SlackWorkspaces";
 import { useAppStore } from "@/store/useAppStore";
 import { saveSecureConfig } from "@/lib/secureConfig";
+import { tg } from "@/telegram/api";
+import type { TgAccount } from "@/telegram/types";
 import { cn } from "@/lib/utils";
 
-type Mode = "choose" | "auto" | "manual";
-type Phase = "form" | "installing" | "configuring" | "permissions" | "done" | "error";
+type SourceKey = "imessage" | "telegram" | "slack";
+type SourceStatus = "idle" | "working" | "permissions" | "done" | "error";
+type IMessageStage = "installing" | "configuring" | null;
 
 interface ServerCheck {
   reachable: boolean;
@@ -24,6 +26,13 @@ interface BbStatus {
 interface Progress {
   stage: string;
   pct: number | null;
+}
+
+/** A connection that is ready but not yet saved — saved on "Open inbox". */
+interface PendingConnection {
+  serverUrl: string;
+  password: string;
+  detail: string;
 }
 
 function generatePassword(): string {
@@ -46,6 +55,23 @@ async function persistConnection(serverUrl: string, password: string, setConfig:
   setConfig(serverUrl, password);
 }
 
+/** "+46701234512" → "+46 70 ••• •• 12" */
+function maskPhone(phone: string | null): string {
+  if (!phone) return "";
+  const p = phone.replace(/\s+/g, "");
+  if (p.length < 7) return p;
+  const plus = p.startsWith("+") ? 3 : 2;
+  return `${p.slice(0, plus)} ${p.slice(plus, plus + 2)} ••• •• ${p.slice(-2)}`;
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
 const PERMISSIONS: Array<{ pane: string; label: string; why: string }> = [
   { pane: "fulldisk", label: "Full Disk Access", why: "read the Messages database" },
   { pane: "localnetwork", label: "Local Network", why: "let the server accept connections" },
@@ -53,15 +79,136 @@ const PERMISSIONS: Array<{ pane: string; label: string; why: string }> = [
   { pane: "automation", label: "Automation", why: "control Messages & System Events" },
 ];
 
+// --- small design-system pieces -------------------------------------------
+
+const secondaryButton =
+  "inline-flex h-7 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-3 text-cc-body font-medium shadow-[inset_0_0_0_1px_hsl(var(--border))] transition-[background-color] duration-120 hover:bg-muted disabled:pointer-events-none disabled:opacity-50";
+const primaryButton =
+  "inline-flex h-9 shrink-0 items-center justify-center gap-2.5 whitespace-nowrap rounded-md bg-primary px-4 text-cc-body font-medium text-primary-foreground disabled:pointer-events-none disabled:opacity-40";
+const field =
+  "h-8 w-full min-w-0 rounded-md bg-background px-2.5 text-cc-body shadow-[inset_0_0_0_1px_hsl(var(--border))] outline-none placeholder:text-muted-foreground focus:shadow-[inset_0_0_0_1.5px_hsl(var(--primary))]";
+
+function StatusBox({ status }: { status: SourceStatus }) {
+  if (status === "done") {
+    return (
+      <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
+        <Check className="h-[13px] w-[13px]" />
+      </span>
+    );
+  }
+  if (status === "error") {
+    return (
+      <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md text-signal shadow-[inset_0_0_0_1.5px_hsl(var(--signal))]">
+        <AlertTriangle className="h-3 w-3" />
+      </span>
+    );
+  }
+  if (status === "working" || status === "permissions") {
+    return (
+      <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md shadow-[inset_0_0_0_1.5px_hsl(var(--signal))]">
+        <span className="h-2 w-2 rounded-full bg-signal" />
+      </span>
+    );
+  }
+  return (
+    <span className="h-[22px] w-[22px] shrink-0 rounded-md shadow-[inset_0_0_0_1.5px_hsl(var(--border))]" />
+  );
+}
+
+function SourceRow({
+  name,
+  status,
+  right,
+  children,
+  last = false,
+}: {
+  name: string;
+  status: SourceStatus;
+  right?: ReactNode;
+  children?: ReactNode;
+  last?: boolean;
+}) {
+  return (
+    <div className={cn("px-4 py-3.5", !last && "border-b")}>
+      <div className="flex items-center gap-3">
+        <StatusBox status={status} />
+        <span className="flex-1 whitespace-nowrap text-cc-body font-semibold">{name}</span>
+        {right}
+      </div>
+      {children && <div className="ml-[34px] mt-3">{children}</div>}
+    </div>
+  );
+}
+
+function RowMeta({ children, signal = false }: { children: ReactNode; signal?: boolean }) {
+  return (
+    <span
+      className={cn(
+        "whitespace-nowrap font-mono text-cc-meta",
+        signal ? "text-signal" : "text-muted-foreground"
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+/**
+ * The live install log: finished lines as "✓ …", the current one as "→ …" in
+ * the foreground colour, failures as "✗ …" in signal.
+ */
+function LogPanel({ lines, working }: { lines: string[]; working: boolean }) {
+  const endRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    endRef.current?.scrollIntoView?.({ block: "end" });
+  }, [lines]);
+  if (lines.length === 0) return null;
+  return (
+    <div className="scrollbar-autohide max-h-40 overflow-y-auto rounded-md bg-background px-3 py-2.5 font-mono text-cc-meta leading-[18px] text-muted-foreground">
+      {lines.map((raw, i) => {
+        const failed = raw.startsWith("✗");
+        const current = working && i === lines.length - 1 && !failed;
+        const text = raw.replace(/^[✓→✗]\s*/, "");
+        return (
+          <div
+            key={i}
+            className={cn(
+              "whitespace-pre-wrap break-words",
+              failed && "text-signal",
+              current && "text-foreground"
+            )}
+          >
+            {failed ? "✗" : current ? "→" : "✓"} {text}
+          </div>
+        );
+      })}
+      <div ref={endRef} />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+/**
+ * First-run setup as a single checklist of sources. Every source lands in the
+ * same inbox; "Open inbox" is enabled as soon as any one is connected.
+ */
 export function OnboardingWizard() {
   const setConfig = useAppStore((s) => s.setConfig);
-  const telegramAvailable = useAppStore((s) => s.telegramAvailable);
   const dismissOnboarding = useAppStore((s) => s.dismissOnboarding);
+  const telegramAvailable = useAppStore((s) => s.telegramAvailable);
+  const telegramReloadNonce = useAppStore((s) => s.telegramReloadNonce);
+  const slackConnected = useAppStore((s) => s.slackAvailable);
+  const slackWorkspaceLabel = useAppStore(
+    (s) => Object.entries(s.accountLabels).find(([k]) => k.startsWith("slack:"))?.[1] ?? null
+  );
 
-  const [mode, setMode] = useState<Mode>("choose");
+  const [expanded, setExpanded] = useState<SourceKey | null>(null);
 
-  // --- auto flow state ---
-  const [phase, setPhase] = useState<Phase>("form");
+  // --- iMessage ---
+  const [imStatus, setImStatus] = useState<SourceStatus>("idle");
+  const [imMode, setImMode] = useState<"auto" | "manual">("auto");
+  const [imStage, setImStage] = useState<IMessageStage>(null);
   const [password, setPassword] = useState(generatePassword);
   const [port, setPort] = useState("1234");
   const [login, setLogin] = useState(false);
@@ -70,18 +217,48 @@ export function OnboardingWizard() {
   const [check, setCheck] = useState<ServerCheck | null>(null);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [reusedInstall, setReusedInstall] = useState(false);
-
-  // --- manual flow state ---
+  const [logs, setLogs] = useState<string[]>([]);
   const [manualUrl, setManualUrl] = useState("");
   const [manualPwd, setManualPwd] = useState("");
-  const [manualSaving, setManualSaving] = useState(false);
+  const [pending, setPending] = useState<PendingConnection | null>(null);
 
-  // --- live install log ---
-  const [logs, setLogs] = useState<string[]>([]);
-  const logEndRef = useRef<HTMLDivElement | null>(null);
+  // --- Telegram ---
+  const [tgAccounts, setTgAccounts] = useState<TgAccount[]>([]);
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ block: "end" });
-  }, [logs]);
+    if (!telegramAvailable) return;
+    let cancelled = false;
+    tg.listAccounts()
+      .then((a) => {
+        if (!cancelled) setTgAccounts(a.filter((x) => x.authorized));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [telegramAvailable, telegramReloadNonce]);
+  const tgDone = tgAccounts.length > 0;
+
+  // A source that just finished connecting folds its row closed.
+  useEffect(() => {
+    if (tgDone) setExpanded((e) => (e === "telegram" ? null : e));
+  }, [tgDone]);
+  useEffect(() => {
+    if (slackConnected) setExpanded((e) => (e === "slack" ? null : e));
+  }, [slackConnected]);
+
+  const tgStatus: SourceStatus = tgDone ? "done" : expanded === "telegram" ? "working" : "idle";
+  const slStatus: SourceStatus = slackConnected ? "done" : expanded === "slack" ? "working" : "idle";
+
+  const [finishError, setFinishError] = useState<string | null>(null);
+  const [finishing, setFinishing] = useState(false);
+
+  const rows: Array<{ key: SourceKey; status: SourceStatus }> = [
+    { key: "imessage", status: imStatus },
+    ...(telegramAvailable ? [{ key: "telegram" as const, status: tgStatus }] : []),
+    { key: "slack", status: slStatus },
+  ];
+  const connected = rows.filter((r) => r.status === "done").length;
+  const canFinish = connected > 0 && !finishing;
 
   // A fresh log channel per backend call, all appending to the same panel.
   function logChannel(): Channel<string> {
@@ -95,20 +272,22 @@ export function OnboardingWizard() {
   async function runAutoSetup() {
     setError(null);
     setLogs([]);
+    setCheck(null);
+    setImStatus("working");
     try {
       const status = await invoke<BbStatus>("bb_status");
       if (status.installed) {
         setReusedInstall(true);
         setLogs((prev) => [...prev, "Reusing the BlueBubbles server already installed."]);
       } else {
-        setPhase("installing");
+        setImStage("installing");
         setProgress({ stage: "resolving", pct: null });
         const channel = new Channel<Progress>();
         channel.onmessage = (p) => setProgress(p);
         await invoke("bb_install", { progress: channel, log: logChannel() });
       }
 
-      setPhase("configuring");
+      setImStage("configuring");
       // Configure the server visibly rather than headless: a hidden first launch
       // can silently stall on a setup step, so its HTTP server never starts. A
       // visible window starts reliably and lets the user finish anything pending.
@@ -120,23 +299,14 @@ export function OnboardingWizard() {
         log: logChannel(),
       });
 
-      setPhase("permissions");
+      setImStage(null);
+      setImStatus("permissions");
     } catch (e) {
+      setImStage(null);
       setError(String(e));
-      setPhase("error");
+      setImStatus("error");
     }
   }
-
-  const workingLabel =
-    phase === "configuring"
-      ? "Configuring the server (no setup wizard needed)…"
-      : progress?.stage === "downloading"
-      ? `Downloading BlueBubbles…${progress.pct != null ? ` ${Math.round(progress.pct)}%` : ""}`
-      : progress?.stage === "installing"
-      ? "Installing BlueBubbles…"
-      : progress?.stage === "resolving"
-      ? "Finding the latest server release…"
-      : "Preparing…";
 
   async function verifyPermissions() {
     setError(null);
@@ -149,7 +319,10 @@ export function OnboardingWizard() {
       });
       setCheck(result);
       if (result.canReadDb) {
-        setPhase("done");
+        const serverUrl = `http://localhost:${portNum}`;
+        setPending({ serverUrl, password, detail: hostOf(serverUrl) });
+        setImStatus("done");
+        setExpanded((e) => (e === "imessage" ? null : e));
       }
     } catch (e) {
       setError(String(e));
@@ -158,299 +331,335 @@ export function OnboardingWizard() {
     }
   }
 
-  // Save the connection (flips isConfigured, which unmounts the wizard and drops
-  // into the app). Deferred to the final step so the optional Telegram sign-in
-  // can happen on the "done" screen first.
-  async function finish() {
-    setError(null);
-    try {
-      await persistConnection(`http://localhost:${portNum}`, password, setConfig);
-    } catch (e) {
-      // Stay on this screen: the generated password is still visible here, and
-      // leaving would lose it.
-      setError(`Could not save your connection: ${String(e)}`);
-    }
-  }
-
-  async function saveManual() {
-    const url = manualUrl.trim().replace(/\/$/, "");
+  function saveManual() {
+    const serverUrl = manualUrl.trim().replace(/\/$/, "");
     const pwd = manualPwd.trim();
-    if (!url || !pwd) return;
-    setManualSaving(true);
+    if (!serverUrl || !pwd) return;
     setError(null);
+    setPending({ serverUrl, password: pwd, detail: hostOf(serverUrl) });
+    setImStatus("done");
+    setExpanded(null);
+  }
+
+  function openManual() {
+    setImMode("manual");
+    setError(null);
+    if (imStatus === "error") setImStatus("idle");
+    setExpanded("imessage");
+  }
+
+  // Save the iMessage connection (flips isConfigured, which unmounts the
+  // wizard) — or, for a Telegram/Slack-only setup, just dismiss it.
+  async function finish() {
+    if (!canFinish) return;
+    setFinishError(null);
+    if (!pending) {
+      dismissOnboarding();
+      return;
+    }
+    setFinishing(true);
     try {
-      await persistConnection(url, pwd, setConfig);
+      await persistConnection(pending.serverUrl, pending.password, setConfig);
     } catch (e) {
-      setError(`Could not save your connection: ${String(e)}`);
+      // Stay on this screen: the generated password is still in memory here,
+      // and leaving would lose it.
+      setFinishError(`Could not save your connection: ${String(e)}`);
     } finally {
-      setManualSaving(false);
+      setFinishing(false);
     }
   }
 
-  const busy = phase === "installing" || phase === "configuring";
+  const finishRef = useRef(finish);
+  finishRef.current = finish;
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        e.preventDefault();
+        void finishRef.current();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
-  const logPanel = logs.length > 0 && (
-    <div className="mt-4 max-h-40 overflow-y-auto rounded-lg border bg-muted/40 p-3 text-left font-mono text-[11px] leading-relaxed text-muted-foreground">
-      {logs.map((line, i) => (
-        <div
-          key={i}
-          className={cn("whitespace-pre-wrap break-words", line.startsWith("✗") && "text-destructive")}
-        >
-          {line}
+  // --- iMessage row -------------------------------------------------------
+
+  const workingLabel =
+    imStage === "configuring"
+      ? "configuring"
+      : progress?.stage === "downloading"
+        ? `installing${progress.pct != null ? ` ${Math.round(progress.pct)}%` : ""}`
+        : progress?.stage === "installing"
+          ? "installing"
+          : progress?.stage === "resolving"
+            ? "finding release"
+            : "preparing";
+
+  let imRight: ReactNode;
+  let imBody: ReactNode = null;
+  const imOpen = expanded === "imessage";
+
+  if (imStatus === "done") {
+    imRight = <RowMeta>{pending?.detail}</RowMeta>;
+  } else if (imStatus === "working") {
+    imRight = <RowMeta signal>{workingLabel}</RowMeta>;
+    imBody = <LogPanel lines={logs} working />;
+  } else if (imStatus === "permissions") {
+    imRight = <RowMeta signal>permissions</RowMeta>;
+    imBody = (
+      <div className="space-y-3">
+        <p className="text-cc-body text-muted-foreground">
+          Open each pane and switch <span className="text-foreground">BlueBubbles</span> on. Full
+          Disk Access and Local Network are required; Automation appears on its own the first
+          time it sends. If macOS asks about the local network, click Allow.
+          {reusedInstall && " Reused the BlueBubbles server already installed on this Mac."}
+        </p>
+        <div className="overflow-hidden rounded-md shadow-[inset_0_0_0_1px_hsl(var(--border))]">
+          {PERMISSIONS.map((p, i) => (
+            <div
+              key={p.pane}
+              className={cn("flex items-center gap-3 px-3 py-2", i > 0 && "border-t")}
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block text-cc-body font-medium">{p.label}</span>
+                <span className="block text-cc-meta text-muted-foreground">to {p.why}</span>
+              </span>
+              <button
+                type="button"
+                className={secondaryButton}
+                onClick={() => invoke("bb_open_privacy", { pane: p.pane }).catch(() => {})}
+              >
+                Open
+              </button>
+            </div>
+          ))}
         </div>
-      ))}
-      <div ref={logEndRef} />
-    </div>
-  );
+        {check && !check.canReadDb && (
+          <p className="flex items-center gap-1.5 text-cc-meta text-signal">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            {check.reachable
+              ? "Server is up but can't read messages yet — check Full Disk Access."
+              : "Server not reachable yet — check the permissions and try again."}
+          </p>
+        )}
+        {error && <p className="text-cc-meta text-signal">{error}</p>}
+        <div className="flex items-center gap-2">
+          <button type="button" className={secondaryButton} onClick={verifyPermissions} disabled={!!busyMsg}>
+            {busyMsg && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            Verify
+          </button>
+          {busyMsg && <RowMeta>{busyMsg}</RowMeta>}
+        </div>
+        <LogPanel lines={logs} working={!!busyMsg} />
+      </div>
+    );
+  } else if (imStatus === "error") {
+    imRight = (
+      <div className="flex items-center gap-2">
+        <button type="button" className={secondaryButton} onClick={openManual}>
+          Enter manually
+        </button>
+        <button type="button" className={secondaryButton} onClick={runAutoSetup}>
+          Try again
+        </button>
+      </div>
+    );
+    imBody = (
+      <div className="space-y-3">
+        {error && <p className="break-words text-cc-meta text-signal">✗ {error}</p>}
+        <LogPanel lines={logs} working={false} />
+      </div>
+    );
+  } else if (imOpen && imMode === "manual") {
+    imRight = (
+      <button
+        type="button"
+        className={secondaryButton}
+        onClick={() => {
+          setImMode("auto");
+          setExpanded(null);
+        }}
+      >
+        Cancel
+      </button>
+    );
+    imBody = (
+      <form
+        className="space-y-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          saveManual();
+        }}
+      >
+        <input
+          className={field}
+          placeholder="http://192.168.0.10:1234"
+          value={manualUrl}
+          onChange={(e) => setManualUrl(e.target.value)}
+          aria-label="Server URL"
+          autoFocus
+        />
+        <input
+          className={field}
+          type="password"
+          placeholder="Password"
+          value={manualPwd}
+          onChange={(e) => setManualPwd(e.target.value)}
+          aria-label="Server password"
+        />
+        <button
+          type="submit"
+          className={secondaryButton}
+          disabled={!manualUrl.trim() || !manualPwd.trim()}
+        >
+          Connect
+        </button>
+      </form>
+    );
+  } else if (imOpen) {
+    imRight = (
+      <button type="button" className={secondaryButton} onClick={() => setExpanded(null)}>
+        Cancel
+      </button>
+    );
+    imBody = (
+      <div className="space-y-2.5">
+        <p className="text-cc-body text-muted-foreground">
+          Installs the BlueBubbles server on this Mac and configures it. Requires this Mac to be
+          signed into iMessage.
+        </p>
+        <div className="flex gap-2">
+          <label className="min-w-0 flex-1">
+            <span className="mb-1 block font-mono text-cc-meta text-muted-foreground">password</span>
+            <div className="flex gap-2">
+              <input className={field} value={password} onChange={(e) => setPassword(e.target.value)} />
+              <button
+                type="button"
+                className={cn(secondaryButton, "h-8")}
+                onClick={() => setPassword(generatePassword())}
+              >
+                Regenerate
+              </button>
+            </div>
+          </label>
+          <label className="w-24 shrink-0">
+            <span className="mb-1 block font-mono text-cc-meta text-muted-foreground">port</span>
+            <input className={field} value={port} onChange={(e) => setPort(e.target.value)} />
+          </label>
+        </div>
+        <label className="flex items-center gap-2 text-cc-body">
+          <input type="checkbox" checked={login} onChange={(e) => setLogin(e.target.checked)} />
+          Start the server automatically at login
+        </label>
+        <button
+          type="button"
+          className={secondaryButton}
+          onClick={runAutoSetup}
+          disabled={!password || !port}
+        >
+          Install &amp; configure
+        </button>
+      </div>
+    );
+  } else {
+    imRight = (
+      <button
+        type="button"
+        className={secondaryButton}
+        onClick={() => {
+          setImMode("auto");
+          setExpanded("imessage");
+        }}
+      >
+        Connect
+      </button>
+    );
+  }
+
+  // --- Telegram / Slack rows ----------------------------------------------
+
+  const tgRight =
+    tgStatus === "done" ? (
+      <RowMeta>{maskPhone(tgAccounts[0]?.phone ?? null) || tgAccounts[0]?.first_name}</RowMeta>
+    ) : expanded === "telegram" ? (
+      <button type="button" className={secondaryButton} onClick={() => setExpanded(null)}>
+        Cancel
+      </button>
+    ) : (
+      <button type="button" className={secondaryButton} onClick={() => setExpanded("telegram")}>
+        Connect
+      </button>
+    );
+
+  const slRight =
+    slStatus === "done" ? (
+      <RowMeta>{slackWorkspaceLabel ?? "connected"}</RowMeta>
+    ) : expanded === "slack" ? (
+      <button type="button" className={secondaryButton} onClick={() => setExpanded(null)}>
+        Cancel
+      </button>
+    ) : (
+      <button type="button" className={secondaryButton} onClick={() => setExpanded("slack")}>
+        Connect workspace
+      </button>
+    );
+
+  const lastKey = rows[rows.length - 1].key;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background p-6">
-      <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-10" />
-      <div className="w-full max-w-md max-h-full overflow-y-auto">
-        {mode !== "choose" && phase !== "done" && (
-          <button
-            onClick={() => { setMode("choose"); setPhase("form"); setError(null); }}
-            className="mb-4 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" /> Back
-          </button>
-        )}
+    <div className="flex min-h-0 flex-1 overflow-y-auto">
+      <div className="m-auto w-full max-w-[600px] px-4 py-10">
+        <div className="flex items-center justify-between whitespace-nowrap font-mono text-cc-meta text-muted-foreground">
+          <span>setup</span>
+          <span>
+            {connected} / {rows.length} connected
+          </span>
+        </div>
+        <div className="mt-2 h-[3px] rounded-sm bg-muted">
+          <div
+            className="h-full rounded-sm bg-signal transition-[width] duration-200"
+            style={{ width: `${(connected / rows.length) * 100}%` }}
+          />
+        </div>
 
-        {/* --- choose --- */}
-        {mode === "choose" && (
-          <div className="text-center">
-            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-              <ServerCog className="h-7 w-7" />
-            </div>
-            <h1 className="text-lg font-semibold">Welcome to Messages Desktop</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Messages Desktop talks to a BlueBubbles server on a Mac signed into iMessage.
-            </p>
-            <div className="mt-6 space-y-2">
-              <button
-                onClick={() => setMode("auto")}
-                className="flex w-full items-center gap-3 rounded-xl border p-4 text-left transition-colors hover:bg-accent"
-              >
-                <Wand2 className="h-5 w-5 shrink-0 text-primary" />
-                <span>
-                  <span className="block text-sm font-medium">Set it up for me</span>
-                  <span className="block text-xs text-muted-foreground">
-                    Install &amp; configure BlueBubbles automatically on this Mac
-                  </span>
-                </span>
-              </button>
-              <button
-                onClick={() => setMode("manual")}
-                className="flex w-full items-center gap-3 rounded-xl border p-4 text-left transition-colors hover:bg-accent"
-              >
-                <ServerCog className="h-5 w-5 shrink-0 text-muted-foreground" />
-                <span>
-                  <span className="block text-sm font-medium">I already have a server</span>
-                  <span className="block text-xs text-muted-foreground">Enter your server URL and password</span>
-                </span>
-              </button>
-            </div>
-            {telegramAvailable && (
-              <div className="mt-6 border-t pt-4">
-                <p className="text-xs text-muted-foreground">
-                  Only want Telegram? You can skip BlueBubbles and set it up later in Settings.
-                </p>
-                <button
-                  onClick={dismissOnboarding}
-                  className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
-                >
-                  <Send className="h-4 w-4" /> Just use Telegram
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+        <h1 className="mt-7 text-cc-h1 font-semibold">Connect your sources</h1>
+        <p className="mt-1.5 text-cc-lead text-muted-foreground">
+          Every source lands in the same inbox. Everything is stored in the macOS keychain.
+        </p>
 
-        {/* --- auto: form --- */}
-        {mode === "auto" && phase === "form" && (
-          <div>
-            <h2 className="text-base font-semibold">Automatic setup</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              This installs the BlueBubbles server and configures it headless. You'll grant three macOS
-              privacy permissions along the way. Requires this Mac to be signed into iMessage.
-            </p>
-            <div className="mt-5 space-y-3">
-              <label className="block">
-                <span className="mb-1 block text-xs font-medium text-muted-foreground">Server password</span>
-                <div className="flex gap-2">
-                  <Input value={password} onChange={(e) => setPassword(e.target.value)} />
-                  <Button variant="secondary" onClick={() => setPassword(generatePassword())}>Regenerate</Button>
-                </div>
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-xs font-medium text-muted-foreground">Port</span>
-                <Input value={port} onChange={(e) => setPort(e.target.value)} className="w-28" />
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={login} onChange={(e) => setLogin(e.target.checked)} />
-                Start the server automatically at login
-              </label>
-            </div>
-            <Button className="mt-6 w-full" onClick={runAutoSetup} disabled={!password || !port}>
-              Install &amp; configure
-            </Button>
-          </div>
-        )}
+        <div className="mt-6 overflow-hidden rounded-[10px] bg-panel shadow-[inset_0_0_0_1px_hsl(var(--border))]">
+          <SourceRow name="iMessage" status={imStatus} right={imRight} last={lastKey === "imessage"}>
+            {imBody}
+          </SourceRow>
+          {telegramAvailable && (
+            <SourceRow name="Telegram" status={tgStatus} right={tgRight} last={lastKey === "telegram"}>
+              {expanded === "telegram" && tgStatus !== "done" && <TelegramAccounts />}
+            </SourceRow>
+          )}
+          <SourceRow name="Slack" status={slStatus} right={slRight} last={lastKey === "slack"}>
+            {expanded === "slack" && slStatus !== "done" && <SlackWorkspaces />}
+          </SourceRow>
+        </div>
 
-        {/* --- auto: working --- */}
-        {mode === "auto" && busy && (
-          <div className="flex flex-col items-center py-8 text-center">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="mt-4 text-sm">{workingLabel}</p>
-            {phase === "installing" && progress?.pct != null && (
-              <div className="mt-4 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full rounded-full bg-primary transition-[width] duration-200"
-                  style={{ width: `${progress.pct}%` }}
-                />
-              </div>
-            )}
-            <p className="mt-2 text-xs text-muted-foreground">This can take a minute — don't quit the app.</p>
-            {logPanel}
-          </div>
-        )}
+        {finishError && <p className="mt-3 text-cc-meta text-signal">{finishError}</p>}
 
-        {/* --- auto: permissions --- */}
-        {mode === "auto" && phase === "permissions" && (
-          <div>
-            <h2 className="text-base font-semibold">Grant macOS permissions</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Open each pane and turn <strong>BlueBubbles</strong> on. <strong>Full Disk Access</strong>{" "}
-              and <strong>Local Network</strong> are required for the server to read messages and
-              listen; Automation appears on its own the first time it sends.
-            </p>
-            <p className="mt-2 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
-              The server is already running — if macOS asks about the <strong>local network</strong>,
-              click Allow; if no prompt appears, open the pane and switch BlueBubbles on. Then hit
-              verify — it waits and restarts the server automatically if needed (can take a minute
-              or two).
-            </p>
-            {reusedInstall && (
-              <p className="mt-2 text-xs text-muted-foreground">
-                Reused the BlueBubbles server already installed on this Mac.
-              </p>
-            )}
-            <div className="mt-4 space-y-2">
-              {PERMISSIONS.map((p) => (
-                <button
-                  key={p.pane}
-                  onClick={() => invoke("bb_open_privacy", { pane: p.pane }).catch(() => {})}
-                  className="flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left text-sm transition-colors hover:bg-accent"
-                >
-                  <span>
-                    <span className="font-medium">{p.label}</span>
-                    <span className="block text-xs text-muted-foreground">to {p.why}</span>
-                  </span>
-                  <ExternalLink className="h-4 w-4 text-muted-foreground" />
-                </button>
-              ))}
-            </div>
-            {check && !check.canReadDb && (
-              <p className="mt-3 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
-                <AlertTriangle className="h-3.5 w-3.5" />
-                {check.reachable
-                  ? "Server is up but can't read messages yet — check Full Disk Access."
-                  : "Server not reachable yet — check the permissions and try again."}
-              </p>
-            )}
-            {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
-            <Button className="mt-5 w-full" onClick={verifyPermissions} disabled={!!busyMsg}>
-              {busyMsg ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              I've granted them — verify
-            </Button>
-            {logPanel}
-          </div>
-        )}
-
-        {/* --- auto: done + optional Telegram --- */}
-        {mode === "auto" && phase === "done" && (
-          <div>
-            <div className="flex flex-col items-center text-center">
-              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-green-500/15 text-green-600 dark:text-green-400">
-                <Check className="h-7 w-7" />
-              </div>
-              <h2 className="mt-4 text-base font-semibold">iMessage is set up</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                The BlueBubbles server is running in the background.
-              </p>
-            </div>
-
-            {telegramAvailable && (
-              <div className="mt-6 border-t pt-4">
-                <h3 className="flex items-center gap-1.5 text-sm font-medium">
-                  <Send className="h-4 w-4 text-primary" /> Add Telegram
-                  <span className="font-normal text-muted-foreground">(optional)</span>
-                </h3>
-                <p className="mb-3 mt-1 text-xs text-muted-foreground">
-                  Sign in to see Telegram chats in the same inbox. You can also do this later in
-                  Settings.
-                </p>
-                <TelegramAccounts />
-              </div>
-            )}
-
-            {error && <p className="mt-4 text-xs text-destructive">{error}</p>}
-
-            <Button className="mt-6 w-full" onClick={() => void finish()}>
-              {telegramAvailable ? "Finish" : "Open Messages"}
-            </Button>
-          </div>
-        )}
-
-        {/* --- auto: error --- */}
-        {mode === "auto" && phase === "error" && (
-          <div>
-            <div className="flex items-center gap-2 text-destructive">
-              <AlertTriangle className="h-5 w-5" />
-              <h2 className="text-base font-semibold">Setup failed</h2>
-            </div>
-            <p className="mt-2 break-words text-sm text-muted-foreground">{error}</p>
-            {logPanel}
-            <div className="mt-5 flex gap-2">
-              <Button variant="secondary" className="flex-1" onClick={() => setMode("manual")}>
-                Enter a server manually
-              </Button>
-              <Button className="flex-1" onClick={() => { setPhase("form"); setError(null); }}>
-                Try again
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {/* --- manual --- */}
-        {mode === "manual" && (
-          <div>
-            <h2 className="text-base font-semibold">Connect to your server</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Enter your BlueBubbles server URL and password.
-            </p>
-            <div className="mt-5 space-y-3">
-              <label className="block">
-                <span className="mb-1 block text-xs font-medium text-muted-foreground">Server URL</span>
-                <Input placeholder="http://192.168.0.10:1234" value={manualUrl} onChange={(e) => setManualUrl(e.target.value)} />
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-xs font-medium text-muted-foreground">Password</span>
-                <Input type="password" value={manualPwd} onChange={(e) => setManualPwd(e.target.value)} />
-              </label>
-            </div>
-            {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
-
-            <Button
-              className={cn("mt-6 w-full")}
-              onClick={saveManual}
-              disabled={!manualUrl.trim() || !manualPwd.trim() || manualSaving}
+        <div className="mt-5 flex items-center justify-between gap-4">
+          <span className="text-cc-body text-muted-foreground">
+            Already have a server?{" "}
+            <button
+              type="button"
+              onClick={openManual}
+              className="text-foreground underline underline-offset-[3px]"
             >
-              {manualSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Connect
-            </Button>
-          </div>
-        )}
+              Enter manually
+            </button>
+          </span>
+          <button type="button" className={primaryButton} onClick={() => void finish()} disabled={!canFinish}>
+            {finishing && <Loader2 className="h-4 w-4 animate-spin" />}
+            Open inbox
+            <span className="font-mono text-cc-meta opacity-70">⌘↵</span>
+          </button>
+        </div>
       </div>
     </div>
   );

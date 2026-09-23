@@ -13,6 +13,7 @@ vi.mock("@tauri-apps/api/core", () => ({
   },
 }));
 vi.mock("@/components/TelegramAccounts", () => ({ TelegramAccounts: () => null }));
+vi.mock("@/components/SlackWorkspaces", () => ({ SlackWorkspaces: () => null }));
 
 const saveSecureConfigMock = vi.mocked(saveSecureConfig);
 
@@ -24,14 +25,40 @@ function type(input: HTMLInputElement, value: string) {
   fireEvent.change(input, { target: { value } });
 }
 
-/** Walk from the label span to the button that actually carries the onClick. */
 function chooseManual() {
-  const label = screen.getByText("I already have a server");
-  click(label.closest("button") ?? label);
+  click(screen.getByText("Enter manually"));
+}
+
+/** Manual connect marks iMessage ready; the connection is saved on "Open inbox". */
+function connectManually() {
+  chooseManual();
+  type(screen.getByPlaceholderText("http://192.168.0.10:1234") as HTMLInputElement, "http://h:1234");
+  type(screen.getByLabelText("Server password") as HTMLInputElement, "secret");
+  click(screen.getByText("Connect"));
+  click(screen.getByText("Open inbox").closest("button")!);
 }
 
 beforeEach(() => {
   useAppStore.setState({ serverUrl: "", password: "", isConfigured: false });
+});
+
+describe("OnboardingWizard checklist", () => {
+  it("keeps Open inbox disabled until a source is connected", () => {
+    saveSecureConfigMock.mockResolvedValue(undefined);
+    render(<OnboardingWizard />);
+    const open = screen.getByText("Open inbox").closest("button")!;
+    expect(open.disabled).toBe(true);
+
+    chooseManual();
+    type(screen.getByPlaceholderText("http://192.168.0.10:1234") as HTMLInputElement, "http://h:1234");
+    type(screen.getByLabelText("Server password") as HTMLInputElement, "secret");
+    click(screen.getByText("Connect"));
+
+    expect(screen.getByText("Open inbox").closest("button")!.disabled).toBe(false);
+    expect(screen.getByText("1 / 2 connected")).toBeTruthy();
+    // Nothing is saved until the user leaves the wizard.
+    expect(saveSecureConfigMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("OnboardingWizard keychain failures", () => {
@@ -42,10 +69,7 @@ describe("OnboardingWizard keychain failures", () => {
     saveSecureConfigMock.mockRejectedValue(new Error("keychain is locked"));
     render(<OnboardingWizard />);
 
-    chooseManual();
-    type(screen.getByPlaceholderText("http://192.168.0.10:1234") as HTMLInputElement, "http://h:1234");
-    type(document.querySelectorAll("input")[1] as HTMLInputElement, "secret");
-    click(screen.getByText("Connect").closest("button")!);
+    connectManually();
 
     await waitFor(() => expect(screen.getByText(/Could not save your connection/i)).toBeTruthy());
     // The app must NOT consider itself configured — that is what unmounts the wizard.
@@ -56,10 +80,7 @@ describe("OnboardingWizard keychain failures", () => {
     saveSecureConfigMock.mockResolvedValue(undefined);
     render(<OnboardingWizard />);
 
-    chooseManual();
-    type(screen.getByPlaceholderText("http://192.168.0.10:1234") as HTMLInputElement, "http://h:1234");
-    type(document.querySelectorAll("input")[1] as HTMLInputElement, "secret");
-    click(screen.getByText("Connect").closest("button")!);
+    connectManually();
 
     await waitFor(() => expect(useAppStore.getState().isConfigured).toBe(true));
     expect(useAppStore.getState().serverUrl).toBe("http://h:1234");

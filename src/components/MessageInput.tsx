@@ -1,5 +1,5 @@
 import { useState, useRef, type KeyboardEvent } from "react";
-import { ArrowUp, Paperclip, X, Reply, Smile, Sparkles } from "lucide-react";
+import { CornerDownLeft, Paperclip, X, Smile } from "lucide-react";
 import { useAppStore } from "@/store/useAppStore";
 import { isSource } from "@/lib/source";
 import { sl } from "@/slack/api";
@@ -263,14 +263,16 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
     el.style.height = Math.min(el.scrollHeight, 140) + "px";
   }
 
+  const ghost =
+    "flex h-[34px] w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-[background-color] duration-120 hover:bg-muted hover:text-foreground disabled:opacity-50";
+
   return (
-    <div className={cn("px-2 md:px-4 py-2", superlightMode ? "bg-background" : "border-t bg-background/80 backdrop-blur-xl")}>
+    <div className="shrink-0 border-t px-3 py-2.5">
       {aiDraft && !aiDraft.usedAt && (
-        <div className={cn("mb-2 flex items-start gap-2 px-3 py-2", superlightMode ? "" : "border border-primary/30 rounded-lg bg-primary/5 animate-in fade-in slide-in-from-bottom-1 duration-150")}>
-          {!superlightMode && <Sparkles className="h-3.5 w-3.5 mt-0.5 text-primary shrink-0" />}
-          <div className="flex-1 min-w-0">
-            <p className="text-[11px] text-muted-foreground">AI suggestion — edit before sending</p>
-            <p className="text-xs whitespace-pre-wrap text-foreground/90">{aiDraft.text}</p>
+        <div className="mb-2 flex items-start gap-2 rounded-md bg-muted px-3 py-2">
+          <div className="min-w-0 flex-1">
+            <p className="font-mono text-cc-meta text-muted-foreground">AI suggestion</p>
+            <p className="whitespace-pre-wrap text-cc-body text-foreground">{aiDraft.text}</p>
           </div>
           <button
             type="button"
@@ -281,7 +283,7 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
               markAiDraftUsed(chatGUID);
               requestAnimationFrame(() => textareaRef.current?.focus());
             }}
-            className="shrink-0 rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground hover:bg-primary/90"
+            className="h-7 shrink-0 rounded-md bg-primary px-2.5 text-cc-body font-medium text-primary-foreground"
           >
             Use
           </button>
@@ -298,7 +300,7 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
               });
               clearAiDraft(chatGUID);
             }}
-            className={cn("h-6 w-6 flex items-center justify-center text-muted-foreground", !superlightMode && "rounded-full hover:bg-muted")}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-[background-color] duration-120 hover:bg-background hover:text-foreground"
             aria-label="Dismiss AI suggestion"
           >
             <X className="h-3.5 w-3.5" />
@@ -306,89 +308,73 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
         </div>
       )}
       {replyTarget && (
-        <div className={cn("mb-2 flex items-start gap-2 px-3 py-2", superlightMode ? "" : "border rounded-lg bg-muted/40 animate-in fade-in slide-in-from-bottom-1 duration-150")}>
-          {!superlightMode && <Reply className="h-3.5 w-3.5 mt-0.5 text-primary shrink-0" />}
-          <div className="flex-1 min-w-0">
-            <p className="text-[11px] text-muted-foreground">
+        <div className="mb-2 flex items-start gap-2 rounded-md bg-muted px-3 py-2">
+          <div className="min-w-0 flex-1">
+            <p className="font-mono text-cc-meta text-muted-foreground">
               Replying to {replyTarget.isFromMe ? "yourself" : replyTarget.handle?.firstName || "message"}
             </p>
-            <p className="text-xs truncate text-foreground/80">
-              {replyPreview || "Attachment"}
-            </p>
+            <p className="truncate text-cc-body text-foreground">{replyPreview || "Attachment"}</p>
           </div>
           <button
             type="button"
             onClick={() => setReplyTarget(chatGUID, null)}
-            className={cn("h-6 w-6 flex items-center justify-center text-muted-foreground", !superlightMode && "rounded-full hover:bg-muted")}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-[background-color] duration-120 hover:bg-background hover:text-foreground"
             aria-label="Cancel reply"
           >
             <X className="h-3.5 w-3.5" />
           </button>
         </div>
       )}
-      <div className={cn("flex gap-2", superlightMode ? "items-center" : "items-end")}>
+      <div className="flex items-end gap-2">
         {/* Tight cluster: paperclip + emoji sit snug, narrow hit-area. */}
-        <div className="flex items-center shrink-0">
-        <button
-          type="button"
-          className={cn(
-            "h-9 w-7 text-muted-foreground flex items-center justify-center shrink-0 transition-transform active:scale-90",
-            !superlightMode && "rounded-full hover:bg-muted hover:text-foreground"
-          )}
-          aria-label="Attach file"
-          title="Attach photo or video"
-          disabled={attaching}
-          onClick={() => fileInputRef.current?.click()}
-        >
-          <Paperclip className="h-4 w-4" />
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*,video/*"
-          className="hidden"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            e.target.value = ""; // allow re-selecting the same file
-            if (file) void sendFile(file);
-          }}
-        />
-
-        <div className="relative shrink-0">
+        <div className="-mr-1 flex shrink-0 items-center">
           <button
             type="button"
-            // Keep this pointerdown from reaching the picker's outside-click
-            // listener, so the button reliably toggles instead of close+reopen.
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={() => setPickerOpen((v) => !v)}
-            aria-label="Insert emoji"
-            aria-expanded={pickerOpen}
-            title="Emoji"
-            className={cn(
-              "h-9 w-7 flex items-center justify-center transition-transform active:scale-90",
-              pickerOpen ? "text-foreground" : "text-muted-foreground",
-              !superlightMode && "rounded-full hover:bg-muted hover:text-foreground"
-            )}
+            className={ghost}
+            aria-label="Attach file"
+            title="Attach photo or video"
+            disabled={attaching}
+            onClick={() => fileInputRef.current?.click()}
           >
-            <Smile className="h-4 w-4" />
+            <Paperclip className="h-[15px] w-[15px]" />
           </button>
-          {pickerOpen && (
-            <EmojiPicker
-              superlight={superlightMode}
-              onSelect={insertEmoji}
-              onClose={() => setPickerOpen(false)}
-            />
-          )}
-        </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,video/*"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = ""; // allow re-selecting the same file
+              if (file) void sendFile(file);
+            }}
+          />
+
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              // Keep this pointerdown from reaching the picker's outside-click
+              // listener, so the button reliably toggles instead of close+reopen.
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => setPickerOpen((v) => !v)}
+              aria-label="Insert emoji"
+              aria-expanded={pickerOpen}
+              title="Emoji"
+              className={cn(ghost, pickerOpen && "bg-muted text-foreground")}
+            >
+              <Smile className="h-[15px] w-[15px]" />
+            </button>
+            {pickerOpen && (
+              <EmojiPicker
+                superlight={superlightMode}
+                onSelect={insertEmoji}
+                onClose={() => setPickerOpen(false)}
+              />
+            )}
+          </div>
         </div>
 
-        <div
-          className={cn(
-            "flex-1 relative",
-            superlightMode && "min-h-9 flex items-center cursor-text"
-          )}
-          onClick={() => textareaRef.current?.focus()}
-        >
+        <div className="relative min-w-0 flex-1" onClick={() => textareaRef.current?.focus()}>
           <EmojiSuggestions
             suggestions={emoji.suggestions}
             activeIndex={emoji.activeIndex}
@@ -407,36 +393,27 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
             onKeyUp={emoji.syncCaret}
             onSelect={emoji.syncCaret}
             onInput={handleInput}
-            placeholder={replyTarget ? "Reply…" : ""}
+            placeholder="Reply…"
             rows={1}
             className={cn(
-              "scrollbar-autohide w-full resize-none text-sm caret-foreground",
-              superlightMode
-                ? "block bg-background p-0 m-0 leading-tight placeholder:text-muted-foreground focus:outline-none min-h-0 max-h-[140px] overflow-y-auto"
-                : "border border-input rounded-2xl bg-muted/40 pl-4 py-[7px] pr-11 placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring min-h-9 max-h-[140px] overflow-y-auto transition-shadow"
+              "scrollbar-autohide block max-h-[140px] min-h-[34px] w-full resize-none overflow-y-auto rounded-md bg-background px-2.5 py-[7.5px] text-cc-body caret-foreground placeholder:text-muted-foreground focus:outline-none",
+              "shadow-[inset_0_0_0_1px_hsl(var(--border))] focus:shadow-[inset_0_0_0_1.5px_hsl(var(--primary))]"
             )}
           />
-          <button
-            onClick={send}
-            disabled={!hasText}
-            aria-label="Send message"
-            className={cn(
-              "absolute right-1.5 h-7 w-7 flex items-center justify-center shrink-0",
-              superlightMode
-                ? "top-1/2 -translate-y-1/2 text-foreground"
-                : "bottom-1 rounded-full bg-primary text-primary-foreground shadow-sm transition-all duration-150 ease-out active:scale-90",
-              superlightMode
-                ? hasText
-                  ? "opacity-100"
-                  : "opacity-40 pointer-events-none"
-                : hasText
-                ? "opacity-100 scale-100"
-                : "opacity-0 scale-50 pointer-events-none"
-            )}
-          >
-            <ArrowUp className="h-4 w-4" strokeWidth={2.5} />
-          </button>
         </div>
+
+        <button
+          type="button"
+          onClick={send}
+          disabled={!hasText}
+          aria-label="Send message"
+          className={cn(
+            "flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-md transition-[background-color] duration-120",
+            hasText ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+          )}
+        >
+          <CornerDownLeft className="h-[15px] w-[15px]" />
+        </button>
       </div>
     </div>
   );

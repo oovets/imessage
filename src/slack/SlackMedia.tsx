@@ -49,7 +49,7 @@ export function SlackMedia({ att }: { att: Attachment }) {
   if (isVideo) {
     if (!url) {
       return (
-        <div className="rounded-lg bg-muted/40 text-muted-foreground text-xs px-3 py-6 my-1 text-center min-w-32">
+        <div className="rounded-md bg-muted/40 text-muted-foreground text-xs px-3 py-6 my-1 text-center min-w-32">
           {failed ? "⚠ video unavailable" : "Loading video…"}
         </div>
       );
@@ -59,7 +59,7 @@ export function SlackMedia({ att }: { att: Attachment }) {
         src={url}
         controls
         preload="metadata"
-        className="rounded-lg max-h-80 max-w-full -mx-1 mb-1"
+        className="rounded-md max-h-80 max-w-full -mx-1 mb-1"
         onError={() => setFailed(true)}
         onLoadedMetadata={(e) => {
           // Show the first frame as a poster instead of a black box.
@@ -79,7 +79,7 @@ export function SlackMedia({ att }: { att: Attachment }) {
   if (isImage) {
     if (!url) {
       return (
-        <div className="rounded-lg bg-muted/40 text-muted-foreground text-xs px-3 py-6 my-1 text-center min-w-32">
+        <div className="rounded-md bg-muted/40 text-muted-foreground text-xs px-3 py-6 my-1 text-center min-w-32">
           {failed ? "⚠ image unavailable" : "Loading image…"}
         </div>
       );
@@ -89,7 +89,7 @@ export function SlackMedia({ att }: { att: Attachment }) {
         src={url}
         alt={att.transferName || "Slack image"}
         style={{ imageOrientation: "from-image" }}
-        className="rounded-lg max-h-80 max-w-full -mx-1 mb-1 object-cover"
+        className="rounded-md max-h-80 max-w-full -mx-1 mb-1 object-cover"
         onError={() => setFailed(true)}
       />
     );
@@ -110,7 +110,7 @@ export function SlackMedia({ att }: { att: Attachment }) {
           setFailed(true);
         }
       }}
-      className="flex w-full items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 my-1 text-sm hover:bg-muted/60"
+      className="flex w-full items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 my-1 text-sm hover:bg-muted/60"
       title={att.transferName}
     >
       <FileDown className="h-4 w-4 shrink-0 text-muted-foreground" />

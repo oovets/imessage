@@ -7,7 +7,9 @@ export type ThemeTokenKey =
   | "primaryForeground"
   | "muted"
   | "mutedForeground"
-  | "border";
+  | "border"
+  | "panel"
+  | "signal";
 
 export type ThemeTokenValues = Record<ThemeTokenKey, string>;
 
@@ -22,36 +24,47 @@ export const MAX_FONT_SCALE = 1.35;
 export const FONT_SCALE_STEP = 0.05;
 export const DEFAULT_FONT_SCALE = 1;
 export const DEFAULT_FONT_FAMILY =
+  '"Geist", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+/** The pre-Geist default. Persisted appearance still carrying it is migrated. */
+export const LEGACY_DEFAULT_FONT_FAMILY =
   'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 
 export const THEME_TOKEN_LABELS: Array<{ key: ThemeTokenKey; label: string }> = [
   { key: "background", label: "Background" },
   { key: "foreground", label: "Text" },
-  { key: "primary", label: "Accent" },
-  { key: "primaryForeground", label: "Accent text" },
-  { key: "muted", label: "Panel" },
+  { key: "panel", label: "Panel" },
+  { key: "primary", label: "Ink" },
+  { key: "primaryForeground", label: "Ink text" },
+  { key: "muted", label: "Muted" },
   { key: "mutedForeground", label: "Muted text" },
   { key: "border", label: "Border" },
+  { key: "signal", label: "Signal" },
 ];
 
+// Command Center palette: monochrome ink on warm off-white / near-black, with
+// one signal colour reserved for "needs you" (unread, typing, progress, errors).
 export const DEFAULT_THEME_TOKENS: Record<ThemeMode, ThemeTokenValues> = {
   light: {
-    background: "#ffffff",
-    foreground: "#020817",
-    primary: "#007bff",
-    primaryForeground: "#ffffff",
-    muted: "#f1f5f9",
-    mutedForeground: "#64748b",
-    border: "#e2e8f0",
+    background: "#f4f3ef",
+    foreground: "#111110",
+    primary: "#111110",
+    primaryForeground: "#f4f3ef",
+    muted: "#ebe9e3",
+    mutedForeground: "#6e6c66",
+    border: "#dedcd5",
+    panel: "#ffffff",
+    signal: "#dd5a2c",
   },
   dark: {
-    background: "#181817",
-    foreground: "#e7e3da",
-    primary: "#aaa394",
-    primaryForeground: "#181817",
-    muted: "#262521",
-    mutedForeground: "#89857b",
-    border: "#2a2927",
+    background: "#0e0e0d",
+    foreground: "#eeece6",
+    primary: "#eeece6",
+    primaryForeground: "#0e0e0d",
+    muted: "#1f1e1c",
+    mutedForeground: "#8a877f",
+    border: "#2a2926",
+    panel: "#161615",
+    signal: "#f07a4f",
   },
 };
 
@@ -111,7 +124,10 @@ function hexToHsl(hex: string): string {
     h /= 6;
   }
 
-  return `${Math.round(h * 360)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`;
+  // One decimal: whole-percent rounding shifted the warm neutrals by up to
+  // 2–3 RGB levels, which is visible between adjacent panels.
+  const r1 = (v: number) => Math.round(v * 10) / 10;
+  return `${r1(h * 360)} ${r1(s * 100)}% ${r1(l * 100)}%`;
 }
 
 export function normalizeHex(value: string): string {
@@ -133,8 +149,10 @@ export function applyAppearance(settings: AppearanceSettings, mode: ThemeMode): 
   root.style.setProperty("--app-font-family", settings.fontFamily || DEFAULT_FONT_FAMILY);
 
   setColor("--background", tokens.background);
-  setColor("--card", tokens.background);
-  setColor("--popover", tokens.background);
+  setColor("--panel", tokens.panel);
+  setColor("--card", tokens.panel);
+  setColor("--popover", tokens.panel);
+  setColor("--signal", tokens.signal);
   setColor("--foreground", tokens.foreground);
   setColor("--card-foreground", tokens.foreground);
   setColor("--popover-foreground", tokens.foreground);

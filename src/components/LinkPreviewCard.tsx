@@ -33,10 +33,10 @@ export function LinkPreviewCard({ preview, url, loading, isOwnMessage }: LinkPre
       rel="noopener noreferrer"
       onClick={(event) => event.stopPropagation()}
       className={cn(
-        "mt-2 block overflow-hidden rounded-xl border text-left transition-colors",
+        "mt-2 block overflow-hidden rounded-md border text-left transition-[background-color] duration-120",
         isOwnMessage
           ? "border-primary-foreground/20 bg-primary-foreground/10 text-primary-foreground hover:bg-primary-foreground/15"
-          : "border-border bg-background/80 text-foreground hover:bg-accent/70"
+          : "border-border bg-background text-foreground hover:bg-muted"
       )}
     >
       {loading ? (

@@ -4,6 +4,7 @@ import { ChatPane } from "@/components/ChatPane";
 import { PaneTreeRoot } from "@/components/PaneTree";
 import { ImageContextMenu } from "@/components/ImageContextMenu";
 import { OnboardingWizard } from "@/components/OnboardingWizard";
+import { Toolbar } from "@/components/Toolbar";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { usePollingFallback } from "@/hooks/usePollingFallback";
 import { useDesktopFeatures } from "@/hooks/useDesktopFeatures";
@@ -116,59 +117,57 @@ export default function App() {
 
   if (!configLoaded) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background text-sm text-muted-foreground">
+      <div className="flex h-screen items-center justify-center bg-background text-cc-body text-muted-foreground">
         Loading app configuration…
       </div>
     );
   }
 
-  // First-run in the desktop app: guide setup (install + configure BlueBubbles,
-  // or connect to an existing server) instead of dropping into the empty shell.
-  // Skipped once the user dismisses it (e.g. to run Telegram only).
-  if (isTauriRuntime() && !isConfigured && !onboardingDismissed) {
-    return <OnboardingWizard />;
-  }
+  // First-run in the desktop app: a checklist of sources to connect instead of
+  // dropping into the empty shell. Skipped once the user dismisses it (e.g.
+  // after connecting only Telegram).
+  const onboarding = isTauriRuntime() && !isConfigured && !onboardingDismissed;
 
   return (
-    <div className="app-shell flex h-screen overflow-hidden bg-background">
-      {/* Draggable titlebar strip (Tauri only — hidden via CSS in the browser). */}
-      <div className="app-titlebar" data-tauri-drag-region />
-      <ImageContextMenu />
-      <aside
-        className={cn(
-          "flex flex-col min-h-0 shrink-0 transition-[width]",
-          !superlightMode && "md:border-r",
-          selectedChatGUID ? "hidden w-0 md:flex" : "flex w-full",
-          sidebarHidden
-            ? "md:w-16 md:overflow-hidden"
-            : "md:w-80"
-        )}
-      >
-        <ChatList />
-      </aside>
+    <div className="app-shell flex h-screen flex-col overflow-hidden bg-background font-sans text-cc-body text-foreground">
+      <Toolbar setup={onboarding} />
+      {onboarding ? (
+        <OnboardingWizard />
+      ) : (
+        <div className="flex min-h-0 flex-1">
+          <ImageContextMenu />
+          <aside
+            className={cn(
+              "min-h-0 shrink-0 flex-col md:border-r",
+              selectedChatGUID ? "hidden w-0 md:flex" : "flex w-full",
+              sidebarHidden ? "md:w-[52px] md:overflow-hidden" : "md:w-[296px]"
+            )}
+          >
+            <ChatList />
+          </aside>
 
-      <main
-        className={cn(
-          "flex-1 flex-col min-h-0 overflow-hidden",
-          selectedChatGUID ? "flex" : "hidden md:flex"
-        )}
-      >
-        <div className="hidden md:flex flex-1 min-h-0">
-          <PaneTreeRoot />
-        </div>
+          <main
+            className={cn(
+              "min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
+              selectedChatGUID ? "flex" : "hidden md:flex"
+            )}
+          >
+            <div className="hidden min-h-0 flex-1 md:flex">
+              <PaneTreeRoot />
+            </div>
 
-        <div className="flex md:hidden flex-1 min-h-0">
-          <div className="flex-1 min-h-0">
-            <ChatPane
-              paneId={active.paneId}
-              chatGUID={active.chatGUID}
-              isActive
-              canClose={false}
-              showMobileBack
-            />
-          </div>
+            <div className="app-board flex min-h-0 flex-1 p-2.5 md:hidden">
+              <ChatPane
+                paneId={active.paneId}
+                chatGUID={active.chatGUID}
+                isActive
+                canClose={false}
+                showMobileBack
+              />
+            </div>
+          </main>
         </div>
-      </main>
+      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ChevronDown, MessagesSquare } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { MessageBubble } from "@/components/MessageBubble";
 import { MessageListSkeleton } from "@/components/MessageListSkeleton";
 import { TypingIndicator } from "@/components/TypingIndicator";
@@ -126,6 +126,15 @@ export function MessageList({ chatGUID }: MessageListProps) {
   const serverUrl = useAppStore((s) => s.serverUrl);
   const password = useAppStore((s) => s.password);
   const visible = messages.filter((m) => reactionTypeNum(m.associatedMessageType) < 2000);
+  // Sender names only matter in groups. Participants cover iMessage; for
+  // sources whose chats carry none (Slack channels), more than one distinct
+  // incoming sender in the loaded history is the tell.
+  const participantCount = useAppStore(
+    (s) => s.chats.find((c) => c.guid === chatGUID)?.participants.length ?? 0
+  );
+  const isGroup =
+    participantCount > 1 ||
+    new Set(visible.filter((m) => !m.isFromMe).map(senderKey)).size > 1;
   const latestVisible = visible[visible.length - 1];
   const latestVisibleKey = latestVisible ? `${latestVisible.guid}:${latestVisible.dateCreated}` : "";
 
@@ -297,7 +306,7 @@ export function MessageList({ chatGUID }: MessageListProps) {
 
   if (loadingMessages && messages.length === 0) {
     return superlightMode ? (
-      <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
+      <div className="flex flex-1 items-center justify-center text-cc-body text-muted-foreground">
         Loading messages…
       </div>
     ) : (
@@ -307,10 +316,8 @@ export function MessageList({ chatGUID }: MessageListProps) {
 
   if (messages.length === 0) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-2 text-muted-foreground">
-        {!superlightMode && <MessagesSquare className="h-9 w-9 opacity-30" />}
-        <p className="text-sm">No messages yet</p>
-        <p className="text-xs opacity-70">Say hello 👋</p>
+      <div className="flex flex-1 flex-col items-center justify-center text-cc-body text-muted-foreground">
+        No messages yet
       </div>
     );
   }
@@ -321,12 +328,13 @@ export function MessageList({ chatGUID }: MessageListProps) {
     <div className="flex-1 relative min-h-0">
       <div
         ref={scrollRef}
-        className="scrollbar-autohide absolute inset-0 overflow-y-auto overflow-x-hidden py-2 [overflow-anchor:none]"
+        className="scrollbar-autohide absolute inset-0 overflow-y-auto overflow-x-hidden py-2.5 [overflow-anchor:none]"
       >
         <div
           ref={contentRef}
           className={cn(
-            "transition-opacity duration-150",
+            // A short history sits at the bottom, next to the composer.
+            "flex min-h-full flex-col justify-end transition-opacity duration-150",
             ready ? "opacity-100" : "opacity-0"
           )}
         >
@@ -346,7 +354,7 @@ export function MessageList({ chatGUID }: MessageListProps) {
             const isFirstInGroup = !sameSenderAsPrev;
             const isLastInGroup = !sameSenderAsNext;
 
-            const showSender = isFirstInGroup && !msg.isFromMe;
+            const showSender = isGroup && isFirstInGroup && !msg.isFromMe;
             const showTime = showTimestamps && isLastInGroup;
 
             // Telegram messages carry their own aggregated emoji reactions;
@@ -355,28 +363,18 @@ export function MessageList({ chatGUID }: MessageListProps) {
 
             return (
               <div key={msg.guid}>
-                {showDateChip && (
-                  superlightMode ? (
-                    <div className="flex items-center justify-center my-4 px-4">
-                      <span className="text-[11px] font-medium text-muted-foreground">
-                        {formatDateChip(msg.dateCreated)}
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-3 my-4 px-4">
-                      <div className="flex-1 h-px bg-border" />
-                      <span className="text-[10px] font-semibold tracking-[0.16em] uppercase text-muted-foreground">
-                        {formatDateChip(msg.dateCreated)}
-                      </span>
-                      <div className="flex-1 h-px bg-border" />
-                    </div>
-                  )
-                )}
-                {showTimeHeader && (
-                  <div className="flex items-center justify-center my-3">
-                    <span className="text-[10px] font-medium text-muted-foreground">
-                      {formatTimeOnly(msg.dateCreated)}
+                {(showDateChip || showTimeHeader) && (
+                  // One divider style for both day changes and time gaps:
+                  // mono label, then a hairline filling the row.
+                  <div className="mx-3.5 mb-2 mt-3 flex items-center gap-2.5 font-mono text-cc-chip text-muted-foreground">
+                    <span className="whitespace-nowrap">
+                      {/* A history that is all today opens on the time, not
+                          "TODAY"; later day changes name the day. */}
+                      {showDateChip && !(i === 0 && isSameDay(msg.dateCreated, Date.now()))
+                        ? formatDateChip(msg.dateCreated).toUpperCase()
+                        : formatTimeOnly(msg.dateCreated)}
                     </span>
+                    <span className="h-px flex-1 bg-border" />
                   </div>
                 )}
                 <MessageBubble
@@ -385,7 +383,6 @@ export function MessageList({ chatGUID }: MessageListProps) {
                   showTime={showTime}
                   reactions={reactions}
                   isFirstInGroup={isFirstInGroup}
-                  isLastInGroup={isLastInGroup}
                   onReply={handleReply}
                   onReact={handleReact}
                 />
@@ -401,13 +398,13 @@ export function MessageList({ chatGUID }: MessageListProps) {
         onClick={jumpToBottom}
         className={cn(
           "absolute bottom-3 left-1/2 -translate-x-1/2 z-10",
-          "flex items-center gap-2 border text-xs font-medium",
-          superlightMode ? "bg-background px-3 py-1.5" : "rounded-full bg-background shadow-lg px-4 py-2 transition-all duration-200",
+          "flex items-center gap-1.5 rounded-md bg-panel px-3 py-1 font-mono text-cc-meta text-muted-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))] hover:text-foreground",
+          !superlightMode && "transition-[opacity,transform] duration-200",
           showJump ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4 pointer-events-none"
         )}
         aria-label="Jump to latest"
       >
-        {!superlightMode && <ChevronDown className="h-3.5 w-3.5" />}
+        <ChevronDown className="h-3.5 w-3.5" />
         {unseenCount > 0 ? `${unseenCount} new message${unseenCount > 1 ? "s" : ""}` : "Jump to latest"}
       </button>
     </div>

@@ -3,6 +3,7 @@ import { persist, type PersistStorage } from "zustand/middleware";
 import {
   DEFAULT_APPEARANCE,
   FONT_SCALE_STEP,
+  LEGACY_DEFAULT_FONT_FAMILY,
   clampFontScale,
   type AppearanceSettings,
   type ThemeMode,
@@ -61,6 +62,21 @@ function findLeaf(node: PaneNode, id: string): PaneNode | null {
 }
 function firstLeaf(node: PaneNode): PaneNode {
   return node.type === "leaf" ? node : firstLeaf(node.children[0]);
+}
+/**
+ * Leaf panes in reading order — left-to-right, top-to-bottom. A pane's index
+ * here + 1 is its ⌘N key, shown on the pane header and on sidebar rows.
+ */
+export function paneLeafOrder(node: PaneNode): Array<{ id: string; chatGUID: string | null }> {
+  if (node.type === "leaf") return [{ id: node.id, chatGUID: node.chatGUID }];
+  return [...paneLeafOrder(node.children[0]), ...paneLeafOrder(node.children[1])];
+}
+/** Columns along the root's horizontal splits (the board's top-level width). */
+function countColumns(node: PaneNode): number {
+  if (node.type === "split" && node.direction === "horizontal") {
+    return countColumns(node.children[0]) + countColumns(node.children[1]);
+  }
+  return 1;
 }
 function mapTree(node: PaneNode, fn: (n: PaneNode) => PaneNode): PaneNode {
   if (node.type === "split") {
@@ -408,6 +424,14 @@ interface AppState {
   setPaneChat: (paneId: string, guid: string | null) => void;
   setActivePane: (paneId: string) => void;
   splitPane: (paneId: string, direction: "horizontal" | "vertical", chatGUID?: string | null) => void;
+  /** Add a new column at the right edge of the board (the empty drop slot). */
+  appendPane: (chatGUID?: string | null) => void;
+  /** Focus mode: show only this pane until cleared (Esc / Maximize again). */
+  focusedPaneId: string | null;
+  setFocusedPane: (paneId: string | null) => void;
+  /** Command-bar query; filters the sidebar. Not persisted. */
+  chatQuery: string;
+  setChatQuery: (q: string) => void;
   closePane: (paneId: string) => void;
   setPaneLayout: (groupId: string, sizes: number[]) => void;
   repairPaneState: () => void;
@@ -605,6 +629,8 @@ export const useAppStore = create<AppState>()(
       paneLayouts: {},
 
       selectedChatGUID: null,
+      focusedPaneId: null,
+      chatQuery: "",
       messages: {},
       messageOrder: [],
       replyTarget: {},
@@ -778,7 +804,13 @@ export const useAppStore = create<AppState>()(
         );
         const existing = findLeafByChat(paneTree, guid);
         if (existing && existing.type === "leaf") {
-          set({ activePaneId: existing.id, selectedChatGUID: guid, chats: nextChats });
+          set((s) => ({
+            activePaneId: existing.id,
+            selectedChatGUID: guid,
+            chats: nextChats,
+            // In focus mode, follow the chat to the pane that already shows it.
+            focusedPaneId: s.focusedPaneId ? existing.id : null,
+          }));
           return;
         }
         const tree = setLeafChat(paneTree, activePaneId, guid);
@@ -815,9 +847,44 @@ export const useAppStore = create<AppState>()(
         set({
           paneTree: tree,
           activePaneId: newLeafId,
+          focusedPaneId: null,
           selectedChatGUID: deriveSelectedChat(tree, newLeafId),
         });
       },
+
+      appendPane: (chatGUID = null) => {
+        const base = ensurePaneState(get().paneTree, get().activePaneId);
+        const stats = paneTreeStats(base.tree);
+        if (stats.leaves >= MAX_PANE_LEAVES || stats.depth >= MAX_PANE_DEPTH) return;
+        const newLeafId = uid("pane");
+        const splitId = uid("split");
+        const tree: PaneNode = {
+          type: "split",
+          id: splitId,
+          direction: "horizontal",
+          children: [base.tree, { type: "leaf", id: newLeafId, chatGUID }],
+        };
+        // Give the new column an equal share instead of half the board.
+        const cols = countColumns(base.tree);
+        set((s) => ({
+          paneTree: tree,
+          activePaneId: newLeafId,
+          focusedPaneId: null,
+          selectedChatGUID: deriveSelectedChat(tree, newLeafId),
+          paneLayouts: {
+            ...s.paneLayouts,
+            [splitId]: sanitizeLayoutPair([cols * 100, 100]),
+          },
+        }));
+      },
+
+      setFocusedPane: (paneId) => {
+        if (paneId !== null && !findLeaf(get().paneTree, paneId)) return;
+        set({ focusedPaneId: paneId });
+        if (paneId) get().setActivePane(paneId);
+      },
+
+      setChatQuery: (q) => set({ chatQuery: q }),
 
       closePane: (paneId) => {
         const { paneTree, activePaneId, paneLayouts } = get();
@@ -826,12 +893,13 @@ export const useAppStore = create<AppState>()(
         const closedActive = paneId === activePaneId;
         const activeStillExists = !closedActive && !!findLeaf(tree, activePaneId);
         const newActive = activeStillExists ? activePaneId : nextActiveId;
-        set({
+        set((s) => ({
           paneTree: tree,
           activePaneId: newActive,
           selectedChatGUID: deriveSelectedChat(tree, newActive),
           paneLayouts: pruneLayouts(paneLayouts, tree),
-        });
+          focusedPaneId: s.focusedPaneId === paneId ? null : s.focusedPaneId,
+        }));
       },
 
       setPaneLayout: (groupId, sizes) =>
@@ -1064,6 +1132,11 @@ export const useAppStore = create<AppState>()(
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<AppState>;
         const merged = { ...current, ...p } as AppState;
+        // Stores saved before the Geist redesign pinned the old system-font
+        // default; only a font the user actually picked should survive.
+        if (merged.appearance?.fontFamily === LEGACY_DEFAULT_FONT_FAMILY) {
+          merged.appearance = { ...merged.appearance, fontFamily: current.appearance.fontFamily };
+        }
         merged.aiReply = {
           ...current.aiReply,
           ...(p.aiReply ?? {}),

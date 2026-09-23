@@ -36,7 +36,7 @@ describe("ChatItem star", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it("shows a filled amber star when pinned", () => {
+  it("shows a filled star when pinned", () => {
     const { getByLabelText } = render(
       <ChatItem
         chat={chat()}
@@ -46,19 +46,36 @@ describe("ChatItem star", () => {
         onToggleStar={() => {}}
       />
     );
-    expect(getByLabelText("Unstar chat").className).toContain("text-amber-500");
+    expect(getByLabelText("Unstar chat").querySelector("svg")!.getAttribute("class")).toContain(
+      "fill-current"
+    );
+  });
+});
+
+describe("ChatItem variants", () => {
+  it("queue card: E done calls onDone without opening the chat", () => {
+    const onDone = vi.fn();
+    const onSelect = vi.fn();
+    const { getByLabelText } = render(
+      <ChatItem chat={chat({ unreadCount: 2 })} variant="card" isSelected={false} onSelect={onSelect} onDone={onDone} />
+    );
+    fireEvent.click(getByLabelText("Mark done"));
+    expect(onDone).toHaveBeenCalledWith("sl:work:C1");
+    expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it("keeps the unpinned star always visible — hover-reveal proved missable", () => {
-    const { getByLabelText } = render(
-      <ChatItem
-        chat={chat()}
-        isSelected={false}
-        onSelect={() => {}}
-        starred={false}
-        onToggleStar={() => {}}
-      />
+  it("alt-click opens in a new pane", () => {
+    const onSelect = vi.fn();
+    const { getByText } = render(<ChatItem chat={chat()} isSelected={false} onSelect={onSelect} />);
+    fireEvent.click(getByText("#daily"), { altKey: true });
+    expect(onSelect).toHaveBeenCalledWith("sl:work:C1", { newPane: true });
+  });
+
+  it("row shows the source tag and the pane key chip", () => {
+    const { getByText } = render(
+      <ChatItem chat={chat()} isSelected={false} onSelect={() => {}} paneKey={2} />
     );
-    expect(getByLabelText("Star chat").className).not.toContain("opacity-0");
+    expect(getByText("slack")).toBeTruthy();
+    expect(getByText("⌘2")).toBeTruthy();
   });
 });

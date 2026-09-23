@@ -3,6 +3,7 @@ import { Settings } from "lucide-react";
 import { enable, disable } from "@tauri-apps/plugin-autostart";
 import { listen } from "@tauri-apps/api/event";
 import { Button } from "@/components/ui/button";
+import { ghostIconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -28,7 +29,9 @@ import {
 } from "@/lib/appearance";
 
 interface SettingsDialogProps {
-  compact?: boolean;
+  /** Open once on its own while nothing is configured. Off during onboarding,
+   *  whose checklist is the setup surface. */
+  autoOpen?: boolean;
 }
 
 function normalizeServerUrl(value: string): string {
@@ -37,7 +40,7 @@ function normalizeServerUrl(value: string): string {
   return /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
 }
 
-export function SettingsDialog(_props: SettingsDialogProps) {
+export function SettingsDialog({ autoOpen = true }: SettingsDialogProps) {
   // Individual selectors — this component is mounted in the sidebar header at
   // all times (not just while the dialog is open), so a bare useAppStore()
   // here re-rendered it on every message that arrived.
@@ -102,10 +105,10 @@ export function SettingsDialog(_props: SettingsDialogProps) {
   }, []);
 
   useEffect(() => {
-    if (!configLoaded || isConfigured || autoOpenedRef.current) return;
+    if (!autoOpen || !configLoaded || isConfigured || autoOpenedRef.current) return;
     autoOpenedRef.current = true;
     setOpen(true);
-  }, [configLoaded, isConfigured]);
+  }, [autoOpen, configLoaded, isConfigured]);
 
   async function handleSave() {
     setSaving(true);
@@ -194,13 +197,14 @@ export function SettingsDialog(_props: SettingsDialogProps) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 text-muted-foreground"
+        <button
+          type="button"
+          className={ghostIconButton}
+          aria-label="Settings"
+          title="Settings"
         >
-          <Settings className="h-4 w-4" />
-        </Button>
+          <Settings />
+        </button>
       </DialogTrigger>
       <DialogContent className="scrollbar-autohide max-h-[85vh] overflow-y-auto sm:max-w-md">
         <DialogHeader>

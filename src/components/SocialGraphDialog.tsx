@@ -15,7 +15,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+import { ghostIconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 
 interface GraphNode {
@@ -196,15 +196,15 @@ export function SocialGraphDialog() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 text-muted-foreground"
+        <button
+          type="button"
+          className={ghostIconButton}
           aria-label="Social graph"
           title="Communication patterns"
+        
         >
-          <Network className="h-4 w-4" />
-        </Button>
+          <Network />
+        </button>
       </DialogTrigger>
       <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
         <DialogTitle>Communication patterns</DialogTitle>

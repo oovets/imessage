@@ -1,52 +1,94 @@
+/* Geist + Geist Mono (Vercel, SIL OFL) — variable weight, latin + latin-ext. */
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("./assets/fonts/Geist-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("./assets/fonts/Geist-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("./assets/fonts/GeistMono-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("./assets/fonts/GeistMono-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
+  /* Command Center tokens. applyAppearance() overwrites these at runtime from
+     DEFAULT_THEME_TOKENS (+ user overrides); these are the pre-JS fallback.
+     --background = window bg, --panel = panes/cards/incoming bubbles,
+     --primary = ink (outgoing bubble, active ring), --signal = "needs you". */
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --background: 48 18.5% 94.7%;
+    --panel: 0 0% 100%;
+    --foreground: 60 3% 6.5%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 60 3% 6.5%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 219 50% 58%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 219 50% 58%;
-    --radius: 0.75rem;
-    --app-font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --popover-foreground: 60 3% 6.5%;
+    --primary: 60 3% 6.5%;
+    --primary-foreground: 48 18.5% 94.7%;
+    --secondary: 45 16.7% 90.6%;
+    --secondary-foreground: 60 3% 6.5%;
+    --muted: 45 16.7% 90.6%;
+    --muted-foreground: 45 3.8% 41.6%;
+    --accent: 45 16.7% 90.6%;
+    --accent-foreground: 60 3% 6.5%;
+    --signal: 15.6 72.2% 52%;
+    --destructive: 15.6 72.2% 52%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 46.7 12% 85.3%;
+    --input: 46.7 12% 85.3%;
+    --ring: 60 3% 6.5%;
+    --radius: 0.375rem;
+    --app-font-family: "Geist", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   }
 
   .dark {
-    --background: 60 4% 9%;
-    --foreground: 42 21% 88%;
-    --card: 60 4% 9%;
-    --card-foreground: 42 21% 88%;
-    --popover: 60 4% 9%;
-    --popover-foreground: 42 21% 88%;
-    --primary: 43 12% 62%;
-    --primary-foreground: 60 4% 9%;
-    --secondary: 48 7% 14%;
-    --secondary-foreground: 42 21% 88%;
-    --muted: 48 7% 14%;
-    --muted-foreground: 40 7% 51%;
-    --accent: 48 7% 14%;
-    --accent-foreground: 42 21% 88%;
-    --destructive: 6 48% 45%;
-    --destructive-foreground: 42 21% 88%;
-    --border: 45 3% 16%;
-    --input: 45 5% 20%;
-    --ring: 43 12% 62%;
+    --background: 60 3.7% 5.3%;
+    --panel: 60 2.3% 8.4%;
+    --foreground: 45 19% 91.8%;
+    --card: 60 2.3% 8.4%;
+    --card-foreground: 45 19% 91.8%;
+    --popover: 60 2.3% 8.4%;
+    --popover-foreground: 45 19% 91.8%;
+    --primary: 45 19% 91.8%;
+    --primary-foreground: 60 3.7% 5.3%;
+    --secondary: 40 5.1% 11.6%;
+    --secondary-foreground: 45 19% 91.8%;
+    --muted: 40 5.1% 11.6%;
+    --muted-foreground: 43.6 4.5% 52%;
+    --accent: 40 5.1% 11.6%;
+    --accent-foreground: 45 19% 91.8%;
+    --signal: 16 84.3% 62.5%;
+    --destructive: 16 84.3% 62.5%;
+    --destructive-foreground: 60 3.7% 5.3%;
+    --border: 45 5% 15.7%;
+    --input: 45 5% 15.7%;
+    --ring: 45 19% 91.8%;
   }
 }
 
@@ -116,98 +158,30 @@
 
   /* ---- Native Tauri window (vibrancy + overlay titlebar) ---- */
 
-  /* Let the macOS vibrancy material show through the window. The opaque body /
-     app-shell backgrounds would otherwise cover it completely. */
-  .tauri body {
+  /* The 48px toolbar is the titlebar (drag region + traffic lights). Light
+     mode stays fully opaque — the warm off-white is the design. In dark mode
+     the macOS vibrancy material shows through the toolbar and sidebar, the
+     same frosted look as before the redesign. Superlight stays opaque. */
+  html.dark.tauri:not(.superlight-ui) body,
+  html.dark.tauri:not(.superlight-ui) .app-shell {
     background-color: transparent;
   }
-
-  .tauri .app-shell {
-    background-color: transparent;
-    /* Inset content below the overlay titlebar / traffic lights. */
-    padding-top: 1.75rem;
-  }
-
-  /* Draggable strip across the top where the traffic lights float. */
-  .app-titlebar {
-    display: none;
-  }
-  .tauri .app-titlebar {
-    display: block;
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 1.75rem;
-    z-index: 50;
-  }
-
-  /* Make the sidebar genuinely frosted so the titlebar + sidebar read as one
-     continuous translucent surface (real-Messages look). Skipped in the flat
-     superlight theme, which stays fully opaque. */
-  html.tauri:not(.superlight-ui) .app-sidebar {
+  html.dark.tauri:not(.superlight-ui) .app-toolbar,
+  html.dark.tauri:not(.superlight-ui) .app-sidebar {
     background-color: hsl(var(--background) / 0.62);
   }
-  html.tauri:not(.superlight-ui) .app-sidebar .app-sidebar-header {
-    background-color: hsl(var(--background) / 0.45);
+  html.dark.tauri:not(.superlight-ui) .app-board {
+    background-color: hsl(var(--background));
   }
 }
 
-/* ---- iMessage-style bubble tails ----
-   Drawn with two pseudo-elements behind the bubble: ::before is the
-   bubble-coloured nib, ::after carves its outer edge with the page colour.
-   z-index:0 on the bubble keeps the negative-z pseudos in its stacking
-   context (in front of the conversation background, behind the bubble fill). */
-.msg-tail-me,
-.msg-tail-them {
-  position: relative;
-  z-index: 0;
-}
-
-.msg-tail-them::before {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  left: -7px;
-  width: 16px;
-  height: 16px;
-  background: hsl(var(--muted));
-  border-bottom-right-radius: 16px 14px;
-  z-index: -1;
-}
-.msg-tail-them::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  left: -16px;
-  width: 16px;
-  height: 16px;
-  background: hsl(var(--background));
-  border-bottom-right-radius: 10px;
-  z-index: -1;
-}
-
-.msg-tail-me::before {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  right: -7px;
-  width: 16px;
-  height: 16px;
-  background: #5e84c9;
-  border-bottom-left-radius: 16px 14px;
-  z-index: -1;
-}
-.msg-tail-me::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  right: -16px;
-  width: 16px;
-  height: 16px;
-  background: hsl(var(--background));
-  border-bottom-left-radius: 10px;
-  z-index: -1;
+/* Diagonal stripes of the empty drop slot on the board. */
+.cc-stripes {
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0 6px,
+    hsl(var(--muted)) 6px 7px
+  );
 }
 
 /* Typing indicator: a gentle bob + fade, softer than animate-bounce. */

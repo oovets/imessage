@@ -3,11 +3,8 @@ import { Copy, Reply, Smile, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { type Message, decodeEscapedUnicode, formatMessageTime } from "@/types";
 import { useAppStore } from "@/store/useAppStore";
-import { isSource, supports } from "@/lib/source";
-import { useTelegramSenderAvatar } from "@/telegram/useTelegramAvatar";
-import { useSlackSenderAvatar } from "@/slack/useSlackAvatar";
+import { isSource } from "@/lib/source";
 import { parseSlackMarks } from "@/slack/mrkdwn";
-import { useContactAvatarForAddress } from "@/lib/contactAvatars";
 import { getClient } from "@/api/clientFactory";
 import { extractFirstUrl, fetchLinkPreview } from "@/lib/linkPreview";
 import { LinkPreviewCard } from "@/components/LinkPreviewCard";
@@ -28,7 +25,6 @@ interface MessageBubbleProps {
   showTime: boolean;
   reactions?: string[];
   isFirstInGroup?: boolean;
-  isLastInGroup?: boolean;
   onReply?: (message: Message) => void;
   onReact?: (message: Message, reactionKey: string) => void;
 }
@@ -81,11 +77,9 @@ function renderTextWithLinks(text: string, isMe: boolean, superlightMode: boolea
         rel="noopener noreferrer"
         className={cn(
           "underline underline-offset-2 break-all",
-          superlightMode
-            ? "text-primary hover:text-primary/80"
-            : isMe
-            ? "text-white/90 hover:text-white"
-            : "text-primary hover:text-primary/80"
+          isMe && !superlightMode
+            ? "text-primary-foreground hover:opacity-80"
+            : "text-foreground hover:opacity-80"
         )}
         onClick={(e) => e.stopPropagation()}
       >
@@ -115,7 +109,7 @@ function renderSlackText(text: string, isMe: boolean, superlightMode: boolean) {
             key={i}
             className={cn(
               "rounded px-1 py-px font-mono text-[0.85em]",
-              isMe && !superlightMode ? "bg-white/20" : "bg-muted-foreground/15"
+              isMe && !superlightMode ? "bg-primary-foreground/20" : "bg-muted"
             )}
           >
             {span.text}
@@ -127,7 +121,7 @@ function renderSlackText(text: string, isMe: boolean, superlightMode: boolean) {
             key={i}
             className={cn(
               "my-1 overflow-x-auto rounded-md px-2 py-1.5 font-mono text-[0.85em] whitespace-pre-wrap",
-              isMe && !superlightMode ? "bg-white/15" : "bg-muted-foreground/10"
+              isMe && !superlightMode ? "bg-primary-foreground/15" : "bg-muted"
             )}
           >
             {span.text}
@@ -140,6 +134,10 @@ function renderSlackText(text: string, isMe: boolean, superlightMode: boolean) {
 }
 
 const IMAGE_MIME = /^image\//;
+
+/** 28×28 button in the hover action pill. */
+const hoverAction =
+  "flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-[background-color] duration-120 hover:bg-muted hover:text-foreground";
 const VIDEO_MIME = /^video\//;
 
 // Inline thumbnail width. Covers retina at the ~320px display cap without
@@ -177,21 +175,10 @@ function AttachmentImage({
       <OrientedImage
         src={fullSrc}
         alt={alt}
-        className="rounded-lg max-h-80 max-w-full"
+        className="rounded-md max-h-80 max-w-full"
       />
     </button>
   );
-}
-
-// Stable per-sender colour for names in group chats (derived from the address
-// so the same person is always the same hue). Tuned to stay legible on both
-// the light and dark muted backgrounds.
-function senderNameColor(address: string): string {
-  let hash = 0;
-  for (let i = 0; i < address.length; i++) {
-    hash = (hash * 31 + address.charCodeAt(i)) | 0;
-  }
-  return `hsl(${Math.abs(hash) % 360} 70% 60%)`;
 }
 
 export function MessageBubble({
@@ -200,7 +187,6 @@ export function MessageBubble({
   showTime,
   reactions,
   isFirstInGroup = true,
-  isLastInGroup = true,
   onReply,
   onReact,
 }: MessageBubbleProps) {
@@ -211,22 +197,11 @@ export function MessageBubble({
   const serverUrl = useAppStore((s) => s.serverUrl);
   const password = useAppStore((s) => s.password);
   const superlightMode = useAppStore((s) => s.superlightMode);
-  const showAvatars = useAppStore((s) => s.showAvatars);
   const linkPreviewsEnabled = useAppStore((s) => s.linkPreviewsEnabled);
   const linkPreviewCache = useAppStore((s) => s.linkPreviewCache);
   const setLinkPreview = useAppStore((s) => s.setLinkPreview);
 
-  // Mini sender avatar (incoming messages): Telegram sender photo or the
-  // iMessage contact photo, falling back to the initials circle below. The
-  // hooks gate on the global "show avatars" setting internally.
-  const senderAddress = !isMe ? (message.handle?.address ?? null) : null;
   const chatGuid = message.chatGUID ?? "";
-  const tgSenderAvatar = useTelegramSenderAvatar(chatGuid, senderAddress);
-  const slSenderAvatar = useSlackSenderAvatar(chatGuid, senderAddress);
-  const contactSenderAvatar = useContactAvatarForAddress(
-    chatGuid && supports(chatGuid, "contactAvatars") ? senderAddress : null
-  );
-  const senderAvatar = tgSenderAvatar ?? slSenderAvatar ?? contactSenderAvatar;
 
   const [copied, setCopied] = useState(false);
   const [showReactions, setShowReactions] = useState(false);
@@ -261,28 +236,8 @@ export function MessageBubble({
 
   const senderName =
     !isMe && message.handle ? message.handle.firstName || message.handle.address : null;
-  const senderInitials = (senderName ?? "")
-    .trim()
-    .split(/\s+/)
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-
   const hasContent = !!(decodedText || message.attachments?.length);
   if (!hasContent) return null;
-
-  const cornerClass = isMe
-    ? cn(
-        "rounded-2xl",
-        !isFirstInGroup && "rounded-tr-md",
-        isLastInGroup && "rounded-br-[6px]"
-      )
-    : cn(
-        "rounded-2xl",
-        !isFirstInGroup && "rounded-tl-md",
-        isLastInGroup && "rounded-bl-[6px]"
-      );
 
   async function handleCopy() {
     try {
@@ -292,69 +247,54 @@ export function MessageBubble({
     } catch {}
   }
 
+  const timeLabel = (
+    <time dateTime={new Date(message.dateCreated).toISOString()}>
+      {formatMessageTime(message.dateCreated)}
+    </time>
+  );
+
   return (
     <>
       <div
         className={cn(
-          "flex flex-col px-3 md:px-4",
+          "flex flex-col px-3.5",
           !superlightMode && "animate-in fade-in slide-in-from-bottom-1 duration-200",
           isMe ? "items-end" : "items-start",
-          isFirstInGroup ? "mt-1.5" : "mt-0.5",
-          isLastInGroup && "mb-0.5"
+          isFirstInGroup ? "mt-2.5" : "mt-[3px]"
         )}
       >
         {showSender && senderName && (
-          <span
-            className={cn(
-              "mb-1 px-3",
-              superlightMode
-                ? "text-xs font-semibold text-foreground"
-                : "text-[11px] font-medium"
-            )}
-            style={
-              superlightMode || !message.handle?.address
-                ? undefined
-                : { color: senderNameColor(message.handle.address) }
-            }
-          >
+          <span className="mb-[3px] max-w-full truncate text-cc-sender font-semibold text-muted-foreground">
             {senderName}
           </span>
         )}
 
-        <div className={cn(superlightMode ? "w-full" : "flex items-end gap-2 w-full", isMe && "justify-end")}>
-          {/* Avatars off = text only: neither the circle nor its reserved
-              column renders, so bubbles sit flush left. */}
-          {!isMe && !superlightMode && showAvatars && (
-            isLastInGroup ? (
-              senderAvatar ? (
-                <img
-                  src={senderAvatar}
-                  alt=""
-                  className="h-7 w-7 shrink-0 rounded-full object-cover select-none"
-                  draggable={false}
-                />
-              ) : (
-                <div className="h-7 w-7 shrink-0 rounded-full bg-[#5e84c9] text-white text-[10px] font-semibold flex items-center justify-center select-none">
-                  {senderInitials}
-                </div>
-              )
-            ) : (
-              <div className="w-7 shrink-0" aria-hidden="true" />
-            )
+        {/* Bubble + timestamp. The time sits on the outer side of the last
+            bubble in a group, aligned to its bottom. */}
+        <div
+          className={cn(
+            "flex items-end gap-2",
+            superlightMode ? "w-full max-w-[95%]" : "max-w-[86%]",
+            isMe && "flex-row-reverse"
           )}
-          <div className={cn("relative group min-w-0", superlightMode ? "max-w-[95%] w-full" : "max-w-[78%]")}>
+        >
+          <div className="group relative min-w-0">
           <div
             title={new Date(message.dateCreated).toLocaleString()}
             className={cn(
-              "px-3.5 py-2 text-sm select-text",
+              "select-text text-cc-body [text-wrap:pretty]",
               superlightMode
-                ? cn("px-0 py-0 bg-transparent", isMe ? "text-right text-muted-foreground" : "text-foreground")
+                ? cn("bg-transparent p-0", isMe ? "text-right text-muted-foreground" : "text-foreground")
                 : cn(
-                    "transition-colors duration-200",
-                    cornerClass,
-                    isMe ? "bg-[#5e84c9] text-white" : "bg-muted text-foreground",
+                    // Right padding is 6px wider than the left and the text
+                    // pulls back into it, so lines wrap a word early and the
+                    // rag stays even — the design's bubble measure.
+                    "rounded-md py-2 pl-[11px] pr-[17px]",
+                    isMe
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-panel text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]",
                     message.pending && "opacity-70",
-                    message.failed && "opacity-90 ring-1 ring-destructive/60"
+                    message.failed && "shadow-[inset_0_0_0_1px_hsl(var(--signal))]"
                   )
             )}
             onDoubleClick={() => onReact?.(message, "love")}
@@ -379,7 +319,7 @@ export function MessageBubble({
                     href={src}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-xs underline mb-1 block break-all"
+                    className="mb-1 block break-all text-cc-meta underline"
                   >
                     {att.transferName || "Attachment"}
                   </a>
@@ -408,7 +348,7 @@ export function MessageBubble({
                     key={att.guid}
                     src={src}
                     mime={mime}
-                    className="rounded-lg max-h-80 max-w-full -mx-1 mb-1"
+                    className="-mx-1 mb-1 max-h-80 max-w-full rounded-md"
                   />
                 );
               }
@@ -418,7 +358,7 @@ export function MessageBubble({
                   href={src}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs opacity-80 hover:opacity-100 underline mb-1 block"
+                  className="mb-1 block text-cc-meta underline opacity-80 hover:opacity-100"
                 >
                   {att.transferName || "Attachment"}
                 </a>
@@ -426,7 +366,12 @@ export function MessageBubble({
             })}
 
             {decodedText && (
-              <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+              <p
+                className={cn(
+                  "whitespace-pre-wrap break-words [overflow-wrap:anywhere]",
+                  !superlightMode && "-mr-1.5"
+                )}
+              >
                 {isSource(chatGuid, "slack")
                   ? renderSlackText(decodedText, isMe, superlightMode)
                   : renderTextWithLinks(decodedText, isMe, superlightMode)}
@@ -444,17 +389,16 @@ export function MessageBubble({
         {!superlightMode && (
           <div
             className={cn(
-              "absolute top-1/2 -translate-y-1/2 z-20",
-              "opacity-0 group-hover:opacity-100 focus-within:opacity-100",
-              "transition-opacity duration-150",
+              "absolute top-1/2 z-20 -translate-y-1/2",
+              "opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover:opacity-100",
               isMe ? "right-full mr-2" : "left-full ml-2"
             )}
           >
-            <div className="flex items-center gap-0.5 rounded-full border bg-popover/95 backdrop-blur-md shadow-md px-1 py-1">
+            <div className="flex items-center gap-0.5 rounded-md bg-panel p-0.5 shadow-[inset_0_0_0_1px_hsl(var(--border))]">
               <button
                 type="button"
                 onClick={() => setShowReactions((v) => !v)}
-                className="h-7 w-7 rounded-full hover:bg-accent flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                className={hoverAction}
                 aria-label="React"
                 title="React"
               >
@@ -464,7 +408,7 @@ export function MessageBubble({
                 <button
                   type="button"
                   onClick={() => onReply(message)}
-                  className="h-7 w-7 rounded-full hover:bg-accent flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                  className={hoverAction}
                   aria-label="Reply"
                   title="Reply"
                 >
@@ -475,19 +419,18 @@ export function MessageBubble({
                 <button
                   type="button"
                   onClick={handleCopy}
-                  className="h-7 w-7 rounded-full hover:bg-accent flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                  className={hoverAction}
                   aria-label="Copy"
                   title="Copy text"
                 >
-                  {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+                  {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                 </button>
               )}
             </div>
             {showReactions && (
               <div
                 className={cn(
-                  "absolute top-full mt-1 flex items-center gap-0.5 rounded-full border bg-popover/95 backdrop-blur-md shadow-lg px-1.5 py-1",
-                  "animate-in fade-in zoom-in-95 duration-150",
+                  "absolute top-full mt-1 flex items-center gap-0.5 rounded-md bg-panel p-0.5 shadow-[inset_0_0_0_1px_hsl(var(--border))]",
                   isMe ? "right-0" : "left-0"
                 )}
               >
@@ -499,7 +442,7 @@ export function MessageBubble({
                       onReact?.(message, r.key);
                       setShowReactions(false);
                     }}
-                    className="h-8 w-8 rounded-full hover:bg-accent flex items-center justify-center text-base hover:scale-125 transition-transform"
+                    className="flex h-7 w-7 items-center justify-center rounded text-base transition-[background-color] duration-120 hover:bg-muted"
                     aria-label={r.label}
                     title={r.label}
                   >
@@ -510,41 +453,31 @@ export function MessageBubble({
             )}
           </div>
         )}
+          </div>
 
-        {!superlightMode && reactions && reactions.length > 0 && (
-          <div
-            className={cn(
-              "absolute -top-3 z-10 flex -space-x-1",
-              isMe ? "-left-2" : "-right-2"
-            )}
-          >
-            {reactions.map((emoji, i) => (
-              <span
-                key={i}
-                className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-background border border-border text-xs shadow-sm animate-in zoom-in duration-200"
-              >
-                {emoji}
-              </span>
-            ))}
-          </div>
-        )}
-          </div>
+          {showTime && (
+            <span
+              className={cn(
+                "shrink-0 whitespace-nowrap font-mono text-cc-time text-muted-foreground",
+                superlightMode ? "pb-0" : "pb-0.5"
+              )}
+            >
+              {timeLabel}
+            </span>
+          )}
         </div>
 
-        {showTime && (
-          <span className={cn("text-[10px] text-muted-foreground mt-1", isMe ? "pr-1" : "pl-1")}>
-            <time dateTime={new Date(message.dateCreated).toISOString()}>
-              {formatMessageTime(message.dateCreated)}
-            </time>
-            {message.pending && <span className="ml-1 opacity-70">· Sending…</span>}
-            {message.failed && (
-              <span
-                className="ml-1 text-destructive cursor-help"
-                title={message.failedReason ?? "Failed to send"}
-              >
-                · Failed to send{message.failedReason ? " (hover for details)" : ""}
-              </span>
-            )}
+        {reactions && reactions.length > 0 && (
+          <span className="mt-[3px] whitespace-nowrap font-mono text-cc-meta text-muted-foreground">
+            {reactions.join("  ")}
+          </span>
+        )}
+        {message.failed && (
+          <span
+            className="mt-[3px] cursor-help text-cc-meta text-signal"
+            title={message.failedReason ?? "Failed to send"}
+          >
+            Failed to send{message.failedReason ? " · hover for details" : ""}
           </span>
         )}
       </div>

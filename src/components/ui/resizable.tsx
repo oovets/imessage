@@ -1,4 +1,3 @@
-import { GripVertical, GripHorizontal } from "lucide-react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { cn } from "@/lib/utils";
 
@@ -8,18 +7,27 @@ type SepProps = React.ComponentProps<typeof Separator> & {
   orientation?: "horizontal" | "vertical";
 };
 
-const ResizablePanelGroup = ({ className, ...props }: GroupProps) => (
+// Overflow visible on both: the library clips by default, which would cut off
+// the panes' outer 1.5px active ring where it reaches into the board gap.
+const ResizablePanelGroup = ({ className, style, ...props }: GroupProps) => (
   <Group
     className={cn(
       "flex h-full w-full data-[orientation=vertical]:flex-col",
       className
     )}
+    style={{ overflow: "visible", ...style }}
     {...props}
   />
 );
 
-const ResizablePanel = (props: PanelProps) => <Panel {...props} />;
+const ResizablePanel = ({ style, ...props }: PanelProps) => (
+  <Panel style={{ overflow: "visible", ...style }} {...props} />
+);
 
+/**
+ * The 10px gap between board panes *is* the handle: transparent, with a 2px
+ * border-coloured line centred in it on hover or while dragging.
+ */
 const ResizableHandle = ({
   className,
   orientation = "horizontal",
@@ -29,25 +37,18 @@ const ResizableHandle = ({
   return (
     <Separator
       className={cn(
-        "group relative flex items-center justify-center bg-border/60 transition-colors",
-        "hover:bg-primary/40 data-[active]:bg-primary/60",
-        isVertical ? "h-px w-full" : "w-px h-full",
+        "group relative flex shrink-0 items-center justify-center bg-transparent outline-none",
+        isVertical ? "h-2.5 w-full" : "h-full w-2.5",
         className
       )}
       {...props}
     >
-      <div
+      <span
         className={cn(
-          "absolute z-10 flex items-center justify-center rounded-sm border bg-background opacity-0 group-hover:opacity-100 transition-opacity shadow-sm",
-          isVertical ? "h-3 w-6" : "h-6 w-3"
+          "rounded-full bg-border opacity-0 transition-opacity duration-120 group-hover:opacity-100 group-data-[separator=active]:opacity-100 group-data-[separator=focus]:opacity-100 group-data-[separator=hover]:opacity-100",
+          isVertical ? "h-0.5 w-full" : "h-full w-0.5"
         )}
-      >
-        {isVertical ? (
-          <GripHorizontal className="h-2.5 w-2.5 text-muted-foreground" />
-        ) : (
-          <GripVertical className="h-2.5 w-2.5 text-muted-foreground" />
-        )}
-      </div>
+      />
     </Separator>
   );
 };
