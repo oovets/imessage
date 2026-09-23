@@ -35,7 +35,10 @@ futures-util = "0.3"
 
 # Telegram (MTProto)
 grammers-client = "0.10"
-grammers-session = { version = "0.10", features = ["serde"] }
+# No default features: its "sqlite-storage" pulls in libsql, which bundles a
+# second SQLite that clashes with sqlx's at link time (duplicate sqlite3_*
+# symbols with lld). telegram-api implements its own Session, so it's unused.
+grammers-session = { version = "0.10", default-features = false, features = ["serde"] }
 grammers-tl-types = "0.10"
 
 # Persistence (sqlx 0.9 requires rustc >= 1.94; 0.8 matches the MSRV)
