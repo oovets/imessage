@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { MessageBubble } from "@/components/MessageBubble";
 import { MessageListSkeleton } from "@/components/MessageListSkeleton";
@@ -9,7 +9,14 @@ import { getClient } from "@/api/clientFactory";
 import { tg } from "@/telegram/api";
 import { parseTgChatGuid } from "@/telegram/adapters";
 import { cn } from "@/lib/utils";
-import type { Message } from "@/types";
+import {
+  type Message,
+  formatDate,
+  formatMessageTime,
+  nextLocalMidnight,
+  nextMessageTimeChange,
+  whenDue,
+} from "@/types";
 
 // iMessage tapbacks have no exact Telegram equivalents; map to the nearest
 // standard Telegram reaction (note: Telegram's "laugh" is 😁, not 😂).
@@ -79,6 +86,24 @@ function buildReactionMap(messages: Message[]): Map<string, string[]> {
   return result;
 }
 
+/**
+ * `next`, with each target's emoji array swapped for the one in `prev` when
+ * the contents match. The map is rebuilt whenever the history changes; keeping
+ * unchanged arrays' identity lets memoized bubbles skip re-rendering.
+ */
+function reuseUnchangedReactions(
+  next: Map<string, string[]>,
+  prev: Map<string, string[]>
+): Map<string, string[]> {
+  for (const [guid, emojis] of next) {
+    const old = prev.get(guid);
+    if (old && old.length === emojis.length && old.every((e, i) => e === emojis[i])) {
+      next.set(guid, old);
+    }
+  }
+  return next;
+}
+
 function formatDateChip(ts: number): string {
   const d = new Date(ts);
   const now = new Date();
@@ -89,16 +114,12 @@ function formatDateChip(ts: number): string {
   );
   if (diffDays === 0) return "Today";
   if (diffDays === 1) return "Yesterday";
-  if (diffDays < 7) return d.toLocaleDateString([], { weekday: "long" });
-  return d.toLocaleDateString([], {
-    month: "short",
-    day: "numeric",
-    year: d.getFullYear() === now.getFullYear() ? undefined : "numeric",
-  });
+  if (diffDays < 7) return formatDate(d, "weekdayLong");
+  return formatDate(d, d.getFullYear() === now.getFullYear() ? "monthDay" : "monthDayYear");
 }
 
 function formatTimeOnly(ts: number): string {
-  return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return formatDate(ts, "time");
 }
 
 function isSameDay(a: number, b: number): boolean {
@@ -114,10 +135,27 @@ function senderKey(m: Message): string {
   return m.isFromMe ? "me" : (m.handle?.address ?? "unknown");
 }
 
-export function MessageList({ chatGUID }: MessageListProps) {
+/** `b`, right after `a`, joins its bubble group: same sender, under a minute on. */
+function sameGroup(a: Message, b: Message): boolean {
+  return senderKey(a) === senderKey(b) && b.dateCreated - a.dateCreated < GROUP_GAP_MS;
+}
+
+// Stable stand-in for a chat with no history yet, so the memos below keyed on
+// the message array don't recompute on every render.
+const NO_MESSAGES: Message[] = [];
+
+// Memoized: its only prop is the chat GUID. Without this, every ChatPane
+// render (pane activation, the chat object changing on each incoming message,
+// presence) re-rendered the whole list.
+export const MessageList = memo(function MessageList({ chatGUID }: MessageListProps) {
   const rawMessages = useAppStore((s) => s.messages[chatGUID]);
-  const messages: Message[] = rawMessages ?? [];
-  const loadingMessages = useAppStore((s) => s.loadingMessages);
+  const messages: Message[] = rawMessages ?? NO_MESSAGES;
+  // The loading flag is global and only matters while this chat is empty, so
+  // subscribe to exactly that: another pane's fetch no longer re-renders a
+  // list that already has content.
+  const showLoading = useAppStore(
+    (s) => s.loadingMessages && !s.messages[chatGUID]?.length
+  );
   const superlightMode = useAppStore((s) => s.superlightMode);
   const showTimestamps = useAppStore((s) => s.showTimestamps);
   const setReplyTarget = useAppStore((s) => s.setReplyTarget);
@@ -125,24 +163,65 @@ export function MessageList({ chatGUID }: MessageListProps) {
   const removeMessage = useAppStore((s) => s.removeMessage);
   const serverUrl = useAppStore((s) => s.serverUrl);
   const password = useAppStore((s) => s.password);
-  const visible = messages.filter((m) => reactionTypeNum(m.associatedMessageType) < 2000);
+  const visible = useMemo(
+    () => messages.filter((m) => reactionTypeNum(m.associatedMessageType) < 2000),
+    [messages]
+  );
   // Sender names only matter in groups. Participants cover iMessage; for
   // sources whose chats carry none (Slack channels), more than one distinct
   // incoming sender in the loaded history is the tell.
   const participantCount = useAppStore(
     (s) => s.chats.find((c) => c.guid === chatGUID)?.participants.length ?? 0
   );
-  const isGroup =
-    participantCount > 1 ||
-    new Set(visible.filter((m) => !m.isFromMe).map(senderKey)).size > 1;
+  const isGroup = useMemo(
+    () =>
+      participantCount > 1 ||
+      new Set(visible.filter((m) => !m.isFromMe).map(senderKey)).size > 1,
+    [participantCount, visible]
+  );
   const latestVisible = visible[visible.length - 1];
   const latestVisibleKey = latestVisible ? `${latestVisible.guid}:${latestVisible.dateCreated}` : "";
 
-  function handleReply(m: Message) {
-    setReplyTarget(chatGUID, m);
-  }
+  // Relative labels read the clock: a bubble's "14:35" becomes "Tue" after
+  // 24 h, and day chips roll over at midnight. Unmemoized, the list picked
+  // that up from whatever re-rendered its pane; memoized, it re-renders
+  // itself when the next shown label is due.
+  const renderedAt = Date.now();
+  const [clockTick, setClockTick] = useState(0);
+  useEffect(() => {
+    let due = nextLocalMidnight(renderedAt);
+    if (showTimestamps) {
+      visible.forEach((m, i) => {
+        const next = visible[i + 1];
+        if (!next || !sameGroup(m, next)) {
+          due = Math.min(due, nextMessageTimeChange(m.dateCreated, renderedAt));
+        }
+      });
+    }
+    return whenDue(due, () => setClockTick((n) => n + 1));
+    // renderedAt is the time of the render that scheduled this; renders after
+    // it and before `due` show the same labels.
+  }, [visible, showTimestamps, clockTick]);
 
-  async function handleReact(m: Message, reactionKey: string) {
+  // The previous map, whose arrays are reused where unchanged. Writing the ref
+  // during render is safe: an array is only ever swapped for one with the same
+  // contents, so even a discarded render can't leave a wrong one behind.
+  const prevReactionMapRef = useRef<Map<string, string[]>>(new Map());
+  const reactionMap = useMemo(() => {
+    const next = reuseUnchangedReactions(buildReactionMap(messages), prevReactionMapRef.current);
+    prevReactionMapRef.current = next;
+    return next;
+  }, [messages]);
+
+  // Stable across renders so memoized bubbles skip re-rendering.
+  const handleReply = useCallback(
+    (m: Message) => {
+      setReplyTarget(chatGUID, m);
+    },
+    [chatGUID, setReplyTarget]
+  );
+
+  const handleReact = useCallback(async (m: Message, reactionKey: string) => {
     // Telegram: map the iMessage tapback to the nearest Telegram emoji and
     // send it through the Telegram core (no optimistic tapback child-message;
     // the authoritative aggregate arrives via tg:core-event).
@@ -181,7 +260,7 @@ export function MessageList({ chatGUID }: MessageListProps) {
     } catch {
       removeMessage(chatGUID, optimistic.guid);
     }
-  }
+  }, [chatGUID, serverUrl, password, upsertMessage, removeMessage]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -304,7 +383,7 @@ export function MessageList({ chatGUID }: MessageListProps) {
     setShowJump(false);
   }
 
-  if (loadingMessages && messages.length === 0) {
+  if (showLoading) {
     return superlightMode ? (
       <div className="flex flex-1 items-center justify-center text-cc-body text-muted-foreground">
         Loading messages…
@@ -321,8 +400,6 @@ export function MessageList({ chatGUID }: MessageListProps) {
       </div>
     );
   }
-
-  const reactionMap = buildReactionMap(messages);
 
   return (
     <div className="flex-1 relative min-h-0">
@@ -346,16 +423,18 @@ export function MessageList({ chatGUID }: MessageListProps) {
             const showTimeHeader =
               showTimestamps && !showDateChip && (!prev || msg.dateCreated - prev.dateCreated > TIME_HEADER_MS);
 
-            const sameSenderAsPrev =
-              !!prev && senderKey(prev) === senderKey(msg) && msg.dateCreated - prev.dateCreated < GROUP_GAP_MS;
-            const sameSenderAsNext =
-              !!next && senderKey(next) === senderKey(msg) && next.dateCreated - msg.dateCreated < GROUP_GAP_MS;
+            const sameSenderAsPrev = !!prev && sameGroup(prev, msg);
+            const sameSenderAsNext = !!next && sameGroup(msg, next);
 
             const isFirstInGroup = !sameSenderAsPrev;
             const isLastInGroup = !sameSenderAsNext;
 
             const showSender = isGroup && isFirstInGroup && !msg.isFromMe;
             const showTime = showTimestamps && isLastInGroup;
+            // Formatted here rather than in the memoized bubble, so a label
+            // that has aged ("14:35" → "Tue") still refreshes whenever the
+            // list renders, as it did before bubbles were memoized.
+            const timeLabel = showTime ? formatMessageTime(msg.dateCreated) : undefined;
 
             // Telegram messages carry their own aggregated emoji reactions;
             // iMessage messages derive theirs from tapback child-messages.
@@ -380,7 +459,7 @@ export function MessageList({ chatGUID }: MessageListProps) {
                 <MessageBubble
                   message={msg}
                   showSender={showSender}
-                  showTime={showTime}
+                  timeLabel={timeLabel}
                   reactions={reactions}
                   isFirstInGroup={isFirstInGroup}
                   onReply={handleReply}
@@ -409,4 +488,4 @@ export function MessageList({ chatGUID }: MessageListProps) {
       </button>
     </div>
   );
-}
+});

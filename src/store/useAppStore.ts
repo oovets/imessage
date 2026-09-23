@@ -9,7 +9,7 @@ import {
   type ThemeMode,
   type ThemeTokenKey,
 } from "@/lib/appearance";
-import type { Chat, LinkPreview, Message } from "@/types";
+import type { Attachment, Chat, Handle, LinkPreview, Message } from "@/types";
 import { sourceOfGuid, type ChatSource } from "@/lib/source";
 import {
   collectOpenChatGuids,
@@ -23,6 +23,8 @@ const MAX_CACHED_LINK_PREVIEWS = 200;
 const MAX_PANE_DEPTH = 20;
 const MAX_PANE_LEAVES = 20;
 const OUTGOING_DEDUP_WINDOW_MS = 30_000;
+/** react-resizable-panels rounds sizes to 3 decimals; closer is the same layout. */
+const PANE_LAYOUT_EPSILON = 0.001;
 
 /** A pending AI suggestion plus what we need to score it later. */
 export interface AiDraft {
@@ -380,6 +382,8 @@ interface AppState {
   toggleStarred: (guid: string) => void;
   setTelegramChats: (chats: Chat[]) => void;
   upsertChat: (chat: Chat) => void;
+  /** upsertChat for a batch, applied in order with one sort and one commit. */
+  upsertChats: (chats: Chat[]) => void;
   // Bumped to re-run the Telegram chat loader (e.g. after adding an account).
   telegramReloadNonce: number;
   reloadTelegram: () => void;
@@ -484,6 +488,76 @@ function sortChatsByRecency(list: Chat[]): Chat[] {
   );
 }
 
+// Every source reloads by building fresh chat objects (the iMessage fetch, the
+// Telegram and Slack adapters), and Telegram re-announces each dialog on every
+// sync. Storing those as-is gave every row a new object on each load, so
+// memo(ChatItem) missed for the whole list even when nothing had changed.
+// These compare by VALUE on every field the UI reads (the same fields slimChat
+// persists) and keep the stored object when they match.
+function sameParticipants(a: Handle[] | undefined, b: Handle[] | undefined): boolean {
+  if (a === b) return true;
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  return a.every(
+    (p, i) =>
+      p === b[i] ||
+      (!!p && !!b[i] && p.address === b[i].address && p.firstName === b[i].firstName)
+  );
+}
+
+function sameChat(a: Chat, b: Chat): boolean {
+  const am = a.lastMessage;
+  const bm = b.lastMessage;
+  return (
+    a.guid === b.guid &&
+    a.displayName === b.displayName &&
+    a.chatIdentifier === b.chatIdentifier &&
+    Object.is(a.unreadCount, b.unreadCount) &&
+    a.lastMessageText === b.lastMessageText &&
+    Object.is(a.activityAt, b.activityAt) &&
+    a.avatarUrl === b.avatarUrl &&
+    a.slackSection === b.slackSection &&
+    sameParticipants(a.participants, b.participants) &&
+    // Readers only ever look at lastMessage?.dateCreated / ?.text.
+    (am === bm ||
+      (am == null && bm == null) ||
+      (am != null &&
+        bm != null &&
+        Object.is(am.dateCreated, bm.dateCreated) &&
+        am.text === bm.text))
+  );
+}
+
+/**
+ * Chats whose on-screen text also depends on the clock: an unread chat's card
+ * shows a relative time ("14:02", later "Mon"), and an open chat's pane shows
+ * relative times ("last seen …", date chips). Nothing re-renders those on a
+ * timer; a fresh chat object from a reload or an event is what refreshes them.
+ * So these chats keep getting a fresh object wherever they got one before.
+ */
+function showsRelativeTime(chat: Chat, openChats: ReadonlySet<string>): boolean {
+  return (chat.unreadCount ?? 0) > 0 || openChats.has(chat.guid);
+}
+
+/**
+ * The object to store for `next`: the stored `prev` when it renders the same,
+ * else `next`. A chat without activityAt is left as `next`: enrichChatActivity
+ * fills exactly those in place after the list is stored, and must keep
+ * updating the stored object as it did.
+ */
+function reuseChat(prev: Chat | undefined, next: Chat, openChats: ReadonlySet<string>): Chat {
+  return prev !== undefined &&
+    prev !== next &&
+    next.activityAt !== undefined &&
+    !showsRelativeTime(next, openChats) &&
+    sameChat(prev, next)
+    ? prev
+    : next;
+}
+
+function sameChatList(a: Chat[], b: Chat[]): boolean {
+  return a.length === b.length && a.every((c, i) => c === b[i]);
+}
+
 // localStorage wrapper that can never break app flows: a quota-exceeded write
 // evicts the secondary caches (avatars, contacts — both rebuildable) and
 // retries once; if it still fails the write is dropped and the app runs on.
@@ -502,13 +576,38 @@ function sortChatsByRecency(list: Chat[]): Chat[] {
 // every store change. Holding the state snapshot and stringifying once on
 // flush skips both. Snapshots are safe to hold — zustand state is replaced,
 // never mutated.
+//
+// persist also hands over a snapshot on EVERY set(), including no-op sets and
+// the many that touch only transient state (typing, presence, the command-bar
+// query, loading flags). Those change nothing on disk, so a snapshot whose
+// every key is identical to the last one handed over schedules no write of its
+// own; it only keeps an already pending write waiting for the quiet period, as
+// before. partialize hands over plain references for the same reason: the
+// comparison is by identity, and the slimming (chats, messages) happens once,
+// at flush time, instead of on every set.
 const PERSIST_DEBOUNCE_MS = 500;
 let persistTimer: number | undefined;
 let pendingWrite: { name: string; value: unknown } | null = null;
 
-function writeThrough(name: string, value: string) {
+interface PersistedValue {
+  state: Record<string, unknown>;
+  version?: number;
+}
+/** The last snapshot handed to setItem (pending or written); null = none yet. */
+let lastHandedOver: { name: string; value: PersistedValue } | null = null;
+
+function samePersistedValue(a: PersistedValue, b: PersistedValue): boolean {
+  if (!Object.is(a.version, b.version)) return false;
+  const keys = Object.keys(a.state);
+  if (keys.length !== Object.keys(b.state).length) return false;
+  return keys.every((k) => k in b.state && Object.is(a.state[k], b.state[k]));
+}
+
+/** Returns whether the value reached storage. */
+function writeThrough(name: string, value: string): boolean {
   try {
     window.localStorage.setItem(name, value);
+    return true;
   } catch {
     try {
       for (const key of Object.keys(window.localStorage)) {
@@ -517,8 +616,10 @@ function writeThrough(name: string, value: string) {
         }
       }
       window.localStorage.setItem(name, value);
+      return true;
     } catch {
       /* still over quota — persist skipped, in-memory state unaffected */
+      return false;
     }
   }
 }
@@ -531,7 +632,14 @@ function flushPendingPersist() {
   if (pendingWrite) {
     const { name, value } = pendingWrite;
     pendingWrite = null;
-    writeThrough(name, JSON.stringify(value));
+    let saved = false;
+    try {
+      saved = writeThrough(name, JSON.stringify(slimPersistedValue(value as PersistedValue)));
+    } finally {
+      // A write that never landed must be retried by the next set(), as it
+      // was before unchanged snapshots were skipped.
+      if (!saved) lastHandedOver = null;
+    }
   }
 }
 
@@ -548,14 +656,137 @@ const debouncedStorage = {
   },
   removeItem: (name: string) => {
     pendingWrite = null;
+    lastHandedOver = null;
     window.localStorage.removeItem(name);
   },
   setItem: (name: string, value: unknown) => {
-    pendingWrite = { name, value };
+    const next = value as PersistedValue;
+    const unchanged =
+      lastHandedOver !== null &&
+      lastHandedOver.name === name &&
+      samePersistedValue(lastHandedOver.value, next);
+    if (!unchanged) {
+      lastHandedOver = { name, value: next };
+      pendingWrite = { name, value };
+    } else if (!pendingWrite) {
+      return;
+    }
     if (persistTimer !== undefined) window.clearTimeout(persistTimer);
     persistTimer = window.setTimeout(flushPendingPersist, PERSIST_DEBOUNCE_MS);
   },
 };
+
+// Persisted messages keep exactly the fields the Message type declares. The
+// iMessage side stores the raw BlueBubbles JSON (about 50 fields each, with
+// attributedBody and full handle/attachment records), and nothing reads the
+// undeclared ones — so they are the bulk of the blob, stringified on every
+// flush and parsed before first paint. Kept fields stay in their original
+// order, so an already-slim message (Telegram, Slack, socket) serialises to
+// the same bytes as before.
+// Built from Record<keyof T, true> so the lists stay exhaustive: a field added
+// to Message, Handle or Attachment fails to compile until it is listed here,
+// instead of silently vanishing from the cache on the next restart.
+const MESSAGE_FIELDS: Record<keyof Message, true> = {
+  guid: true,
+  text: true,
+  isFromMe: true,
+  dateCreated: true,
+  handle: true,
+  attachments: true,
+  associatedMessageGuid: true,
+  associatedMessageType: true,
+  chatGUID: true,
+  pending: true,
+  failed: true,
+  failedReason: true,
+  tempGuid: true,
+  tgReactions: true,
+};
+const HANDLE_FIELDS: Record<keyof Handle, true> = { address: true, firstName: true };
+const ATTACHMENT_FIELDS: Record<keyof Attachment, true> = {
+  guid: true,
+  mimeType: true,
+  transferName: true,
+  url: true,
+};
+const MESSAGE_KEYS: ReadonlySet<string> = new Set(Object.keys(MESSAGE_FIELDS));
+const HANDLE_KEYS: ReadonlySet<string> = new Set(Object.keys(HANDLE_FIELDS));
+const ATTACHMENT_KEYS: ReadonlySet<string> = new Set(Object.keys(ATTACHMENT_FIELDS));
+
+/** `obj` with only `keys`, in their original order; `obj` itself if none is dropped. */
+function pickKeys<T extends object>(obj: T, keys: ReadonlySet<string>): T {
+  const own = Object.keys(obj);
+  if (own.every((k) => keys.has(k))) return obj;
+  const out: Record<string, unknown> = {};
+  for (const k of own) {
+    if (keys.has(k)) out[k] = (obj as Record<string, unknown>)[k];
+  }
+  return out as T;
+}
+
+function slimAttachments(list: Attachment[]): Attachment[] {
+  let changed = false;
+  const out = list.map((a) => {
+    const slim = a && typeof a === "object" ? pickKeys(a, ATTACHMENT_KEYS) : a;
+    if (slim !== a) changed = true;
+    return slim;
+  });
+  return changed ? out : list;
+}
+
+/** A message reduced to its declared fields; never mutates the stored object. */
+function slimMessage(m: Message): Message {
+  if (!m || typeof m !== "object") return m;
+  const top = pickKeys(m, MESSAGE_KEYS);
+  const handle = top.handle && typeof top.handle === "object" ? pickKeys(top.handle, HANDLE_KEYS) : top.handle;
+  const attachments = Array.isArray(top.attachments) ? slimAttachments(top.attachments) : top.attachments;
+  if (handle === top.handle && attachments === top.attachments) return top;
+  // Existing keys keep their position when reassigned, so order is unchanged.
+  const out = { ...top };
+  if (handle !== top.handle) out.handle = handle;
+  if (attachments !== top.attachments) out.attachments = attachments;
+  return out;
+}
+
+// Stored message lists are replaced, never mutated, so a list that survives
+// from one flush to the next is slimmed only once.
+const slimMessageLists = new WeakMap<Message[], Message[]>();
+
+function slimMessageList(list: Message[]): Message[] {
+  const hit = slimMessageLists.get(list);
+  if (hit) return hit;
+  const capped = list.length > MAX_CACHED_MESSAGES ? list.slice(-MAX_CACHED_MESSAGES) : list;
+  let changed = capped !== list;
+  const slim = capped.map((m) => {
+    const s = slimMessage(m);
+    if (s !== m) changed = true;
+    return s;
+  });
+  const out = changed ? slim : list;
+  slimMessageLists.set(list, out);
+  return out;
+}
+
+/**
+ * The persisted slice as it goes to disk: chats slimmed for the cold-start
+ * list, each chat's messages capped and slimmed. Runs once per flush. Chats are
+ * re-slimmed every time (cheap) rather than memoized per object, because
+ * enrichChatActivity updates chat objects in place.
+ */
+function slimPersistedValue(value: PersistedValue): PersistedValue {
+  const st = value.state;
+  const messages = st.messages as Record<string, Message[]>;
+  return {
+    ...value,
+    state: {
+      ...st,
+      chats: (st.chats as Chat[]).map(slimChat),
+      messages: Object.fromEntries(
+        Object.entries(messages).map(([k, v]) => [k, slimMessageList(v)])
+      ),
+    },
+  };
+}
 
 /** Slim a chat for persistence — enough to render the list on cold start. */
 function slimChat(c: Chat): Chat {
@@ -647,6 +878,9 @@ export const useAppStore = create<AppState>()(
 
       setTyping: (chatGUID, display) =>
         set((s) => {
+          // Every incoming socket message clears typing for its chat; most had
+          // none, and a no-op set still costs a full listener pass.
+          if (!display && !(chatGUID in s.typingChats)) return s;
           const next = { ...s.typingChats };
           if (display) {
             next[chatGUID] = Date.now() + 8000;
@@ -799,9 +1033,13 @@ export const useAppStore = create<AppState>()(
 
       openChatInActivePane: (guid) => {
         const { paneTree, activePaneId, chats } = get();
-        const nextChats = chats.map((c) =>
-          c.guid === guid && c.unreadCount > 0 ? { ...c, unreadCount: 0 } : c
-        );
+        // Keep the list itself when nothing was unread, so opening a chat
+        // doesn't hand the sidebar a new array.
+        const nextChats = chats.some((c) => c.guid === guid && c.unreadCount > 0)
+          ? chats.map((c) =>
+              c.guid === guid && c.unreadCount > 0 ? { ...c, unreadCount: 0 } : c
+            )
+          : chats;
         const existing = findLeafByChat(paneTree, guid);
         if (existing && existing.type === "leaf") {
           set((s) => ({
@@ -902,8 +1140,23 @@ export const useAppStore = create<AppState>()(
         }));
       },
 
+      // Each resizable group reports its layout from a layout effect when it
+      // mounts, i.e. the sizes it was just given. Writing those back rendered
+      // the board once more before first paint, so an unchanged layout (to
+      // the panels library's own 0.001 precision) is not written.
       setPaneLayout: (groupId, sizes) =>
-        set((s) => ({ paneLayouts: { ...s.paneLayouts, [groupId]: sanitizeLayoutPair(sizes) } })),
+        set((s) => {
+          const next = sanitizeLayoutPair(sizes);
+          const prev = s.paneLayouts[groupId];
+          if (
+            prev &&
+            Math.abs(prev[0] - next[0]) < PANE_LAYOUT_EPSILON &&
+            Math.abs(prev[1] - next[1]) < PANE_LAYOUT_EPSILON
+          ) {
+            return s;
+          }
+          return { paneLayouts: { ...s.paneLayouts, [groupId]: next } };
+        }),
 
       repairPaneState: () => {
         const base = ensurePaneState(get().paneTree, get().activePaneId);
@@ -923,13 +1176,27 @@ export const useAppStore = create<AppState>()(
       // source untouched. Scales to any number of sources — adding one needs no
       // change here (unlike per-source setters, which each had to know about
       // every other source).
+      //
+      // A reloaded chat that renders the same keeps its stored object, and a
+      // reload that changes nothing keeps the list itself. When the caller
+      // hands back objects that are already stored (enrichChatActivity, which
+      // updated them in place), the list is always replaced, as before.
       setChatsForSource: (source, sourceChats) =>
-        set((s) => ({
-          chats: sortChatsByRecency([
+        set((s) => {
+          const stored = new Map(s.chats.map((c) => [c.guid, c]));
+          const openChats = collectOpenChatGuids(s.paneTree);
+          let alreadyStored = false;
+          const incoming = sourceChats.map((chat) => {
+            const prev = stored.get(chat.guid);
+            if (prev === chat) alreadyStored = true;
+            return reuseChat(prev, chat, openChats);
+          });
+          const next = sortChatsByRecency([
             ...s.chats.filter((c) => sourceOfGuid(c.guid) !== source),
-            ...sourceChats,
-          ]),
-        })),
+            ...incoming,
+          ]);
+          return !alreadyStored && sameChatList(next, s.chats) ? s : { chats: next };
+        }),
 
       setChats: (chats) => get().setChatsForSource("imessage", chats),
       setTelegramChats: (tgChats) => get().setChatsForSource("telegram", tgChats),
@@ -971,19 +1238,47 @@ export const useAppStore = create<AppState>()(
       reloadTelegram: () =>
         set((s) => ({ telegramReloadNonce: s.telegramReloadNonce + 1 })),
 
+      // Presence ticks often repeat the same state; don't re-render the pane
+      // header for those.
       setTelegramPresence: (guid, presence) =>
-        set((s) => ({
-          telegramPresence: { ...s.telegramPresence, [guid]: presence },
-        })),
+        set((s) => {
+          const prev = s.telegramPresence[guid];
+          if (prev && prev.online === presence.online && prev.lastSeen === presence.lastSeen) return s;
+          return { telegramPresence: { ...s.telegramPresence, [guid]: presence } };
+        }),
 
       // Replace or insert a single chat (any source), keeping the list sorted.
-      upsertChat: (chat) =>
-        set((s) => ({
-          chats: sortChatsByRecency([
-            ...s.chats.filter((c) => c.guid !== chat.guid),
-            chat,
-          ]),
-        })),
+      upsertChat: (chat) => get().upsertChats([chat]),
+
+      // Replace or insert chats in arrival order, with one sort and one commit
+      // for the whole batch. The result is the list that upserting them one by
+      // one leaves: the last write per guid wins, and chats that tie on
+      // recency end up in the order of their last arrival. A chat that renders
+      // the same keeps its stored object, and if nothing changed at all (the
+      // usual case when Telegram re-announces what tg.chatList just loaded) the
+      // list is left alone.
+      upsertChats: (chats) =>
+        set((s) => {
+          if (chats.length === 0) return s;
+          const latest = new Map<string, Chat>();
+          for (const chat of chats) {
+            latest.delete(chat.guid);
+            latest.set(chat.guid, chat);
+          }
+          const stored = new Map(s.chats.map((c) => [c.guid, c]));
+          const openChats = collectOpenChatGuids(s.paneTree);
+          let alreadyStored = false;
+          const incoming = [...latest.values()].map((chat) => {
+            const prev = stored.get(chat.guid);
+            if (prev === chat) alreadyStored = true;
+            return reuseChat(prev, chat, openChats);
+          });
+          const next = sortChatsByRecency([
+            ...s.chats.filter((c) => !latest.has(c.guid)),
+            ...incoming,
+          ]);
+          return !alreadyStored && sameChatList(next, s.chats) ? s : { chats: next };
+        }),
 
       setMessages: (chatGUID, messages) => {
         const capped = capMessages(messages);
@@ -1035,6 +1330,9 @@ export const useAppStore = create<AppState>()(
             const chat = s.chats[idx];
             const prevLatest = chat.activityAt ?? chat.lastMessage?.dateCreated ?? 0;
             const isNewLatest = !!message.text && message.dateCreated > prevLatest;
+            // Receipts, echoes and Telegram's message_added after its
+            // chat_updated mostly carry the preview the chat already shows;
+            // those keep the chat (and the list) as they are.
             const updatedChat = isNewLatest
               ? {
                   ...chat,
@@ -1042,7 +1340,9 @@ export const useAppStore = create<AppState>()(
                   lastMessage: message,
                   activityAt: message.dateCreated,
                 }
-              : message.text
+              : message.text &&
+                (message.text !== chat.lastMessageText ||
+                  showsRelativeTime(chat, collectOpenChatGuids(s.paneTree)))
               ? { ...chat, lastMessageText: message.text }
               : chat;
             if (isNewLatest && idx > 0) {
@@ -1103,18 +1403,33 @@ export const useAppStore = create<AppState>()(
             : s
         ),
 
+      // Usually follows an upsertMessage that already set this text.
       updateChatPreview: (chatGUID, text) =>
-        set((s) => ({
-          chats: s.chats.map((c) =>
-            c.guid === chatGUID ? { ...c, lastMessageText: text } : c
-          ),
-        })),
+        set((s) => {
+          const openChats = collectOpenChatGuids(s.paneTree);
+          const needsWrite = (c: Chat) =>
+            c.guid === chatGUID &&
+            (c.lastMessageText !== text || showsRelativeTime(c, openChats));
+          return s.chats.some(needsWrite)
+            ? {
+                chats: s.chats.map((c) =>
+                  needsWrite(c) ? { ...c, lastMessageText: text } : c
+                ),
+              }
+            : s;
+        }),
 
+      // Every send clears the target, which usually was not set. Readers treat
+      // a missing entry as null.
       setReplyTarget: (chatGUID, message) =>
-        set((s) => ({ replyTarget: { ...s.replyTarget, [chatGUID]: message } })),
+        set((s) =>
+          (s.replyTarget[chatGUID] ?? null) === message
+            ? s
+            : { replyTarget: { ...s.replyTarget, [chatGUID]: message } }
+        ),
 
       setLoadingChats: (v) => set({ loadingChats: v }),
-      setLoadingMessages: (v) => set({ loadingMessages: v }),
+      setLoadingMessages: (v) => set((s) => (s.loadingMessages === v ? s : { loadingMessages: v })),
       setWsConnected: (v) => set({ wsConnected: v }),
       setPollingFallback: (v) => set({ pollingFallback: v }),
       setHydrated: (v) => set({ hydrated: v }),
@@ -1158,13 +1473,13 @@ export const useAppStore = create<AppState>()(
         appearance: s.appearance,
         linkPreviewsEnabled: s.linkPreviewsEnabled,
         linkPreviewCache: s.linkPreviewCache,
-        chats: s.chats.map(slimChat),
+        // References only: slimming happens once per write, in
+        // slimPersistedValue, and unchanged references skip the write.
+        chats: s.chats,
         paneTree: s.paneTree,
         activePaneId: s.activePaneId,
         paneLayouts: s.paneLayouts,
-        messages: Object.fromEntries(
-          Object.entries(s.messages).map(([k, v]) => [k, (v as Message[]).slice(-MAX_CACHED_MESSAGES)])
-        ),
+        messages: s.messages,
         messageOrder: s.messageOrder,
         messageFetchedAt: s.messageFetchedAt,
         accountLabels: s.accountLabels,

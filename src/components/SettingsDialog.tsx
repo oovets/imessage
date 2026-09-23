@@ -1,18 +1,13 @@
-import { useEffect, useRef, useState } from "react";
-import { Settings } from "lucide-react";
+import { useEffect, useState } from "react";
 import { enable, disable } from "@tauri-apps/plugin-autostart";
-import { listen } from "@tauri-apps/api/event";
 import { Button } from "@/components/ui/button";
-import { ghostIconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { useAppStore } from "@/store/useAppStore";
 import { TelegramAccounts } from "@/components/TelegramAccounts";
@@ -28,10 +23,12 @@ import {
   type ThemeMode,
 } from "@/lib/appearance";
 
-interface SettingsDialogProps {
-  /** Open once on its own while nothing is configured. Off during onboarding,
-   *  whose checklist is the setup surface. */
-  autoOpen?: boolean;
+/** Props from the eager shell in ToolbarDialogs, which owns the Dialog root,
+ *  its trigger, the open state, auto-open and the tray's open-settings event;
+ *  this module (with Telegram/Slack setup and QR codes) is lazy-loaded. */
+interface SettingsDialogContentProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }
 
 function normalizeServerUrl(value: string): string {
@@ -40,14 +37,12 @@ function normalizeServerUrl(value: string): string {
   return /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
 }
 
-export function SettingsDialog({ autoOpen = true }: SettingsDialogProps) {
+export default function SettingsDialogContent({ open, onOpenChange: setOpen }: SettingsDialogContentProps) {
   // Individual selectors — this component is mounted in the sidebar header at
   // all times (not just while the dialog is open), so a bare useAppStore()
   // here re-rendered it on every message that arrived.
   const serverUrl = useAppStore((s) => s.serverUrl);
   const password = useAppStore((s) => s.password);
-  const isConfigured = useAppStore((s) => s.isConfigured);
-  const configLoaded = useAppStore((s) => s.configLoaded);
   const setConfig = useAppStore((s) => s.setConfig);
   const clearConfig = useAppStore((s) => s.clearConfig);
   const superlightMode = useAppStore((s) => s.superlightMode);
@@ -72,13 +67,11 @@ export function SettingsDialog({ autoOpen = true }: SettingsDialogProps) {
   const resetThemeOverrides = useAppStore((s) => s.resetThemeOverrides);
   const [url, setUrl] = useState(serverUrl);
   const [pwd, setPwd] = useState(password);
-  const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [tab, setTab] = useState<
     "server" | "telegram" | "slack" | "general" | "appearance"
   >("server");
-  const autoOpenedRef = useRef(false);
 
   useEffect(() => {
     if (!open) return;
@@ -86,29 +79,6 @@ export function SettingsDialog({ autoOpen = true }: SettingsDialogProps) {
     setPwd(password);
     setSettingsError(null);
   }, [open, serverUrl, password]);
-
-  useEffect(() => {
-    if (!isTauriRuntime()) return;
-
-    let unlisten: (() => void) | null = null;
-    listen("app://open-settings", () => {
-      setOpen(true);
-    })
-      .then((fn) => {
-        unlisten = fn;
-      })
-      .catch(() => {});
-
-    return () => {
-      if (unlisten) unlisten();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!autoOpen || !configLoaded || isConfigured || autoOpenedRef.current) return;
-    autoOpenedRef.current = true;
-    setOpen(true);
-  }, [autoOpen, configLoaded, isConfigured]);
 
   async function handleSave() {
     setSaving(true);
@@ -195,17 +165,7 @@ export function SettingsDialog({ autoOpen = true }: SettingsDialogProps) {
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <button
-          type="button"
-          className={ghostIconButton}
-          aria-label="Settings"
-          title="Settings"
-        >
-          <Settings />
-        </button>
-      </DialogTrigger>
+    <>
       <DialogContent className="scrollbar-autohide max-h-[85vh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
@@ -622,6 +582,6 @@ export function SettingsDialog({ autoOpen = true }: SettingsDialogProps) {
           </Button>
         </div>
       </DialogContent>
-    </Dialog>
+    </>
   );
 }

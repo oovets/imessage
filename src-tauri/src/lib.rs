@@ -15,6 +15,7 @@ use tauri::{tray::MouseButton, tray::MouseButtonState, tray::TrayIconBuilder, tr
 
 mod onboarding;
 mod slack;
+mod uploads;
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 const KEYRING_SERVICE: &str = "com.oovets.messages";
@@ -331,6 +332,8 @@ pub fn run() {
             media_actions::img_save,
             media_actions::img_open,
             media_actions::img_copy,
+            // iMessage attachments (raw IPC body, see uploads.rs)
+            uploads::bb_send_attachment,
             // BlueBubbles in-app onboarding
             onboarding::bb_status,
             onboarding::bb_install,

@@ -97,7 +97,27 @@ function parsePreviewHtml(url: string, html: string): LinkPreview {
   };
 }
 
-export async function fetchLinkPreview(url: string): Promise<LinkPreview> {
+// Fetches still running, by URL. The same link in several bubbles or panes
+// (a Slack channel repeating a URL, one chat open twice) mounts together, and
+// each bubble used to fetch and parse the page separately.
+const inFlight = new Map<string, Promise<LinkPreview>>();
+
+/** One request per URL at a time: concurrent callers share the same promise. */
+export function fetchLinkPreview(url: string): Promise<LinkPreview> {
+  const pending = inFlight.get(url);
+  if (pending) return pending;
+  const request = loadLinkPreview(url);
+  inFlight.set(url, request);
+  // Registered before any caller's handlers, so the entry is gone by the time
+  // a caller acts on the result: asking again afterwards fetches afresh.
+  const settle = () => {
+    if (inFlight.get(url) === request) inFlight.delete(url);
+  };
+  request.then(settle, settle);
+  return request;
+}
+
+async function loadLinkPreview(url: string): Promise<LinkPreview> {
   if (!isTauriRuntime()) {
     return emptyPreview(url, "Link previews require the desktop app.");
   }

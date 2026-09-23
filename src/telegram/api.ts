@@ -6,6 +6,9 @@ import type { TgAccount, TgChat, TgMessage } from "./types";
 
 type TgMessageId = number;
 
+/** Metadata header of the raw-body upload commands (src-tauri/src/uploads.rs). */
+const UPLOAD_META_HEADER = "x-upload-meta";
+
 export const tg = {
   /** Whether the Telegram backend is configured and running. */
   status: () => invoke<boolean>("tg_status"),
@@ -71,6 +74,10 @@ export const tg = {
       text,
       replyTo: replyTo ?? null,
     }),
+  /** Upload a file with an optional caption. The bytes are the raw IPC body
+   *  and the rest rides URI-encoded in a header (src-tauri/src/uploads.rs):
+   *  a Uint8Array inside the args object is serialized as a JSON number array
+   *  on the main thread — a multi-second UI freeze for a video. */
   sendFile: (
     accountId: number,
     chatId: number,
@@ -78,12 +85,12 @@ export const tg = {
     bytes: Uint8Array,
     caption?: string,
   ) =>
-    invoke<TgMessage>("tg_send_file", {
-      accountId,
-      chatId,
-      fileName,
-      bytes,
-      caption: caption ?? null,
+    invoke<TgMessage>("tg_send_file", bytes, {
+      headers: {
+        [UPLOAD_META_HEADER]: encodeURIComponent(
+          JSON.stringify({ accountId, chatId, fileName, caption: caption ?? null }),
+        ),
+      },
     }),
   editMessage: (
     accountId: number,

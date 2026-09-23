@@ -79,3 +79,25 @@ describe("ChatItem variants", () => {
     expect(getByText("⌘2")).toBeTruthy();
   });
 });
+
+describe("ChatItem typing on queue cards", () => {
+  it("clears 'typing…' at expiry without any other store write", async () => {
+    vi.useFakeTimers();
+    try {
+      const { useAppStore } = await import("@/store/useAppStore");
+      const { act } = await import("@testing-library/react");
+      useAppStore.setState({ typingChats: { "sl:work:C1": Date.now() + 1000 } });
+      const { queryByText } = render(
+        <ChatItem chat={chat({ unreadCount: 1, lastMessageText: "hej" })} variant="card" isSelected={false} onSelect={() => {}} />
+      );
+      expect(queryByText("typing…")).toBeTruthy();
+      act(() => {
+        vi.advanceTimersByTime(1100);
+      });
+      expect(queryByText("typing…")).toBeNull();
+      expect(queryByText("hej")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

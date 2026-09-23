@@ -19,6 +19,8 @@ use shared::AppConfig;
 use tauri::{AppHandle, Emitter, State};
 use telegram_core::Core;
 
+use crate::uploads;
+
 /// Managed state holding the Telegram core once it has started in the
 /// background. Interior-mutable so init never blocks app startup.
 pub struct TelegramState {
@@ -286,32 +288,60 @@ pub async fn tg_send_message(
         .map_err(|e| e.to_string())
 }
 
-/// Send a file (image/video/etc.) with an optional caption. The bytes are
-/// transferred efficiently over the IPC (Tauri passes typed arrays as raw
-/// buffers), written to a temp file, uploaded, then removed.
-#[tauri::command]
-pub async fn tg_send_file(
-    state: State<'_, TelegramState>,
+/// Metadata of a [`tg_send_file`] upload (the `x-upload-meta` header).
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SendFileMeta {
     account_id: AccountId,
     chat_id: ChatId,
     file_name: String,
-    bytes: Vec<u8>,
     caption: Option<String>,
+}
+
+/// Send a file (image/video/etc.) with an optional caption. The bytes arrive
+/// as the raw IPC body and the ids, name and caption as upload metadata (see
+/// `uploads`) — a `Vec<u8>` argument travelled as a JSON number array built
+/// on the main thread, freezing the UI for seconds on a video. Written to a
+/// temp file, uploaded, then removed.
+#[tauri::command]
+pub async fn tg_send_file(
+    state: State<'_, TelegramState>,
+    request: tauri::ipc::Request<'_>,
 ) -> Result<Message, String> {
     let core = state.core()?;
-    let dir = std::env::temp_dir().join("unified-inbox-upload");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let SendFileMeta {
+        account_id,
+        chat_id,
+        file_name,
+        caption,
+    } = uploads::meta(&request)?;
+    let bytes = uploads::bytes(&request)?;
+    // A private directory per upload: two sends of the same name at once (a
+    // pasted "image.png" in two panes) must not overwrite or delete each
+    // other's file. The file keeps its sanitised name, which Telegram shows
+    // and derives the type from.
+    let dir = std::env::temp_dir()
+        .join("unified-inbox-upload")
+        .join(uploads::random_token());
+    tokio::fs::create_dir_all(&dir).await.map_err(|e| e.to_string())?;
     let safe: String = file_name
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') { c } else { '_' })
         .collect();
     let path = dir.join(if safe.is_empty() { "upload".to_owned() } else { safe });
-    std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
-    let result = core
-        .send_file(account_id, chat_id, &path, caption.as_deref().unwrap_or(""))
+    let written = uploads::write_file(&path, &bytes)
         .await
         .map_err(|e| e.to_string());
-    let _ = std::fs::remove_file(&path);
+    drop(bytes);
+    let result = match written {
+        Ok(()) => core
+            .send_file(account_id, chat_id, &path, caption.as_deref().unwrap_or(""))
+            .await
+            .map_err(|e| e.to_string()),
+        Err(e) => Err(e),
+    };
+    // Also clears a partial file left by a failed write.
+    let _ = tokio::fs::remove_dir_all(&dir).await;
     result
 }
 

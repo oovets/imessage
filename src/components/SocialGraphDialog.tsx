@@ -7,15 +7,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Network, ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import {
-  Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
-import { ghostIconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 
 interface GraphNode {
@@ -168,8 +165,7 @@ function Detail({ node, onBack }: { node: GraphNode; onBack: () => void }) {
   );
 }
 
-export function SocialGraphDialog() {
-  const [open, setOpen] = useState(false);
+export default function SocialGraphDialogContent({ open }: { open: boolean }) {
   const [graph, setGraph] = useState<Graph | null>(null);
   const [selected, setSelected] = useState<GraphNode | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -194,18 +190,7 @@ export function SocialGraphDialog() {
   }, [graph]);
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <button
-          type="button"
-          className={ghostIconButton}
-          aria-label="Social graph"
-          title="Communication patterns"
-        
-        >
-          <Network />
-        </button>
-      </DialogTrigger>
+    <>
       <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
         <DialogTitle>Communication patterns</DialogTitle>
         <DialogDescription className="sr-only">
@@ -268,6 +253,6 @@ export function SocialGraphDialog() {
           </div>
         )}
       </DialogContent>
-    </Dialog>
+    </>
   );
 }

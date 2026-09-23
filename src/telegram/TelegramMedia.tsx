@@ -8,6 +8,64 @@ import { FileDown } from "lucide-react";
 import type { Attachment } from "@/types";
 import { tg } from "./api";
 
+// Resolved data URLs by att.guid (unique per media: it embeds the cacheKey),
+// kept in JS so a chat revisit or pane remount renders straight from memory
+// instead of decrypting + base64-encoding every item over IPC again, and shows
+// the <img> on the first render instead of a "Loading media…" flash. Media
+// stays encrypted at rest — nothing extra is written to disk. LRU (Map
+// insertion order), bounded by total string length; only successes are kept.
+const MAX_CACHED_CHARS = 50 * 1024 * 1024;
+const dataUrls = new Map<string, string>();
+let cachedChars = 0;
+// In-flight loads, so the same media in two panes is fetched once. One still
+// unsettled after JOIN_WINDOW_MS is presumed stuck (a stalled download) and a
+// new mount starts its own, as every mount did before loads were shared.
+const JOIN_WINDOW_MS = 15_000;
+const inflight = new Map<string, { pending: Promise<string>; started: number }>();
+
+/** A cached data URL, marked most-recently-used. */
+function takeDataUrl(guid: string): string | undefined {
+  const url = dataUrls.get(guid);
+  if (url !== undefined) {
+    dataUrls.delete(guid);
+    dataUrls.set(guid, url);
+  }
+  return url;
+}
+
+function remember(guid: string, url: string) {
+  // Larger than the whole budget (a huge document): don't flush everything else.
+  if (url.length > MAX_CACHED_CHARS) return;
+  const prev = dataUrls.get(guid);
+  if (prev !== undefined) cachedChars -= prev.length;
+  dataUrls.delete(guid);
+  dataUrls.set(guid, url);
+  cachedChars += url.length;
+  for (const [key, value] of dataUrls) {
+    if (cachedChars <= MAX_CACHED_CHARS) break;
+    dataUrls.delete(key);
+    cachedChars -= value.length;
+  }
+}
+
+function loadDataUrl(guid: string, request: () => Promise<string>): Promise<string> {
+  const joinable = inflight.get(guid);
+  if (joinable && Date.now() - joinable.started <= JOIN_WINDOW_MS) return joinable.pending;
+  const load = {
+    pending: request().then((url) => {
+      remember(guid, url);
+      return url;
+    }),
+    started: Date.now(),
+  };
+  const settled = () => {
+    if (inflight.get(guid) === load) inflight.delete(guid);
+  };
+  load.pending.then(settled, settled);
+  inflight.set(guid, load);
+  return load.pending;
+}
+
 // tgmedia:<accountId>:<chatId>:<messageId>:<type>:<cacheKey>
 function parse(guid: string) {
   const [, account, chat, message, type, cacheKey] = guid.split(":");
@@ -24,7 +82,9 @@ export function TelegramMedia({ att }: { att: Attachment }) {
   const { accountId, chatId, messageId, type, cacheKey } = parse(att.guid);
   const mime = att.mimeType ?? "";
   const isVideo = mime.startsWith("video/");
-  const [url, setUrl] = useState<string | null>(null);
+  const [url, setUrl] = useState<string | null>(() =>
+    isVideo ? null : (dataUrls.get(att.guid) ?? null)
+  );
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -41,7 +101,14 @@ export function TelegramMedia({ att }: { att: Attachment }) {
           if (!cancelled) setFailed(true);
         });
     } else {
-      tg.mediaDataUrl(accountId, chatId, messageId, cacheKey, att.mimeType)
+      const cached = takeDataUrl(att.guid);
+      if (cached !== undefined) {
+        setUrl(cached);
+        return;
+      }
+      loadDataUrl(att.guid, () =>
+        tg.mediaDataUrl(accountId, chatId, messageId, cacheKey, att.mimeType)
+      )
         .then((u) => {
           if (!cancelled) setUrl(u);
         })

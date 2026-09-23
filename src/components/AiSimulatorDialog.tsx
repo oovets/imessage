@@ -8,14 +8,11 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { FlaskConical, Trash2, ArrowUp, Loader2 } from "lucide-react";
 import {
-  Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { ghostIconButton } from "@/components/ui/icon-button";
 import { useAppStore } from "@/store/useAppStore";
 import { generateReply, buildSystemPrompt, critiqueReply, critiqueFails, type Critique } from "@/lib/aiReply";
 import { loadAiProfiles, type AiProfiles } from "@/lib/aiProfiles";
@@ -23,6 +20,13 @@ import { loadConversationState, retrieveContext } from "@/lib/aiContext";
 import { loadSummary, type AiSummary } from "@/lib/aiTelemetry";
 import { cn } from "@/lib/utils";
 import type { Message } from "@/types";
+
+/** Props from the eager shell in ToolbarDialogs, which owns the Dialog root,
+ *  its trigger and the open state; this module is lazy-loaded on first use. */
+interface LazyDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
 
 interface IndexEntry {
   guid: string;
@@ -39,11 +43,9 @@ interface SimMessage {
   rewritten?: boolean;
 }
 
-export function AiSimulatorDialog() {
+export default function AiSimulatorDialogContent({ open }: LazyDialogProps) {
   const aiReply = useAppStore((s) => s.aiReply);
-  const configured = aiReply.endpoint.trim().length > 0 && aiReply.model.trim().length > 0;
 
-  const [open, setOpen] = useState(false);
   const [profiles, setProfiles] = useState<IndexEntry[]>([]);
   const [selected, setSelected] = useState<string>("global");
   const [msgs, setMsgs] = useState<SimMessage[]>([]);
@@ -155,21 +157,8 @@ export function AiSimulatorDialog() {
     }
   }
 
-  if (!configured) return null;
-
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <button
-          type="button"
-          className={ghostIconButton}
-          aria-label="AI simulator"
-          title="AI simulator — chat with your autopilot, nothing is sent"
-        
-        >
-          <FlaskConical />
-        </button>
-      </DialogTrigger>
+    <>
       <DialogContent className="max-w-lg gap-3">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
@@ -338,6 +327,6 @@ export function AiSimulatorDialog() {
           </details>
         )}
       </DialogContent>
-    </Dialog>
+    </>
   );
 }

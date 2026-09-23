@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Star } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChatItem, type ChatSelectOptions } from "@/components/ChatItem";
@@ -71,7 +79,13 @@ export function ChatList() {
   const networkOnline = useAppStore((s) => s.networkOnline);
   const connectionNotice = useAppStore((s) => s.connectionNotice);
   const sidebarHidden = useAppStore((s) => s.sidebarHidden);
-  const query = useAppStore((s) => s.chatQuery);
+  // The command bar's input stays bound to the live chatQuery; the list
+  // follows a deferred copy, so a keystroke (or clearing the bar, which
+  // remounts every row) paints the input first and rebuilds the list in an
+  // interruptible background render. Everything derived from the query below
+  // uses the deferred value, so the sidebar stays consistent with itself.
+  const liveQuery = useAppStore((s) => s.chatQuery);
+  const query = useDeferredValue(liveQuery);
   const activePaneId = useAppStore((s) => s.activePaneId);
   const { byChat, byPane } = usePaneNumbers();
   const activePaneNumber = byPane.get(activePaneId);

@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type DragEvent } from "react";
-import { ArrowLeft, Bot, Maximize2, Minimize2, X } from "lucide-react";
+import { memo, useEffect, useRef, useState, type DragEvent } from "react";
+import { ArrowLeft, Bot, Maximize2, Minimize2, SquareSplitHorizontal, SquareSplitVertical, X } from "lucide-react";
 import { MessageList } from "@/components/MessageList";
 import { MessageInput } from "@/components/MessageInput";
 import { useAppStore, aiModeFor } from "@/store/useAppStore";
@@ -7,7 +7,7 @@ import { isSource } from "@/lib/source";
 import { sl } from "@/slack/api";
 import { parseSlChatGuid, slMessageToMessage } from "@/slack/adapters";
 import { getClient } from "@/api/clientFactory";
-import { getChatDisplayName, formatMessageTime } from "@/types";
+import { getChatDisplayName, formatMessageTime, nextMessageTimeChange, whenDue } from "@/types";
 import { accountOfGuid, fallbackAccountLabel } from "@/lib/accounts";
 import { CHAT_DRAG_MIME } from "@/lib/triage";
 import { tg } from "@/telegram/api";
@@ -29,7 +29,25 @@ interface ChatPaneProps {
 const paneIconButton =
   "inline-flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-md text-muted-foreground transition-[background-color] duration-120 hover:bg-muted hover:text-foreground";
 
-export function ChatPane({
+/**
+ * True when `error` is the backend saying it hasn't started yet (`notReady`)
+ * and this chat already has history to show. At cold start a pane mounts
+ * before the Telegram core is up or the Slack workspace has connected; the
+ * reload nonce / selfUserId dependencies re-run the fetch once it is, so the
+ * cached history stays up instead of being swapped for a red error. Any other
+ * failure, or a chat with nothing cached, still shows the error.
+ */
+function isNotReadyWithCache(chatGUID: string, error: unknown, notReady: string): boolean {
+  return (
+    String(error) === notReady &&
+    (useAppStore.getState().messages[chatGUID]?.length ?? 0) > 0
+  );
+}
+
+// Memoized (all props are primitives): activating another pane, a chat switch
+// elsewhere or a divider release re-renders the pane tree, and without this
+// every pane's header, list and composer re-rendered with it.
+export const ChatPane = memo(function ChatPane({
   paneId,
   chatGUID,
   isActive,
@@ -60,6 +78,7 @@ export function ChatPane({
   const focused = useAppStore((s) => s.focusedPaneId === paneId);
   const setFocusedPane = useAppStore((s) => s.setFocusedPane);
   const closePane = useAppStore((s) => s.closePane);
+  const splitPane = useAppStore((s) => s.splitPane);
   const setPaneChat = useAppStore((s) => s.setPaneChat);
   const aiConfigured = useAppStore(
     (s) => s.aiReply.endpoint.trim().length > 0 && s.aiReply.model.trim().length > 0
@@ -68,6 +87,34 @@ export function ChatPane({
   const cycleAiReplyChat = useAppStore((s) => s.cycleAiReplyChat);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const paneRef = useRef<HTMLDivElement>(null);
+  // A not-ready error on a cached chat is swallowed (the cached history stays
+  // up), but media inside it failed against the same not-ready backend. The
+  // old error path remounted the list once the source came up, which retried
+  // them; keep that by bumping the list key after the recovering fetch.
+  const recoverRef = useRef<string | null>(null);
+  const [listGen, setListGen] = useState(0);
+  // Narrow panes drop the split buttons (⌘D / ⇧⌘D still work) so the title,
+  // meta and close button keep their room.
+  const [wide, setWide] = useState(true);
+  useEffect(() => {
+    const el = paneRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(([entry]) => setWide(entry.contentRect.width >= 380));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // "last seen 14:35" reads the clock and turns into "last seen Tue" after
+  // 24 h. Unmemoized, the header picked that up from any pane-tree render;
+  // memoized, it re-renders itself when the label is due to change.
+  const lastSeen = presence && !presence.online ? presence.lastSeen : null;
+  const renderedAt = Date.now();
+  const [clockTick, setClockTick] = useState(0);
+  useEffect(() => {
+    if (!lastSeen) return;
+    return whenDue(nextMessageTimeChange(lastSeen, renderedAt), () => setClockTick((n) => n + 1));
+    // renderedAt is the time of the render that scheduled this.
+  }, [lastSeen, clockTick]);
 
   // Focus counts as reading. A message landing in the chat this pane shows
   // used to leave a red marker that only cleared by re-selecting the chat in
@@ -127,9 +174,18 @@ export function ChatPane({
             )
             .sort((a, b) => a.dateCreated - b.dateCreated);
           setMessages(chatGUID, ordered);
+          if (recoverRef.current === chatGUID) {
+            recoverRef.current = null;
+            setListGen((g) => g + 1);
+          }
         })
         .catch((e: unknown) => {
-          if (!cancelled) setFetchError(String(e));
+          if (cancelled) return;
+          if (isNotReadyWithCache(chatGUID, e, `workspace ${workspaceId} is not connected`)) {
+            recoverRef.current = chatGUID;
+            return;
+          }
+          setFetchError(String(e));
         })
         .finally(() => {
           if (!cancelled) setLoadingMessages(false);
@@ -151,11 +207,20 @@ export function ChatPane({
             .map(tgMessageToMessage)
             .sort((a, b) => a.dateCreated - b.dateCreated);
           setMessages(chatGUID, ordered);
+          if (recoverRef.current === chatGUID) {
+            recoverRef.current = null;
+            setListGen((g) => g + 1);
+          }
           // Opening a chat marks it read (server + local via tg:core-event).
           void tg.markRead(accountId, chatId).catch(() => {});
         })
         .catch((e: unknown) => {
-          if (!cancelled) setFetchError(String(e));
+          if (cancelled) return;
+          if (isNotReadyWithCache(chatGUID, e, "Telegram is not ready")) {
+            recoverRef.current = chatGUID;
+            return;
+          }
+          setFetchError(String(e));
         })
         .finally(() => {
           if (!cancelled) setLoadingMessages(false);
@@ -303,7 +368,7 @@ export function ChatPane({
             <span className="min-w-0 truncate text-cc-title font-semibold">
               {getChatDisplayName(selectedChat)}
             </span>
-            <span className="shrink-0 whitespace-nowrap font-mono text-cc-chip text-muted-foreground">
+            <span className="min-w-0 truncate whitespace-nowrap font-mono text-cc-chip text-muted-foreground">
               {sourceMeta}
               {presence && (presence.online || presence.lastSeen) && (
                 <>
@@ -342,6 +407,28 @@ export function ChatPane({
             >
               <Bot className="h-[15px] w-[15px]" />
             </button>
+          )}
+          {wide && (
+            <>
+              <button
+                type="button"
+                className={cn(paneIconButton, "hidden md:inline-flex")}
+                onClick={() => splitPane(paneId, "horizontal")}
+                aria-label="Split right"
+                title="Split right (⌘D)"
+              >
+                <SquareSplitHorizontal className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                className={cn(paneIconButton, "hidden md:inline-flex")}
+                onClick={() => splitPane(paneId, "vertical")}
+                aria-label="Split down"
+                title="Split down (⇧⌘D)"
+              >
+                <SquareSplitVertical className="h-3.5 w-3.5" />
+              </button>
+            </>
           )}
           {(totalPanes > 1 || focused) && (
             <button
@@ -386,10 +473,10 @@ export function ChatPane({
           {/* Remount per chat so first-load scroll + ready state start clean.
               Reusing one instance across chats could leave a cached chat's
               history stuck at opacity-0 until the next interaction. */}
-          <MessageList key={chatGUID} chatGUID={chatGUID!} />
+          <MessageList key={`${chatGUID}:${listGen}`} chatGUID={chatGUID!} />
           <MessageInput chatGUID={chatGUID!} />
         </>
       )}
     </div>
   );
-}
+});

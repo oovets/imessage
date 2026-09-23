@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import type { Chat, Message } from "@/types";
 import { isTauriRuntime } from "@/lib/tauriEnv";
@@ -452,6 +453,31 @@ export class BlueBubblesClient {
     tempGuid?: string
   ): Promise<void> {
     const url = `${this.baseUrl}/api/v1/message/attachment?${this.authParam()}`;
+    if (isTauriRuntime()) {
+      // Desktop shell: the HTTP plugin would turn the whole multipart body into
+      // a JSON number array on the main thread (a multi-second freeze for a
+      // video). A Rust command posts the identical form instead, with the file
+      // as the raw IPC body and the fields URI-encoded in a header
+      // (src-tauri/src/uploads.rs).
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const meta = {
+        url,
+        chatGuid: chatGUID,
+        tempGuid: tempGuid ?? crypto.randomUUID(),
+        name,
+        mimeType: file.type,
+      };
+      try {
+        await invoke("bb_send_attachment", bytes, {
+          headers: { "x-upload-meta": encodeURIComponent(JSON.stringify(meta)) },
+        });
+      } catch (err) {
+        // Commands reject with the error string; throw an Error like the
+        // fetch path does ("sendAttachment failed: HTTP <status> - <body>").
+        throw err instanceof Error ? err : new Error(String(err));
+      }
+      return;
+    }
     const form = new FormData();
     form.append("chatGuid", chatGUID);
     form.append("tempGuid", tempGuid ?? crypto.randomUUID());

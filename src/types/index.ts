@@ -110,6 +110,68 @@ export function getChatInitials(chat: Chat): string {
     .toUpperCase();
 }
 
+// Every toLocale*String call builds a fresh ICU formatter (~100 µs in
+// JavaScriptCore), and a conversation formats a date or two per
+// bubble on every render. So each style below is built once as the exact
+// Intl.DateTimeFormat its toLocale*String counterpart constructs internally,
+// and reused: output is byte-identical.
+const DATE_STYLES = {
+  /** toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) */
+  time: { hour: "2-digit", minute: "2-digit" },
+  /** toLocaleDateString([], { weekday: "short" }) */
+  weekdayShort: { weekday: "short" },
+  /** toLocaleDateString([], { weekday: "long" }) */
+  weekdayLong: { weekday: "long" },
+  /** toLocaleDateString([], { month: "short", day: "numeric" }) */
+  monthDay: { month: "short", day: "numeric" },
+  /** toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" }) */
+  monthDayYear: { month: "short", day: "numeric", year: "numeric" },
+  /** toLocaleString(): with no options it defaults every numeric field. */
+  full: {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    second: "numeric",
+  },
+} satisfies Record<string, Intl.DateTimeFormatOptions>;
+
+export type DateStyle = keyof typeof DATE_STYLES;
+
+// A formatter pins the locale and time zone it was built with, where
+// toLocale*String reads them on every call. Re-resolve them at most once a
+// second and drop the cache when either moved, so a time-zone change while the
+// app runs (a laptop crossing zones) still shows up as it did before.
+const FORMATTER_RECHECK_MS = 1000;
+let formatters: Partial<Record<DateStyle, Intl.DateTimeFormat>> = {};
+let formattersEnv = "";
+let formattersCheckedAt = Number.NEGATIVE_INFINITY;
+
+function formatterFor(style: DateStyle): Intl.DateTimeFormat {
+  const now = Date.now();
+  if (Math.abs(now - formattersCheckedAt) >= FORMATTER_RECHECK_MS) {
+    formattersCheckedAt = now;
+    const { locale, timeZone } = new Intl.DateTimeFormat().resolvedOptions();
+    const env = `${locale}|${timeZone}`;
+    if (env !== formattersEnv) {
+      formattersEnv = env;
+      formatters = {};
+    }
+  }
+  return (formatters[style] ??= new Intl.DateTimeFormat(undefined, DATE_STYLES[style]));
+}
+
+/**
+ * `date` rendered exactly as the toLocale*String call `style` stands for —
+ * including "Invalid Date" for an invalid one, where Intl's format() throws.
+ */
+export function formatDate(date: Date | number, style: DateStyle): string {
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return "Invalid Date";
+  return formatterFor(style).format(d);
+}
+
 export function formatMessageTime(dateCreated: number): string {
   const date = new Date(dateCreated);
   const now = new Date();
@@ -117,10 +179,49 @@ export function formatMessageTime(dateCreated: number): string {
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
   if (diffDays === 0) {
-    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return formatDate(date, "time");
   }
   if (diffDays < 7) {
-    return date.toLocaleDateString([], { weekday: "short" });
+    return formatDate(date, "weekdayShort");
   }
-  return date.toLocaleDateString([], { month: "short", day: "numeric" });
+  return formatDate(date, "monthDay");
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The first instant after `now` at which formatMessageTime(dateCreated) can
+ * read differently: the timestamp itself (one from a server clock ahead of
+ * ours reads as a weekday until then), 24 h on (time → weekday) and 7 days on
+ * (weekday → date).
+ */
+export function nextMessageTimeChange(dateCreated: number, now: number): number {
+  const t = new Date(dateCreated).getTime();
+  for (const days of [0, 1, 7]) {
+    const at = t + days * DAY_MS;
+    if (at > now) return at;
+  }
+  return Infinity;
+}
+
+/** The next local midnight after `now`, when day labels ("Today", "Yesterday") roll over. */
+export function nextLocalMidnight(now: number): number {
+  const d = new Date(now);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime();
+}
+
+/**
+ * Calls `onDue` once the clock reaches `due` (never for Infinity) and returns a
+ * cancel function. It waits at most a minute at a time, so a timer stretched
+ * by system sleep still fires soon after wake.
+ */
+export function whenDue(due: number, onDue: () => void): () => void {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const wait = () => {
+    const left = due - Date.now();
+    if (left <= 0) onDue();
+    else timer = setTimeout(wait, Math.min(left, 60_000));
+  };
+  if (Number.isFinite(due)) wait();
+  return () => clearTimeout(timer);
 }

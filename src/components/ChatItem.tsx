@@ -1,4 +1,4 @@
-import { memo, type DragEvent, type MouseEvent } from "react";
+import { memo, useEffect, useState, type DragEvent, type MouseEvent } from "react";
 import { Star } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -112,7 +112,18 @@ function ChatItemComponent({
   compact = false,
 }: ChatItemProps) {
   const variant: ChatItemVariant = variantProp ?? (compact ? "compact" : "row");
-  const isTyping = useAppStore((s) => (s.typingChats[chat.guid] ?? 0) > Date.now());
+  // Own expiry timer: nothing clears typing for a chat that isn't open, and
+  // the store no longer re-notifies on no-op writes that used to re-check it.
+  const typingUntil = useAppStore((s) => s.typingChats[chat.guid]);
+  const [, bumpTyping] = useState(0);
+  useEffect(() => {
+    if (typingUntil === undefined) return;
+    const ms = typingUntil - Date.now();
+    if (ms <= 0) return;
+    const t = window.setTimeout(() => bumpTyping((n) => n + 1), ms + 1);
+    return () => window.clearTimeout(t);
+  }, [typingUntil]);
+  const isTyping = typingUntil !== undefined && typingUntil > Date.now();
   const name = getChatDisplayName(chat);
   const unread = (chat.unreadCount ?? 0) > 0;
 

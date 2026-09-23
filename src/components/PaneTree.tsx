@@ -32,7 +32,12 @@ function findLeafNode(node: PaneNode, id: string): PaneNode | null {
 
 export function PaneTree({ node, activePaneId, totalLeaves }: PaneTreeProps) {
   const setPaneLayout = useAppStore((s) => s.setPaneLayout);
-  const paneLayouts = useAppStore((s) => s.paneLayouts);
+  // Only this split's own entry: a layout write re-renders the group that
+  // changed, not every node (leaves never read it). Called unconditionally to
+  // keep the hook order stable.
+  const stored = useAppStore((s) =>
+    node.type === "split" ? s.paneLayouts[node.id] : undefined
+  );
   const { byPane } = usePaneNumbers();
 
   if (node.type === "leaf") {
@@ -51,7 +56,6 @@ export function PaneTree({ node, activePaneId, totalLeaves }: PaneTreeProps) {
   const [a, b] = node.children;
   const aId = `panel_${a.id}`;
   const bId = `panel_${b.id}`;
-  const stored = paneLayouts[node.id];
   const a0 = Number(stored?.[0]);
   const b0 = Number(stored?.[1]);
   const valid =

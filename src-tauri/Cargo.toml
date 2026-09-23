@@ -27,6 +27,9 @@ tauri-plugin-deep-link = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-http = "2.5.9"
 tauri-plugin-websocket = "2"
+# Decodes the URI-encoded metadata header of raw-body uploads (uploads.rs).
+# Already in the tree through url/reqwest.
+percent-encoding = "2"
 
 # Telegram backend (self-contained MTProto/SQLite core) wired into the app.
 telegram-core = { workspace = true }

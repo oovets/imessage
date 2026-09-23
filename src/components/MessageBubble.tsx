@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { Copy, Reply, Smile, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { type Message, decodeEscapedUnicode, formatMessageTime } from "@/types";
+import { type Message, decodeEscapedUnicode, formatDate } from "@/types";
 import { useAppStore } from "@/store/useAppStore";
 import { isSource } from "@/lib/source";
 import { parseSlackMarks } from "@/slack/mrkdwn";
@@ -22,7 +22,9 @@ import {
 interface MessageBubbleProps {
   message: Message;
   showSender: boolean;
-  showTime: boolean;
+  /** Time shown beside the bubble (the last in a group); omit for none. The
+   *  list formats it, so an aged label refreshes whenever the list renders. */
+  timeLabel?: string;
   reactions?: string[];
   isFirstInGroup?: boolean;
   onReply?: (message: Message) => void;
@@ -181,10 +183,13 @@ function AttachmentImage({
   );
 }
 
-export function MessageBubble({
+// Memoized: MessageList passes the store's message objects (whose identity
+// survives merges), stable callbacks and content-stable reaction arrays, so a
+// list render only re-renders the bubbles whose props actually changed.
+export const MessageBubble = memo(function MessageBubble({
   message,
   showSender,
-  showTime,
+  timeLabel,
   reactions,
   isFirstInGroup = true,
   onReply,
@@ -194,11 +199,18 @@ export function MessageBubble({
   const rawType = message.associatedMessageType as unknown;
   const isReaction = isTapback(rawType);
 
+  const decodedText = decodeEscapedUnicode(message.text);
+  const previewUrl = decodedText ? extractFirstUrl(decodedText) : null;
+
   const serverUrl = useAppStore((s) => s.serverUrl);
   const password = useAppStore((s) => s.password);
   const superlightMode = useAppStore((s) => s.superlightMode);
   const linkPreviewsEnabled = useAppStore((s) => s.linkPreviewsEnabled);
-  const linkPreviewCache = useAppStore((s) => s.linkPreviewCache);
+  // Only this bubble's own entry. Selecting the whole cache re-rendered every
+  // bubble in every pane each time any preview landed.
+  const preview = useAppStore((s) =>
+    previewUrl ? s.linkPreviewCache[previewUrl] : undefined
+  );
   const setLinkPreview = useAppStore((s) => s.setLinkPreview);
 
   const chatGuid = message.chatGUID ?? "";
@@ -207,9 +219,6 @@ export function MessageBubble({
   const [showReactions, setShowReactions] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [fullImage, setFullImage] = useState<{ src: string; alt: string } | null>(null);
-  const decodedText = decodeEscapedUnicode(message.text);
-  const previewUrl = decodedText ? extractFirstUrl(decodedText) : null;
-  const preview = previewUrl ? linkPreviewCache[previewUrl] : undefined;
 
   useEffect(() => {
     if (!linkPreviewsEnabled || superlightMode || !previewUrl || preview) return;
@@ -218,6 +227,9 @@ export function MessageBubble({
     fetchLinkPreview(previewUrl)
       .then((result) => {
         if (cancelled) return;
+        // Bubbles sharing a URL share one in-flight fetch; the first to
+        // resolve stores it, and writing the same entry again changes nothing.
+        if (useAppStore.getState().linkPreviewCache[previewUrl] === result) return;
         setLinkPreview(previewUrl, result);
       })
       .finally(() => {
@@ -247,12 +259,6 @@ export function MessageBubble({
     } catch {}
   }
 
-  const timeLabel = (
-    <time dateTime={new Date(message.dateCreated).toISOString()}>
-      {formatMessageTime(message.dateCreated)}
-    </time>
-  );
-
   return (
     <>
       <div
@@ -280,7 +286,7 @@ export function MessageBubble({
         >
           <div className="group relative min-w-0">
           <div
-            title={new Date(message.dateCreated).toLocaleString()}
+            title={formatDate(message.dateCreated, "full")}
             className={cn(
               "select-text text-cc-body [text-wrap:pretty]",
               superlightMode
@@ -455,14 +461,14 @@ export function MessageBubble({
         )}
           </div>
 
-          {showTime && (
+          {timeLabel !== undefined && (
             <span
               className={cn(
                 "shrink-0 whitespace-nowrap font-mono text-cc-time text-muted-foreground",
                 superlightMode ? "pb-0" : "pb-0.5"
               )}
             >
-              {timeLabel}
+              <time dateTime={new Date(message.dateCreated).toISOString()}>{timeLabel}</time>
             </span>
           )}
         </div>
@@ -497,4 +503,4 @@ export function MessageBubble({
       </Dialog>
     </>
   );
-}
+});

@@ -1,4 +1,4 @@
-import { useState, useRef, type KeyboardEvent } from "react";
+import { memo, useState, useRef, type KeyboardEvent } from "react";
 import { CornerDownLeft, Paperclip, X, Smile } from "lucide-react";
 import { useAppStore } from "@/store/useAppStore";
 import { isSource } from "@/lib/source";
@@ -44,7 +44,9 @@ function makeOptimisticMessage(chatGUID: string, text: string, replyGuid: string
   };
 }
 
-export function MessageInput({ chatGUID }: MessageInputProps) {
+// Memoized: its only prop is the chat GUID, so pane activation and header
+// changes in ChatPane no longer re-render the composer.
+export const MessageInput = memo(function MessageInput({ chatGUID }: MessageInputProps) {
   const [text, setText] = useState("");
   // Narrow selectors, never the bare store: a selector-less subscription
   // re-renders this whole component on EVERY store change — each websocket
@@ -417,4 +419,4 @@ export function MessageInput({ chatGUID }: MessageInputProps) {
       </div>
     </div>
   );
-}
+});

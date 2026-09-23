@@ -1,8 +1,6 @@
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import { PanelLeftClose, PanelLeftOpen, RefreshCw, Search, X } from "lucide-react";
-import { SettingsDialog } from "@/components/SettingsDialog";
-import { AiSimulatorDialog } from "@/components/AiSimulatorDialog";
-import { SocialGraphDialog } from "@/components/SocialGraphDialog";
+import { AiSimulatorDialog, SettingsDialog, SocialGraphDialog } from "@/components/ToolbarDialogs";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useAppStore } from "@/store/useAppStore";
 import { loadIMessageChats } from "@/lib/loadChats";
@@ -133,7 +131,9 @@ interface ToolbarProps {
  * The 48px window toolbar. It replaces the old 28px titlebar strip: it is the
  * Tauri drag region and reserves room for the macOS traffic lights on the left.
  */
-export function Toolbar({ setup = false }: ToolbarProps) {
+// Memoized: App re-renders on every chat switch, and the toolbar's only prop
+// is the onboarding flag.
+export const Toolbar = memo(function Toolbar({ setup = false }: ToolbarProps) {
   const sidebarHidden = useAppStore((s) => s.sidebarHidden);
   const toggleSidebarHidden = useAppStore((s) => s.toggleSidebarHidden);
   const loadingChats = useAppStore((s) => s.loadingChats);
@@ -189,4 +189,4 @@ export function Toolbar({ setup = false }: ToolbarProps) {
       </div>
     </header>
   );
-}
+});
