@@ -296,11 +296,11 @@ export const ChatPane = memo(function ChatPane({
   const [dropOver, setDropOver] = useState(false);
   const isChatDrag = (e: DragEvent) => e.dataTransfer.types.includes(CHAT_DRAG_MIME);
 
+  // Every pane gets the same hairline; the active one is marked by its
+  // inverted ⌘N chip and the composer's focus ring, not a heavier frame.
   const ring = dropOver
     ? "shadow-[0_0_0_1.5px_hsl(var(--signal))]"
-    : isActive
-      ? "shadow-[0_0_0_1.5px_hsl(var(--primary))]"
-      : "shadow-[0_0_0_1px_hsl(var(--border))]";
+    : "shadow-[0_0_0_1px_hsl(var(--border))]";
 
   return (
     <div

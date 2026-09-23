@@ -156,21 +156,13 @@
     display: none !important;
   }
 
-  /* ---- Native Tauri window (vibrancy + overlay titlebar) ---- */
+  /* ---- Native Tauri window ---- */
 
-  /* The 48px toolbar is the titlebar (drag region + traffic lights). Light
-     mode stays fully opaque — the warm off-white is the design. In dark mode
-     the macOS vibrancy material shows through the toolbar and sidebar, the
-     same frosted look as before the redesign. Superlight stays opaque. */
-  html.dark.tauri:not(.superlight-ui) body,
-  html.dark.tauri:not(.superlight-ui) .app-shell {
-    background-color: transparent;
-  }
-  html.dark.tauri:not(.superlight-ui) .app-toolbar,
-  html.dark.tauri:not(.superlight-ui) .app-sidebar {
-    background-color: hsl(var(--background) / 0.62);
-  }
-  html.dark.tauri:not(.superlight-ui) .app-board {
+  /* The window is created transparent (for macOS vibrancy), but every surface
+     paints its own opaque background: translucent panes let the desktop show
+     through — the wallpaper on Linux compositors — and read as grey. */
+  .tauri body,
+  .tauri .app-shell {
     background-color: hsl(var(--background));
   }
 }
