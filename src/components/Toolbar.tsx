@@ -8,6 +8,7 @@ import { filterChats, triage } from "@/lib/triage";
 import { isSource } from "@/lib/source";
 import { ghostIconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
+import { hasTrafficLights } from "@/lib/tauriEnv";
 
 function ConnectionStatus() {
   const isConfigured = useAppStore((s) => s.isConfigured);
@@ -144,9 +145,12 @@ export const Toolbar = memo(function Toolbar({ setup = false }: ToolbarProps) {
       data-tauri-drag-region
       className="app-toolbar grid h-12 shrink-0 grid-cols-[1fr_minmax(0,440px)_1fr] items-center gap-3 border-b bg-background px-3.5"
     >
-      {/* Left: traffic-light space (~70px in the native window), then the
-          sidebar toggle. */}
-      <div data-tauri-drag-region className="flex min-w-0 items-center pl-[70px]">
+      {/* Left: traffic-light space (~70px in the macOS window), then the
+          sidebar toggle. Linux runs undecorated, so nothing to make room for. */}
+      <div
+        data-tauri-drag-region
+        className={cn("flex min-w-0 items-center", hasTrafficLights() && "pl-[70px]")}
+      >
         {!setup && (
           <button
             type="button"

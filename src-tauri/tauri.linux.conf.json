@@ -11,8 +11,7 @@
         "resizable": true,
         "fullscreen": false,
         "transparent": false,
-        "titleBarStyle": "Overlay",
-        "decorations": true
+        "decorations": false
       }
     ]
   }

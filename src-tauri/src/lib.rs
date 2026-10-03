@@ -228,6 +228,10 @@ fn setup_app_menu<R: Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<()> {
 
 #[tauri::command]
 fn set_menubar_visible<R: Runtime>(app: tauri::AppHandle<R>, visible: bool) -> Result<(), String> {
+    // No app menu outside macOS (see setup), so nothing to show or hide.
+    if !cfg!(target_os = "macos") {
+        return Ok(());
+    }
     if visible {
         let menu = build_app_menu(&app).map_err(|e| format!("build menu failed: {e}"))?;
         app.set_menu(menu)
@@ -282,6 +286,12 @@ fn setup_tray<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<()>
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // First, so a second launch (from the app menu, a terminal) exits
+        // before starting another Telegram/Slack core against the same
+        // session and just brings the running window forward.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            focus_main_window(app);
+        }))
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_websocket::init())
         .plugin(tauri_plugin_notification::init())
@@ -348,7 +358,12 @@ pub fn run() {
         ])
         .setup(|app| {
             let app_handle = app.handle();
-            setup_app_menu(&app_handle)?;
+            // The app menu is the macOS menu bar. Elsewhere it would be a GTK
+            // menu bar inside the window, full of macOS-only items (Hide
+            // Others, Show All); Linux gets Settings from the toolbar and tray.
+            if cfg!(target_os = "macos") {
+                setup_app_menu(&app_handle)?;
+            }
             setup_tray(&app_handle)?;
             #[cfg(target_os = "macos")]
             apply_window_vibrancy(&app_handle);
