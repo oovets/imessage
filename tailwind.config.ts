@@ -52,6 +52,12 @@ const config: Config = {
           DEFAULT: "hsl(var(--primary))",
           foreground: "hsl(var(--primary-foreground))",
         },
+        // Outgoing message bubbles; its own token so dark mode can use a
+        // grey bubble while buttons and the active chat keep the ink.
+        outgoing: {
+          DEFAULT: "hsl(var(--outgoing))",
+          foreground: "hsl(var(--outgoing-foreground))",
+        },
         secondary: {
           DEFAULT: "hsl(var(--secondary))",
           foreground: "hsl(var(--secondary-foreground))",

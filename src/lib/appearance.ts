@@ -5,6 +5,8 @@ export type ThemeTokenKey =
   | "foreground"
   | "primary"
   | "primaryForeground"
+  | "outgoing"
+  | "outgoingForeground"
   | "muted"
   | "mutedForeground"
   | "border"
@@ -35,6 +37,8 @@ export const THEME_TOKEN_LABELS: Array<{ key: ThemeTokenKey; label: string }> = 
   { key: "panel", label: "Panel" },
   { key: "primary", label: "Ink" },
   { key: "primaryForeground", label: "Ink text" },
+  { key: "outgoing", label: "Outgoing bubble" },
+  { key: "outgoingForeground", label: "Outgoing text" },
   { key: "muted", label: "Muted" },
   { key: "mutedForeground", label: "Muted text" },
   { key: "border", label: "Border" },
@@ -49,6 +53,8 @@ export const DEFAULT_THEME_TOKENS: Record<ThemeMode, ThemeTokenValues> = {
     foreground: "#111110",
     primary: "#111110",
     primaryForeground: "#f4f3ef",
+    outgoing: "#111110",
+    outgoingForeground: "#f4f3ef",
     muted: "#ebe9e3",
     mutedForeground: "#6e6c66",
     border: "#dedcd5",
@@ -60,6 +66,10 @@ export const DEFAULT_THEME_TOKENS: Record<ThemeMode, ThemeTokenValues> = {
     foreground: "#eeece6",
     primary: "#eeece6",
     primaryForeground: "#0e0e0d",
+    // Dark grey, a step above the panel the incoming bubbles sit on: a
+    // near-white block was the brightest thing on a dark screen.
+    outgoing: "#2c2b29",
+    outgoingForeground: "#eeece6",
     muted: "#1f1e1c",
     mutedForeground: "#8a877f",
     border: "#2a2926",
@@ -159,6 +169,8 @@ export function applyAppearance(settings: AppearanceSettings, mode: ThemeMode): 
   setColor("--primary", tokens.primary);
   setColor("--ring", tokens.primary);
   setColor("--primary-foreground", tokens.primaryForeground);
+  setColor("--outgoing", tokens.outgoing);
+  setColor("--outgoing-foreground", tokens.outgoingForeground);
   setColor("--muted", tokens.muted);
   setColor("--secondary", tokens.muted);
   setColor("--accent", tokens.muted);

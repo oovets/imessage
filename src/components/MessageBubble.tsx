@@ -81,7 +81,7 @@ function renderTextWithLinks(text: string, isMe: boolean, superlightMode: boolea
         className={cn(
           "underline underline-offset-2 break-all",
           isMe && !superlightMode
-            ? "text-primary-foreground hover:opacity-80"
+            ? "text-outgoing-foreground hover:opacity-80"
             : "text-foreground hover:opacity-80"
         )}
         onClick={(e) => e.stopPropagation()}
@@ -112,7 +112,7 @@ function renderSlackText(text: string, isMe: boolean, superlightMode: boolean) {
             key={i}
             className={cn(
               "rounded px-1 py-px font-mono text-[0.85em]",
-              isMe && !superlightMode ? "bg-primary-foreground/20" : "bg-muted"
+              isMe && !superlightMode ? "bg-outgoing-foreground/20" : "bg-muted"
             )}
           >
             {span.text}
@@ -124,7 +124,7 @@ function renderSlackText(text: string, isMe: boolean, superlightMode: boolean) {
             key={i}
             className={cn(
               "my-1 overflow-x-auto rounded-md px-2 py-1.5 font-mono text-[0.85em] whitespace-pre-wrap",
-              isMe && !superlightMode ? "bg-primary-foreground/15" : "bg-muted"
+              isMe && !superlightMode ? "bg-outgoing-foreground/15" : "bg-muted"
             )}
           >
             {span.text}
@@ -341,7 +341,7 @@ export const MessageBubble = memo(function MessageBubble({
                     // rag stays even — the design's bubble measure.
                     "rounded-md py-2 pl-[11px] pr-[17px]",
                     isMe
-                      ? "bg-primary text-primary-foreground"
+                      ? "bg-outgoing text-outgoing-foreground"
                       : "bg-panel text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]",
                     message.pending && "opacity-70",
                     message.failed && "shadow-[inset_0_0_0_1px_hsl(var(--signal))]"

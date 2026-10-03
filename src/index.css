@@ -40,7 +40,8 @@
   /* Command Center tokens. applyAppearance() overwrites these at runtime from
      DEFAULT_THEME_TOKENS (+ user overrides); these are the pre-JS fallback.
      --background = window bg, --panel = panes/cards/incoming bubbles,
-     --primary = ink (outgoing bubble, active ring), --signal = "needs you". */
+     --primary = ink (buttons, active ring), --outgoing = outgoing bubble,
+     --signal = "needs you". */
   :root {
     --background: 48 18.5% 94.7%;
     --panel: 0 0% 100%;
@@ -51,6 +52,8 @@
     --popover-foreground: 60 3% 6.5%;
     --primary: 60 3% 6.5%;
     --primary-foreground: 48 18.5% 94.7%;
+    --outgoing: 60 3% 6.5%;
+    --outgoing-foreground: 48 18.5% 94.7%;
     --secondary: 45 16.7% 90.6%;
     --secondary-foreground: 60 3% 6.5%;
     --muted: 45 16.7% 90.6%;
@@ -77,6 +80,8 @@
     --popover-foreground: 45 19% 91.8%;
     --primary: 45 19% 91.8%;
     --primary-foreground: 60 3.7% 5.3%;
+    --outgoing: 40 3.5% 16.7%;
+    --outgoing-foreground: 45 19% 91.8%;
     --secondary: 40 5.1% 11.6%;
     --secondary-foreground: 45 19% 91.8%;
     --muted: 40 5.1% 11.6%;

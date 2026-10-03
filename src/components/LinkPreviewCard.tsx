@@ -49,7 +49,7 @@ export function LinkPreviewCard({
       className={cn(
         "mt-2 block overflow-hidden rounded-md border text-left transition-[background-color] duration-120",
         isOwnMessage
-          ? "border-primary-foreground/20 bg-primary-foreground/10 text-primary-foreground hover:bg-primary-foreground/15"
+          ? "border-outgoing-foreground/20 bg-outgoing-foreground/10 text-outgoing-foreground hover:bg-outgoing-foreground/15"
           : "border-border bg-background text-foreground hover:bg-muted",
         className
       )}
