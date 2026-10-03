@@ -397,10 +397,11 @@ independent of this.
 
 ## Releases and CI
 
-macOS releases are built by GitHub Actions from `v*` tags:
+Releases are built by GitHub Actions from `v*` tags:
 
 - **Apple Silicon:** `aarch64-apple-darwin` on `macos-latest`
-- **Intel:** `x86_64-apple-darwin` on `macos-13`
+- **Intel:** `x86_64-apple-darwin`, cross-compiled on `macos-latest`
+- **Linux:** x86_64 AppImage and `.deb` on `ubuntu-22.04`
 
 Tag a release and push it:
 
@@ -409,9 +410,9 @@ git tag v0.2.1
 git push origin v0.2.1
 ```
 
-The workflow builds both architectures, bakes in the Telegram credentials from the
-`TG_API_ID` / `TG_API_HASH` secrets, and publishes the `.dmg` and `.app` to a GitHub
-Release.
+The workflow builds every target, bakes in the Telegram credentials from the
+`TG_API_ID` / `TG_API_HASH` secrets, and publishes the `.dmg`, `.app`, AppImage and `.deb`
+to one GitHub Release.
 
 Release builds are unsigned unless Apple signing and notarization secrets (a Developer ID
 certificate, `APPLE_ID`, an app-specific password, and `APPLE_TEAM_ID`) are added to the

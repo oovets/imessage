@@ -1,4 +1,4 @@
-name: build-macos-desktop
+name: build-desktop
 
 on:
   workflow_dispatch:
@@ -70,7 +70,7 @@ jobs:
           args: --target ${{ matrix.target }} --bundles app,dmg
           tagName: ${{ github.ref_name }}
           releaseName: Messages ${{ github.ref_name }}
-          releaseBody: macOS desktop builds for Messages (unified iMessage + Telegram + Slack).
+          releaseBody: Desktop builds for Messages (unified iMessage + Telegram + Slack) — macOS .dmg/.app, Linux AppImage/.deb.
           releaseDraft: false
           prerelease: false
 
@@ -91,4 +91,77 @@ jobs:
           path: |
             target/${{ matrix.target }}/release/bundle/dmg/*.dmg
             target/${{ matrix.target }}/release/bundle/macos/*.app
+          if-no-files-found: error
+
+  # Linux: AppImage + .deb into the same release. Built on the oldest
+  # supported Ubuntu so the AppImage's glibc floor stays low and it runs on
+  # most current distros.
+  build-linux:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    env:
+      TG_API_ID: ${{ secrets.TG_API_ID }}
+      TG_API_HASH: ${{ secrets.TG_API_HASH }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      # Tauri's WebKitGTK/tray prerequisites, plus libdbus for the keyring's
+      # Secret Service backend.
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
+            libxdo-dev libssl-dev libdbus-1-dev pkg-config build-essential file patchelf
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+          key: x86_64-unknown-linux-gnu
+
+      - name: Install frontend dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Build and publish Linux release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: tauri-apps/tauri-action@action-v0.6.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: src-tauri
+          args: --bundles appimage,deb
+          tagName: ${{ github.ref_name }}
+          releaseName: Messages ${{ github.ref_name }}
+          releaseBody: Desktop builds for Messages (unified iMessage + Telegram + Slack) — macOS .dmg/.app, Linux AppImage/.deb.
+          releaseDraft: false
+          prerelease: false
+
+      - name: Build and bundle Linux app
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: tauri-apps/tauri-action@action-v0.6.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: src-tauri
+          args: --bundles appimage,deb
+
+      - name: Upload bundle artifacts
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: messages-linux-x86_64-bundles
+          path: |
+            target/release/bundle/appimage/*.AppImage
+            target/release/bundle/deb/*.deb
           if-no-files-found: error
