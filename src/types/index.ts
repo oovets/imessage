@@ -105,6 +105,8 @@ export function getChatDisplayName(chat: Chat): string {
   if (chat.participants.length === 1 && chat.participants[0].firstName) {
     return chat.participants[0].firstName;
   }
+  // A named group shows its name, as in Messages; unnamed ones list people.
+  if (chat.participants.length > 1 && chat.displayName) return chat.displayName;
   if (chat.participants.length > 1) {
     const names = chat.participants
       .map((p) => p.firstName || p.address)
