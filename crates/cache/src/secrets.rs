@@ -8,17 +8,23 @@ use shared::secrets::{SecretError, SecretStore};
 /// Name (account field) of the single Keychain item holding every secret.
 const BLOB_ITEM: &str = "secrets";
 
+/// Serializes the blob's read-modify-write across the whole process. Every
+/// store instance shares the one Keychain item, and there are several (the
+/// Telegram core holds one, Slack makes one per call): a per-instance lock
+/// let one instance write back a blob read before another's write landed,
+/// silently dropping that secret (Slack workspaces, a Telegram session).
+static BLOB_LOCK: Mutex<()> = Mutex::new(());
+
 /// Secret storage backed by the macOS Keychain (via the `keyring` crate).
 ///
 /// All secrets are stored inside **one** generic-password Keychain item
 /// (service `dev.stefan.TelegramGui`, account `secrets`) as a small
 /// `name<TAB>base64(value)` line map. A single item means a single ACL and
 /// therefore a single Keychain prompt for the whole app — instead of one per
-/// secret (session, cache key, …). An internal mutex serializes the
-/// read-modify-write cycle.
+/// secret (session, cache key, …). A process-wide mutex ([`BLOB_LOCK`])
+/// serializes the read-modify-write cycle.
 pub struct KeychainSecretStore {
     service: String,
-    lock: Mutex<()>,
 }
 
 impl KeychainSecretStore {
@@ -26,7 +32,6 @@ impl KeychainSecretStore {
         let (qualifier, organization, application) = shared::AppConfig::APP_ID;
         Self {
             service: format!("{qualifier}.{organization}.{application}"),
-            lock: Mutex::new(()),
         }
     }
 
@@ -71,8 +76,8 @@ impl KeychainSecretStore {
             .map_err(|e| SecretError::Backend(e.to_string()))
     }
 
-    fn locked(&self) -> Result<std::sync::MutexGuard<'_, ()>, SecretError> {
-        self.lock
+    fn locked(&self) -> Result<std::sync::MutexGuard<'static, ()>, SecretError> {
+        BLOB_LOCK
             .lock()
             .map_err(|_| SecretError::Backend("poisoned secret lock".into()))
     }
