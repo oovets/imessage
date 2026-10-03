@@ -5,7 +5,13 @@
 [![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8D8)](https://tauri.app/)
 [![React + TypeScript](https://img.shields.io/badge/React-TypeScript-3178C6)](https://react.dev/)
 
-![Messages desktop app](docs/assets/messages-mockup.svg)
+| Dark | Light |
+| --- | --- |
+| [![Messages Desktop in dark mode](docs/assets/screenshot-dark.png)](docs/assets/screenshot-dark.png) | [![Messages Desktop in light mode](docs/assets/screenshot-light.png)](docs/assets/screenshot-light.png) |
+
+<sub>Two chats side by side: a link sent from an iPhone shows the preview iMessage itself
+built, and outgoing bubbles are dark grey in dark mode. Contacts and messages are made up
+(see [README screenshots](#readme-screenshots)).</sub>
 
 A native macOS desktop app that puts **iMessage, Telegram and Slack in one unified
 inbox**. Conversations from all three services live in a single chat list, sorted by time,
@@ -92,7 +98,9 @@ Release builds are currently unsigned. On first launch, see
 - Optimistic outgoing rendering, deduped against server echoes.
 - Inline downscaled image thumbnails with a full-size preview dialog; video plays inline;
   other attachments render as links.
-- Rich link previews fetched locally through the Tauri HTTP plugin (no CORS workarounds).
+- Links sent from an iPhone show the preview iMessage itself built (title, site, image),
+  decoded from the message's rich-link payload, so it works even for sites that block
+  scrapers. Other links get previews fetched locally through the Tauri HTTP plugin.
 
 ### Telegram (via MTProto)
 
@@ -334,6 +342,20 @@ rustup target add x86_64-apple-darwin
 npm run tauri:build -- --target x86_64-apple-darwin --bundles app,dmg   # Intel
 npm run tauri:build -- --target aarch64-apple-darwin --bundles app,dmg  # Apple Silicon
 ```
+
+### README screenshots
+
+The screenshots at the top come from the web client talking to a stand-in BlueBubbles
+server with made-up contacts and messages, so no real conversations end up in the repo:
+
+```bash
+node scripts/screenshot-server.mjs &   # fake server on :1235
+npm run dev &                          # web client on :5173
+node scripts/take-screenshots.mjs      # writes docs/assets/screenshot-{dark,light}.png
+```
+
+`take-screenshots.mjs` drives a headless Chromium (set `CHROMIUM` if it is not on `PATH`)
+with a throwaway profile and captures both themes at 2x.
 
 ### Verification before shipping
 
