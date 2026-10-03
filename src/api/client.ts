@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import type { Chat, Message } from "@/types";
 import { isTauriRuntime } from "@/lib/tauriEnv";
+import { attachRichLink } from "@/lib/richLink";
 import {
   mergeChatThreads,
   chatGuidVariants,
@@ -305,7 +306,8 @@ export class BlueBubblesClient {
   ): Promise<Message[]> {
     let qs = `${this.authParam()}&limit=${limit}`;
     if (includeAttachments) {
-      qs += `&with=attachments&withAttachments=true&includeAttachments=true`;
+      // payloadData carries iMessage's own link previews (see lib/richLink).
+      qs += `&with=attachments,payloadData&withAttachments=true&includeAttachments=true`;
     }
     if (after) {
       qs += `&after=${after}`;
@@ -326,6 +328,7 @@ export class BlueBubblesClient {
 
     for (const m of msgs) {
       m.chatGUID = chatGUID;
+      attachRichLink(m);
     }
 
     return [...msgs].reverse();

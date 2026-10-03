@@ -1,12 +1,13 @@
 import { memo, useEffect, useState } from "react";
 import { Copy, Reply, Smile, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { type Message, decodeEscapedUnicode, formatDate } from "@/types";
+import { type LinkPreview, type Message, decodeEscapedUnicode, formatDate } from "@/types";
 import { useAppStore } from "@/store/useAppStore";
 import { isSource } from "@/lib/source";
 import { parseSlackMarks } from "@/slack/mrkdwn";
 import { getClient } from "@/api/clientFactory";
-import { extractFirstUrl, fetchLinkPreview } from "@/lib/linkPreview";
+import { extractFirstUrl, fetchLinkPreview, normalizePreviewUrl } from "@/lib/linkPreview";
+import { isPayloadAttachment } from "@/lib/richLink";
 import { LinkPreviewCard } from "@/components/LinkPreviewCard";
 import { OrientedImage } from "@/components/OrientedImage";
 import { StreamedVideo } from "@/components/StreamedVideo";
@@ -200,7 +201,13 @@ export const MessageBubble = memo(function MessageBubble({
   const isReaction = isTapback(rawType);
 
   const decodedText = decodeEscapedUnicode(message.text);
-  const previewUrl = decodedText ? extractFirstUrl(decodedText) : null;
+  const richLink = message.richLink;
+  const previewUrl =
+    (decodedText ? extractFirstUrl(decodedText) : null) ??
+    (richLink?.url ? normalizePreviewUrl(richLink.url) : null);
+  // iMessage already built this link's preview; fetching the page again is
+  // only worth it when that gave us no title.
+  const wantsFetch = !richLink?.title;
 
   const serverUrl = useAppStore((s) => s.serverUrl);
   const password = useAppStore((s) => s.password);
@@ -221,7 +228,7 @@ export const MessageBubble = memo(function MessageBubble({
   const [fullImage, setFullImage] = useState<{ src: string; alt: string } | null>(null);
 
   useEffect(() => {
-    if (!linkPreviewsEnabled || superlightMode || !previewUrl || preview) return;
+    if (!linkPreviewsEnabled || superlightMode || !previewUrl || !wantsFetch || preview) return;
     let cancelled = false;
     setPreviewLoading(true);
     fetchLinkPreview(previewUrl)
@@ -238,7 +245,7 @@ export const MessageBubble = memo(function MessageBubble({
     return () => {
       cancelled = true;
     };
-  }, [linkPreviewsEnabled, preview, previewUrl, setLinkPreview, superlightMode]);
+  }, [linkPreviewsEnabled, preview, previewUrl, setLinkPreview, superlightMode, wantsFetch]);
 
   if (isReaction) {
     const emoji = REACTION_EMOJI[rawType as string | number] ?? "";
@@ -250,6 +257,43 @@ export const MessageBubble = memo(function MessageBubble({
     !isMe && message.handle ? message.handle.firstName || message.handle.address : null;
   const hasContent = !!(decodedText || message.attachments?.length);
   if (!hasContent) return null;
+
+  const client = getClient(serverUrl, password);
+  // A rich link's image and icon are .pluginPayloadAttachment files: they
+  // belong inside the card, never in the bubble as download links.
+  const attachments = (message.attachments ?? []).filter((att) => !isPayloadAttachment(att));
+  const linkAttachment = (index: number | undefined) =>
+    index === undefined ? undefined : message.attachments?.[index];
+  const linkImage = linkAttachment(richLink?.imageIndex);
+  const linkIcon = linkAttachment(richLink?.iconIndex);
+
+  // The card: iMessage's own preview first (no fetch of ours involved, so it
+  // shows regardless of the fetch setting), our fetched one filling its gaps.
+  const fetched = preview?.status === "ready" ? preview : undefined;
+  const cardPreview: LinkPreview | undefined =
+    richLink && previewUrl
+      ? {
+          url: previewUrl,
+          siteName: richLink.siteName || fetched?.siteName || "",
+          title: richLink.title || fetched?.title || "",
+          description: richLink.summary || fetched?.description || "",
+          // A web image only when previews may reach the network.
+          image: linkPreviewsEnabled ? fetched?.image || richLink.imageUrl || "" : "",
+          favicon: linkPreviewsEnabled ? fetched?.favicon || "" : "",
+          status: "ready",
+          fetchedAt: fetched?.fetchedAt ?? 0,
+        }
+      : linkPreviewsEnabled
+        ? preview
+        : undefined;
+  const cardLoading = linkPreviewsEnabled && wantsFetch && previewLoading && !preview && !richLink;
+  const showCard = !superlightMode && !!previewUrl && (cardPreview?.status === "ready" || cardLoading);
+  // A message that is only the link (how iMessage sends one) reads as the
+  // card alone, like on the phone.
+  const trimmedText = decodedText.trim();
+  const isBareLink =
+    !!previewUrl && !/\s/.test(trimmedText) && normalizePreviewUrl(trimmedText) === previewUrl;
+  const showText = !!decodedText && !(isBareLink && showCard && cardPreview?.status === "ready");
 
   async function handleCopy() {
     try {
@@ -305,7 +349,7 @@ export const MessageBubble = memo(function MessageBubble({
             )}
             onDoubleClick={() => onReact?.(message, "love")}
           >
-            {message.attachments?.map((att) => {
+            {attachments.map((att) => {
               // Telegram media is fetched lazily via its own component.
               if (att.guid.startsWith("tgmedia:")) {
                 return <TelegramMedia key={att.guid} att={att} />;
@@ -316,7 +360,6 @@ export const MessageBubble = memo(function MessageBubble({
                 return <SlackMedia key={att.guid} att={att} />;
               }
               const mime = att.mimeType ?? "";
-              const client = getClient(serverUrl, password);
               const src = att.url || client.getAttachmentUrl(att.guid);
               if (superlightMode) {
                 return (
@@ -371,7 +414,7 @@ export const MessageBubble = memo(function MessageBubble({
               );
             })}
 
-            {decodedText && (
+            {showText && (
               <p
                 className={cn(
                   "whitespace-pre-wrap break-words [overflow-wrap:anywhere]",
@@ -383,12 +426,31 @@ export const MessageBubble = memo(function MessageBubble({
                   : renderTextWithLinks(decodedText, isMe, superlightMode)}
               </p>
             )}
-            {!superlightMode && linkPreviewsEnabled && previewUrl && (
+            {showCard && previewUrl && (
               <LinkPreviewCard
                 url={previewUrl}
-                preview={preview}
-                loading={previewLoading && !preview}
+                preview={cardPreview}
+                loading={cardLoading}
                 isOwnMessage={isMe}
+                className={showText || attachments.length > 0 ? undefined : "mt-0"}
+                image={
+                  linkImage && (
+                    <OrientedImage
+                      src={client.getAttachmentUrl(linkImage.guid)}
+                      alt=""
+                      className="max-h-44 w-full object-cover"
+                    />
+                  )
+                }
+                icon={
+                  linkIcon && (
+                    <OrientedImage
+                      src={client.getAttachmentUrl(linkIcon.guid)}
+                      alt=""
+                      className="h-3.5 w-3.5 rounded-sm"
+                    />
+                  )
+                }
               />
             )}
           </div>

@@ -3,6 +3,7 @@ import { act, fireEvent, render } from "@testing-library/react";
 import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "@/store/useAppStore";
+import { getClient } from "@/api/clientFactory";
 import { extractFirstUrl, fetchLinkPreview } from "@/lib/linkPreview";
 import type { LinkPreview, Message } from "@/types";
 import { MessageBubble } from "./MessageBubble";
@@ -14,6 +15,11 @@ vi.mock("@/lib/linkPreview", async (importOriginal) => {
   return { ...real, extractFirstUrl: vi.fn(), fetchLinkPreview: vi.fn() };
 });
 vi.mock("@/api/clientFactory", () => ({ getClient: vi.fn() }));
+vi.mock("@/components/OrientedImage", () => ({
+  OrientedImage: ({ src, className }: { src: string; className?: string }) => (
+    <img data-src={src} className={className} />
+  ),
+}));
 
 const URL_A = "https://example.com/a";
 
@@ -146,6 +152,76 @@ describe("MessageBubble link previews", () => {
     useAppStore.setState({ linkPreviewsEnabled: true, superlightMode: true });
     render(<MessageBubble message={msg({ guid: "m2", text: URL_A })} showSender={false} />);
     expect(fetchLinkPreview).not.toHaveBeenCalled();
+  });
+});
+
+describe("MessageBubble iMessage rich links", () => {
+  const LISTING = "https://www.hemnet.se/salda/lagenhet-4rum";
+  const payload = (guid: string) => ({
+    guid,
+    mimeType: "",
+    transferName: `${guid}.pluginPayloadAttachment`,
+    url: "",
+  });
+  const balloon = (over: Partial<Message> = {}) =>
+    msg({
+      text: `${LISTING}?utm_source=ios_app`,
+      attachments: [payload("ICON"), payload("IMAGE"), payload("EXTRA")],
+      richLink: {
+        url: LISTING,
+        title: "Lägenhet 4 rum",
+        summary: "Vasastan",
+        siteName: "Hemnet",
+        imageIndex: 1,
+        iconIndex: 0,
+        imageUrl: "https://bilder.example/x.jpg",
+      },
+      ...over,
+    });
+
+  beforeEach(() => {
+    vi.mocked(getClient).mockReturnValue({
+      getAttachmentUrl: (guid: string) => `bb:${guid}`,
+    } as unknown as ReturnType<typeof getClient>);
+  });
+
+  it("shows the card instead of the payload files and the bare URL", () => {
+    const view = render(<MessageBubble message={balloon()} showSender={false} />);
+    expect(view.getByText("Lägenhet 4 rum")).toBeTruthy();
+    expect(view.getByText("Hemnet")).toBeTruthy();
+    expect(view.queryByText(/pluginPayloadAttachment/)).toBeNull();
+    // The link text itself is gone; the card is the link.
+    expect(view.container.querySelectorAll("a")).toHaveLength(1);
+    const images = [...view.container.querySelectorAll("img")].map((i) => i.getAttribute("data-src"));
+    expect(images).toEqual(["bb:IMAGE", "bb:ICON"]);
+    // iMessage already has a title: no page fetch.
+    expect(fetchLinkPreview).not.toHaveBeenCalled();
+  });
+
+  it("keeps surrounding text visible", () => {
+    const view = render(
+      <MessageBubble message={balloon({ text: `kolla ${LISTING}` })} showSender={false} />
+    );
+    expect(view.getByText("kolla")).toBeTruthy();
+    expect(view.getByText("Lägenhet 4 rum")).toBeTruthy();
+  });
+
+  it("shows the card with previews disabled, without web images", () => {
+    useAppStore.setState({ linkPreviewsEnabled: false });
+    const view = render(
+      <MessageBubble message={balloon({ richLink: { ...balloon().richLink!, imageIndex: undefined } })} showSender={false} />
+    );
+    expect(view.getByText("Lägenhet 4 rum")).toBeTruthy();
+    const srcs = [...view.container.querySelectorAll("img")].map((i) => i.getAttribute("src"));
+    expect(srcs).not.toContain("https://bilder.example/x.jpg");
+  });
+
+  it("hides payload files even before the metadata arrives", () => {
+    const view = render(
+      <MessageBubble message={balloon({ richLink: undefined })} showSender={false} />
+    );
+    expect(view.queryByText(/pluginPayloadAttachment/)).toBeNull();
+    expect(fetchLinkPreview).toHaveBeenCalled();
   });
 });
 

@@ -6,6 +6,7 @@ import { getChatDisplayName } from "@/types";
 import { openSocket, type SocketHandle } from "@/lib/wsTransport";
 import { getClient } from "@/api/clientFactory";
 import { canonicalChatGuid, notePreferredSendGuid } from "@/lib/chatThreadMerge";
+import { parseRichLink } from "@/lib/richLink";
 
 // U+FFFC is the object-replacement char iMessage uses as the stand-in "body" of
 // an attachment message, so strip it before deciding a message is bodyless.
@@ -54,6 +55,7 @@ function extractMessage(data: unknown): Message | null {
     associatedMessageType: typeof msg.associatedMessageType === "string" ? msg.associatedMessageType : "",
     chatGUID,
     tempGuid: typeof msg.tempGuid === "string" ? msg.tempGuid : undefined,
+    richLink: parseRichLink(msg.payloadData),
   };
 }
 

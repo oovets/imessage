@@ -27,6 +27,22 @@ export interface Message {
   // Unified inbox: Telegram's own emoji reaction chips (already aggregated),
   // shown instead of the iMessage tapback aggregation for tg messages.
   tgReactions?: string[];
+  /** iMessage rich link: the preview the sender's device built, decoded from
+   *  BlueBubbles' payloadData. Its images are the message's
+   *  .pluginPayloadAttachment files. */
+  richLink?: RichLink;
+}
+
+export interface RichLink {
+  url: string;
+  title: string;
+  summary: string;
+  siteName: string;
+  /** Index into the message's attachments of the preview image / site icon. */
+  imageIndex?: number;
+  iconIndex?: number;
+  /** The image's original web address, for when no attachment carries it. */
+  imageUrl?: string;
 }
 
 export interface Chat {

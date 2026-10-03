@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { LinkPreview } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -6,6 +7,11 @@ interface LinkPreviewCardProps {
   url: string;
   loading?: boolean;
   isOwnMessage: boolean;
+  /** Stands in for preview.image / preview.favicon (iMessage rich links
+   *  carry theirs as server attachments, which load differently). */
+  image?: ReactNode;
+  icon?: ReactNode;
+  className?: string;
 }
 
 function getHost(url: string): string {
@@ -16,7 +22,15 @@ function getHost(url: string): string {
   }
 }
 
-export function LinkPreviewCard({ preview, url, loading, isOwnMessage }: LinkPreviewCardProps) {
+export function LinkPreviewCard({
+  preview,
+  url,
+  loading,
+  isOwnMessage,
+  image: imageNode,
+  icon: iconNode,
+  className,
+}: LinkPreviewCardProps) {
   if (!loading && (!preview || preview.status !== "ready")) return null;
 
   const host = getHost(preview?.url ?? url);
@@ -36,7 +50,8 @@ export function LinkPreviewCard({ preview, url, loading, isOwnMessage }: LinkPre
         "mt-2 block overflow-hidden rounded-md border text-left transition-[background-color] duration-120",
         isOwnMessage
           ? "border-primary-foreground/20 bg-primary-foreground/10 text-primary-foreground hover:bg-primary-foreground/15"
-          : "border-border bg-background text-foreground hover:bg-muted"
+          : "border-border bg-background text-foreground hover:bg-muted",
+        className
       )}
     >
       {loading ? (
@@ -47,26 +62,28 @@ export function LinkPreviewCard({ preview, url, loading, isOwnMessage }: LinkPre
         </div>
       ) : (
         <>
-          {image && (
-            <img
-              src={image}
-              alt=""
-              loading="lazy"
-              referrerPolicy="no-referrer"
-              className="max-h-44 w-full object-cover"
-            />
-          )}
+          {imageNode ??
+            (image && (
+              <img
+                src={image}
+                alt=""
+                loading="lazy"
+                referrerPolicy="no-referrer"
+                className="max-h-44 w-full object-cover"
+              />
+            ))}
           <div className="grid gap-1.5 p-3">
             <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide opacity-70">
-              {favicon && (
-                <img
-                  src={favicon}
-                  alt=""
-                  loading="lazy"
-                  referrerPolicy="no-referrer"
-                  className="h-3.5 w-3.5 rounded-sm"
-                />
-              )}
+              {iconNode ??
+                (favicon && (
+                  <img
+                    src={favicon}
+                    alt=""
+                    loading="lazy"
+                    referrerPolicy="no-referrer"
+                    className="h-3.5 w-3.5 rounded-sm"
+                  />
+                ))}
               <span className="truncate">{siteName}</span>
             </div>
             {title && <p className="line-clamp-2 text-sm font-semibold leading-snug">{title}</p>}

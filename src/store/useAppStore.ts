@@ -206,7 +206,13 @@ function mergeMessageList(existing: Message[], incomingMessages: Message[]): Mes
         break;
       }
     }
-    byGuid.set(incoming.guid, incoming);
+    // Socket updates (receipts, edits) omit payloadData; keep the preview
+    // decoded from the earlier full copy.
+    const prev = byGuid.get(incoming.guid);
+    byGuid.set(
+      incoming.guid,
+      prev?.richLink && !incoming.richLink ? { ...incoming, richLink: prev.richLink } : incoming
+    );
   }
 
   return [...byGuid.values()]
@@ -702,6 +708,7 @@ const MESSAGE_FIELDS: Record<keyof Message, true> = {
   failedReason: true,
   tempGuid: true,
   tgReactions: true,
+  richLink: true,
 };
 const HANDLE_FIELDS: Record<keyof Handle, true> = { address: true, firstName: true };
 const ATTACHMENT_FIELDS: Record<keyof Attachment, true> = {
