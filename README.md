@@ -26,7 +26,7 @@ exists for development, but the shipping product is the macOS desktop app.
 
 **Stack:** Tauri 2, Rust, React, TypeScript, Vite, Tailwind, Zustand. The messaging
 backends are a Cargo workspace of focused crates (`shared`, `database`, `cache`,
-`telegram-api`, `telegram-core`, `slack-core`) compiled into the same binary.
+`telegram-api`, `telegram-core`, `slack-core`, `irc-core`) compiled into the same binary.
 
 ---
 
@@ -124,6 +124,27 @@ Release builds are currently unsigned. On first launch, see
 - Slack's mrkdwn is unwrapped before display, so `<@U123>` mentions show names, emoji
   shortcodes render as emoji, and links get title previews.
 
+### IRC (e.g. through IRCCloud's bouncer)
+
+- Connects to any IRC server, but is built for a bouncer — IRCCloud's in particular
+  (`bnc.irccloud.com:6697`, TLS). Multiple networks, each with its password in the
+  Keychain.
+- Channels and private messages appear in the unified list. The bouncer replays what
+  the app missed while closed, with real timestamps (IRCv3 `server-time`); an
+  IRCCloud `bnc:` password automatically gets a per-install client id, so the replay is
+  exactly what *this* app hasn't seen.
+- History is kept locally (the newest 500 lines per channel or query, under the app
+  data dir), since IRC has no history API to fetch from later. Replays are deduplicated.
+- Every group of lines is headed by the sender's nick, and consecutive lines from one nick
+  stay one group (up to 15 minutes apart) — a transcript rather than chat bubbles.
+- A one-time import pulls in what IRCCloud stored before the network was added (up to 500
+  lines per chat), logging in with `~/.irc`.
+- Channels behave like muted chats: they count unread but stay out of "Waiting on you".
+  Private messages and lines that mention your nick notify.
+- The composer understands `/me`, `/join`, `/part`, `/msg`, `/query`, `/topic`, `/nick`,
+  `/notice`, `/close` and `/quote`; start a line with `//` to send a literal slash.
+  Formatting codes are stripped; reactions, replies and attachments are not offered.
+
 ### Desktop integration
 
 - Real macOS app bundle: native menu, tray icon, dock presence, `Cmd+Q`.
@@ -161,6 +182,8 @@ Release builds are currently unsigned. On first launch, see
 - For iMessage: a reachable BlueBubbles server plus its URL and password/API key.
 - For Telegram: nothing beyond your Telegram account — the app's API credentials are baked
   into official release builds.
+- For IRC via IRCCloud: a paid IRCCloud account, and a bouncer password per network
+  from that network's menu → "Connect with another client…" (`bnc:…`).
 - For Slack: a user or bot token (`xoxp-`/`xoxb-`) and an app-level token (`xapp-`) per
   workspace, created at api.slack.com/apps with Socket Mode enabled. The user token needs
   `files:read` for attachments to load.
@@ -283,6 +306,39 @@ via `option_env!` and are never committed to the repository:
 
 **Logging in:** open Settings → Telegram and choose phone-number or QR login. Two-factor
 passwords are supported, and you can add multiple accounts.
+
+---
+
+## Setting up IRC (IRCCloud bouncer)
+
+IRCCloud lets paid accounts connect other IRC clients to its bouncer. For each IRCCloud
+network you want in the app:
+
+1. In IRCCloud, open the network's menu → **Connect with another client…** and generate a
+   password. It looks like `bnc:xxxxxxxx…` and grants full access to that network, so treat
+   it like one. You can revoke or regenerate it there at any time.
+2. In the app, open **Settings → IRC → Add network**. The form is pre-filled for IRCCloud
+   (`bnc.irccloud.com`, port `6697`, TLS); enter your nick and paste the password.
+
+The app rewrites `bnc:…` to `bnc@messages-<id>:…` before connecting. That client id is how
+IRCCloud knows what this install has already received, so a restart replays only what was
+missed. Tracking starts at the first connection: history from before the network was added
+in the app is not replayed (IRCCloud's bouncer has no history command to fetch it with).
+
+To bring that older history in, use the import button (clock icon) on the network in
+**Settings → IRC**. It logs in to IRCCloud's own API with `~/.irc`:
+
+```
+uid: you@example.com
+pw: your-irccloud-password
+```
+
+finds the IRCCloud network whose channels match, and imports up to 500 lines per channel
+you are in, plus that network's private conversations. Lines the bouncer already delivered
+are skipped, so running it again is harmless. The login is used for the import only and is
+not stored; keep the file private (`chmod 600 ~/.irc`). IRCCloud's API is the one its own
+apps use and is not officially documented, so the import may need updating if it changes. Plain IRC servers and other bouncers work too — use their host, port and server
+password — though how much backlog another bouncer replays depends on its own settings.
 
 ---
 
@@ -432,6 +488,8 @@ src/                 React application
   lib/               utilities, appearance, secure config, previews, WS transport
   store/             Zustand app state (unified chat list, bounded message cache)
   telegram/          Telegram types, API bindings, adapters, media components
+  slack/             Slack types, API bindings, adapters, mrkdwn, media
+  irc/               IRC types, API bindings, adapters
   types/             shared TypeScript types
 crates/              Telegram Rust workspace
   shared/            domain model, events, config, ids
@@ -439,6 +497,8 @@ crates/              Telegram Rust workspace
   cache/             encrypted blob cache and Keychain secret store
   telegram-api/      MTProto boundary
   telegram-core/     sync engine and services
+  slack-core/        Slack Web API + Socket Mode client
+  irc-core/          IRC client (TLS, IRCv3 caps, reconnect) and local scrollback
 src-tauri/           Tauri 2 desktop shell (Rust commands, capabilities, icons)
 scripts/             dev helpers
 ```

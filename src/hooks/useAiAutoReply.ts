@@ -12,6 +12,8 @@
 import { useEffect, useRef } from "react";
 import { useAppStore, aiModeFor } from "@/store/useAppStore";
 import { isSource } from "@/lib/source";
+import { irc } from "@/irc/api";
+import { ircEscapeCommands, parseIrcChatGuid } from "@/irc/adapters";
 import { getClient } from "@/api/clientFactory";
 import { generateReply, critiqueReply, critiqueFails } from "@/lib/aiReply";
 import { loadConversationState, retrieveContext } from "@/lib/aiContext";
@@ -205,6 +207,9 @@ export function useAiAutoReply() {
         if (isSource(guid, "telegram")) {
           const { accountId, chatId } = parseTgChatGuid(guid);
           await tg.sendMessage(accountId, chatId, text, undefined);
+        } else if (isSource(guid, "irc")) {
+          const { networkId, bufferId } = parseIrcChatGuid(guid);
+          await irc.send(networkId, bufferId, ircEscapeCommands(text));
         } else {
           const optimistic: Message = {
             guid: `local-${crypto.randomUUID()}`,

@@ -11,6 +11,8 @@ import { useTelegramInbox } from "@/hooks/useTelegramInbox";
 import { useTelegramEvents } from "@/hooks/useTelegramEvents";
 import { useSlackInbox } from "@/hooks/useSlackInbox";
 import { useSlackEvents } from "@/hooks/useSlackEvents";
+import { useIrcInbox } from "@/hooks/useIrcInbox";
+import { useIrcEvents } from "@/hooks/useIrcEvents";
 import { useAiAutoReply } from "@/hooks/useAiAutoReply";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { configureTracing } from "@/lib/aiTracing";
@@ -48,6 +50,8 @@ export default function App() {
   useTelegramEvents();
   useSlackInbox();
   useSlackEvents();
+  useIrcInbox();
+  useIrcEvents();
   useAiAutoReply();
 
   // §17: (re)point tracing whenever the collector setting changes.

@@ -259,3 +259,52 @@ describe("MessageBubble memo", () => {
     expect(rendersWith("stable")).toBe(before + 1);
   });
 });
+
+describe("MessageBubble in IRC", () => {
+  const anna = { address: "anna", firstName: "anna" };
+  const irc = (over: Partial<Message>) => msg({ chatGUID: "irc:net:#isp", handle: anna, ...over });
+
+  beforeEach(() => {
+    useAppStore.setState({ linkPreviewsEnabled: false });
+  });
+
+  it("puts the colored nick on the same line as the message, not above it", () => {
+    const { container } = render(<MessageBubble message={irc({ text: "hej allihop" })} showSender />);
+    const line = container.querySelector("p")!;
+    expect(line.textContent).toBe("anna hej allihop");
+    const nick = line.querySelector("span[style]") as HTMLElement;
+    expect(nick.textContent).toBe("anna");
+    expect(nick.style.getPropertyValue("--nick-h")).not.toBe("");
+    // No separate label above the bubble.
+    expect(container.querySelector(".text-cc-sender")).toBeNull();
+  });
+
+  it("leaves the nick off continuation lines of a group", () => {
+    const { container } = render(
+      <MessageBubble message={irc({ text: "rad två" })} showSender={false} isFirstInGroup={false} />
+    );
+    expect(container.querySelector("p")!.textContent).toBe("rad två");
+    expect(container.querySelector("p span[style]")).toBeNull();
+  });
+
+  it("colors the nick inside actions and notices without repeating it", () => {
+    const { container: action } = render(
+      <MessageBubble message={irc({ text: "* anna waves" })} showSender />
+    );
+    expect(action.querySelector("p")!.textContent).toBe("* anna waves");
+    expect(action.querySelector("p span[style]")!.textContent).toBe("anna");
+
+    const { container: notice } = render(
+      <MessageBubble message={irc({ guid: "m2", text: "-anna- psst" })} showSender={false} />
+    );
+    expect(notice.querySelector("p")!.textContent).toBe("-anna- psst");
+    expect(notice.querySelector("p span[style]")!.textContent).toBe("anna");
+  });
+
+  it("keeps other sources' sender label above the bubble", () => {
+    const { container } = render(
+      <MessageBubble message={msg({ handle: { address: "a@b", firstName: "Alice" } })} showSender />
+    );
+    expect(container.querySelector(".text-cc-sender")!.textContent).toBe("Alice");
+  });
+});

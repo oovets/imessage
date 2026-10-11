@@ -12,6 +12,7 @@ import {
 import { useAppStore } from "@/store/useAppStore";
 import { TelegramAccounts } from "@/components/TelegramAccounts";
 import { SlackWorkspaces } from "@/components/SlackWorkspaces";
+import { IrcNetworks } from "@/components/IrcNetworks";
 import { clearSecureConfig, saveSecureConfig } from "@/lib/secureConfig";
 import { isTauriRuntime } from "@/lib/tauriEnv";
 import { cn } from "@/lib/utils";
@@ -70,7 +71,7 @@ export default function SettingsDialogContent({ open, onOpenChange: setOpen }: S
   const [saving, setSaving] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [tab, setTab] = useState<
-    "server" | "telegram" | "slack" | "general" | "appearance"
+    "server" | "telegram" | "slack" | "irc" | "general" | "appearance"
   >("server");
 
   useEffect(() => {
@@ -181,6 +182,7 @@ export default function SettingsDialogContent({ open, onOpenChange: setOpen }: S
               ["server", "Server"],
               ["telegram", "Telegram"],
               ["slack", "Slack"],
+              ["irc", "IRC"],
               ["general", "General"],
               ["appearance", "Appearance"],
             ] as const
@@ -190,7 +192,7 @@ export default function SettingsDialogContent({ open, onOpenChange: setOpen }: S
               type="button"
               onClick={() => setTab(key)}
               className={cn(
-                "flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                "flex-1 whitespace-nowrap rounded-md px-2 py-1.5 text-sm font-medium transition-colors",
                 tab === key
                   ? "bg-background text-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
@@ -204,6 +206,7 @@ export default function SettingsDialogContent({ open, onOpenChange: setOpen }: S
         <div className="grid gap-4 py-2">
           {tab === "telegram" && <TelegramAccounts />}
           {tab === "slack" && <SlackWorkspaces />}
+          {tab === "irc" && <IrcNetworks />}
           {tab === "server" && (
             <>
               <div className="grid gap-2">

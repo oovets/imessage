@@ -8,7 +8,7 @@ import {
   type ChatSource,
 } from "./source";
 
-const ALL_SOURCES: ChatSource[] = ["imessage", "telegram", "slack"];
+const ALL_SOURCES: ChatSource[] = ["imessage", "telegram", "slack", "irc"];
 
 describe("sourceOfGuid", () => {
   it("detects telegram by prefix", () => {
@@ -17,6 +17,17 @@ describe("sourceOfGuid", () => {
 
   it("detects slack by prefix", () => {
     expect(sourceOfGuid("sl:T123:C456")).toBe("slack");
+  });
+
+  it("detects irc by prefix", () => {
+    expect(sourceOfGuid("irc:irccloud:#rust")).toBe("irc");
+  });
+
+  it("irc offers no reactions, replies or attachments, which would fall through to BlueBubbles", () => {
+    expect(supports("irc:net:#rust", "reactions")).toBe(false);
+    expect(supports("irc:net:#rust", "replies")).toBe(false);
+    expect(supports("irc:net:anna", "attachments")).toBe(false);
+    expect(supports("sl:T:C", "attachments")).toBe(true);
   });
 
   it("treats unprefixed GUIDs as iMessage", () => {

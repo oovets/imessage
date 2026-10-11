@@ -1,7 +1,9 @@
 import { memo, useState, useRef, type KeyboardEvent } from "react";
 import { CornerDownLeft, Paperclip, X, Smile } from "lucide-react";
 import { useAppStore } from "@/store/useAppStore";
-import { isSource } from "@/lib/source";
+import { isSource, supports } from "@/lib/source";
+import { irc } from "@/irc/api";
+import { parseIrcChatGuid } from "@/irc/adapters";
 import { sl } from "@/slack/api";
 import { parseSlChatGuid } from "@/slack/adapters";
 import { getClient } from "@/api/clientFactory";
@@ -72,6 +74,7 @@ export const MessageInput = memo(function MessageInput({ chatGUID }: MessageInpu
   const [pickerOpen, setPickerOpen] = useState(false);
 
   async function sendFile(file: File) {
+    if (!supports(chatGUID, "attachments")) return;
     setAttaching(true);
     try {
       if (isSource(chatGUID, "telegram")) {
@@ -97,6 +100,7 @@ export const MessageInput = memo(function MessageInput({ chatGUID }: MessageInpu
   }
 
   const hasText = text.trim().length > 0;
+  const canAttach = supports(chatGUID, "attachments");
   const replyPreview = decodeEscapedUnicode(replyTarget?.text);
 
   function handleChange(value: string) {
@@ -158,6 +162,27 @@ export const MessageInput = memo(function MessageInput({ chatGUID }: MessageInpu
       }
     }
     clearAiDraft(chatGUID);
+
+    // IRC: irc-core records what was sent (the server's echo, or its own copy
+    // when the server doesn't echo) and emits it, so no optimistic bubble.
+    // Lines starting with / are commands: /me, /join, /msg, /query…
+    if (isSource(chatGUID, "irc")) {
+      const { networkId, bufferId } = parseIrcChatGuid(chatGUID);
+      setText("");
+      setReplyTarget(chatGUID, null);
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto";
+        textareaRef.current.focus();
+      }
+      void irc
+        .send(networkId, bufferId, trimmed)
+        .catch((err) =>
+          setConnectionNotice(
+            `Unable to send message: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
+      return;
+    }
 
     // Slack echoes our own sends back over the socket as `is_self` messages,
     // so — like Telegram — no frontend optimistic bubble, it would duplicate.
@@ -330,16 +355,18 @@ export const MessageInput = memo(function MessageInput({ chatGUID }: MessageInpu
       <div className="flex items-end gap-2">
         {/* Tight cluster: paperclip + emoji sit snug, narrow hit-area. */}
         <div className="-mr-1 flex shrink-0 items-center">
-          <button
-            type="button"
-            className={ghost}
-            aria-label="Attach file"
-            title="Attach photo or video"
-            disabled={attaching}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <Paperclip className="h-[15px] w-[15px]" />
-          </button>
+          {canAttach && (
+            <button
+              type="button"
+              className={ghost}
+              aria-label="Attach file"
+              title="Attach photo or video"
+              disabled={attaching}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Paperclip className="h-[15px] w-[15px]" />
+            </button>
+          )}
           <input
             ref={fileInputRef}
             type="file"

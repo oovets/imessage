@@ -386,3 +386,71 @@ describe("MessageList relative labels over time", () => {
     expect(chipTexts(container)[0]).not.toBe("YESTERDAY");
   });
 });
+
+describe("MessageList in IRC", () => {
+  const IRC = "irc:net:#isp";
+  const anna = { address: "anna", firstName: "anna" };
+  const bob = { address: "bob", firstName: "bob" };
+
+  function seed(messages: Message[]) {
+    useAppStore.setState({
+      chats: [
+        {
+          guid: IRC,
+          displayName: "#isp",
+          chatIdentifier: "#isp",
+          participants: [],
+          lastMessage: null,
+          unreadCount: 0,
+        },
+      ],
+      messages: { [IRC]: messages.map((m) => ({ ...m, chatGUID: IRC })) },
+    });
+  }
+
+  it("names the sender even when only one person has spoken", async () => {
+    seed([msg("a1", { isFromMe: false, handle: anna })]);
+    await renderReady(IRC);
+    expect(lastProps("a1")?.showSender).toBe(true);
+  });
+
+  it("keeps a run of lines from one nick under one name, minutes apart", async () => {
+    seed([
+      msg("a1", { isFromMe: false, handle: anna, dateCreated: T0 }),
+      msg("a2", { isFromMe: false, handle: anna, dateCreated: T0 + 3 * MIN }),
+      msg("a3", { isFromMe: false, handle: anna, dateCreated: T0 + 8 * MIN }),
+      msg("b1", { isFromMe: false, handle: bob, dateCreated: T0 + 9 * MIN }),
+      // Past the 15-minute gap: a new group, named again.
+      msg("b2", { isFromMe: false, handle: bob, dateCreated: T0 + 30 * MIN }),
+      msg("me", { isFromMe: true, dateCreated: T0 + 31 * MIN }),
+    ]);
+    await renderReady(IRC);
+    expect(["a1", "a2", "a3", "b1", "b2", "me"].map((g) => lastProps(g)?.showSender)).toEqual([
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+    ]);
+    expect(lastProps("a2")?.isFirstInGroup).toBe(false);
+    // Reactions and replies aren't offered for IRC.
+    expect(lastProps("a1")?.onReact).toBeUndefined();
+    expect(lastProps("a1")?.onReply).toBeUndefined();
+  });
+
+  it("leaves other sources' one-minute grouping alone", async () => {
+    useAppStore.setState({
+      messages: {
+        [CHAT]: [
+          msg("x1", { isFromMe: false, handle: alice, dateCreated: T0 }),
+          msg("x2", { isFromMe: false, handle: alice, dateCreated: T0 + 3 * MIN }),
+        ],
+      },
+    });
+    await renderReady();
+    expect(lastProps("x2")?.isFirstInGroup).toBe(true);
+    // One sender in a 1:1 iMessage chat: no name, as before.
+    expect(lastProps("x1")?.showSender).toBe(false);
+  });
+});

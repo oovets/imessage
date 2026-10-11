@@ -13,6 +13,7 @@ import { OrientedImage } from "@/components/OrientedImage";
 import { StreamedVideo } from "@/components/StreamedVideo";
 import { TelegramMedia } from "@/telegram/TelegramMedia";
 import { SlackMedia } from "@/slack/SlackMedia";
+import { Nick, ircLineParts } from "@/irc/nick";
 import {
   Dialog,
   DialogContent,
@@ -255,6 +256,11 @@ export const MessageBubble = memo(function MessageBubble({
 
   const senderName =
     !isMe && message.handle ? message.handle.firstName || message.handle.address : null;
+  // IRC puts the nick on the line itself, colored, instead of a label above.
+  const ircLine =
+    isSource(chatGuid, "irc") && senderName
+      ? ircLineParts(decodedText, senderName, showSender)
+      : null;
   const hasContent = !!(decodedText || message.attachments?.length);
   if (!hasContent) return null;
 
@@ -313,7 +319,7 @@ export const MessageBubble = memo(function MessageBubble({
           isFirstInGroup ? "mt-2.5" : "mt-[3px]"
         )}
       >
-        {showSender && senderName && (
+        {showSender && senderName && !ircLine && (
           <span className="mb-[3px] max-w-full truncate text-cc-sender font-semibold text-muted-foreground">
             {senderName}
           </span>
@@ -421,9 +427,18 @@ export const MessageBubble = memo(function MessageBubble({
                   !superlightMode && "-mr-1.5"
                 )}
               >
-                {isSource(chatGuid, "slack")
-                  ? renderSlackText(decodedText, isMe, superlightMode)
-                  : renderTextWithLinks(decodedText, isMe, superlightMode)}
+                {ircLine ? (
+                  <>
+                    {ircLine.before}
+                    {ircLine.nick && <Nick nick={ircLine.nick} />}
+                    {ircLine.after}
+                    {renderTextWithLinks(ircLine.rest, isMe, superlightMode)}
+                  </>
+                ) : isSource(chatGuid, "slack") ? (
+                  renderSlackText(decodedText, isMe, superlightMode)
+                ) : (
+                  renderTextWithLinks(decodedText, isMe, superlightMode)
+                )}
               </p>
             )}
             {showCard && previewUrl && (
@@ -463,15 +478,17 @@ export const MessageBubble = memo(function MessageBubble({
             )}
           >
             <div className="flex items-center gap-0.5 rounded-md bg-panel p-0.5 shadow-[inset_0_0_0_1px_hsl(var(--border))]">
-              <button
-                type="button"
-                onClick={() => setShowReactions((v) => !v)}
-                className={hoverAction}
-                aria-label="React"
-                title="React"
-              >
-                <Smile className="h-3.5 w-3.5" />
-              </button>
+              {onReact && (
+                <button
+                  type="button"
+                  onClick={() => setShowReactions((v) => !v)}
+                  className={hoverAction}
+                  aria-label="React"
+                  title="React"
+                >
+                  <Smile className="h-3.5 w-3.5" />
+                </button>
+              )}
               {onReply && (
                 <button
                   type="button"

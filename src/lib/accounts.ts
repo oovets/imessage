@@ -48,11 +48,13 @@ export function fallbackAccountLabel(ref: AccountRef): string {
       return `Telegram ${ref.id}`;
     case "slack":
       return ref.id;
+    case "irc":
+      return ref.id;
   }
 }
 
 /**
- * Group ordering: iMessage first, then Telegram, then Slack, alphabetically
+ * Group ordering: iMessage first, then Telegram, Slack and IRC, alphabetically
  * within each source. Stable across reloads regardless of which backend
  * happened to answer first.
  */
@@ -60,6 +62,7 @@ const SOURCE_ORDER: Record<ChatSource, number> = {
   imessage: 0,
   telegram: 1,
   slack: 2,
+  irc: 3,
 };
 
 export function compareAccounts(

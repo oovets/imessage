@@ -8,6 +8,7 @@ members = [
     "crates/telegram-api",
     "crates/telegram-core",
     "crates/slack-core",
+    "crates/irc-core",
 ]
 
 # Shared package metadata for the Telegram crates (the host `app` crate in
@@ -27,6 +28,7 @@ cache = { path = "crates/cache" }
 telegram-api = { path = "crates/telegram-api" }
 telegram-core = { path = "crates/telegram-core" }
 slack-core = { path = "crates/slack-core" }
+irc-core = { path = "crates/irc-core" }
 
 # Async runtime
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "fs", "io-util", "signal"] }
@@ -69,6 +71,12 @@ base64 = "0.22"
 # Tauri http/websocket plugins already pull in, so nothing is compiled twice.
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 tokio-tungstenite = { version = "0.28", default-features = false, features = ["connect", "rustls-tls-native-roots"] }
+
+# IRC (a raw TLS socket). Same rustls stack tokio-tungstenite already brings in,
+# on the ring provider, so nothing new is compiled.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-native-certs = "0.8"
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 
 # Misc
 chrono = { version = "0.4", features = ["serde"] }
