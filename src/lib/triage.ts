@@ -12,6 +12,7 @@ export const SOURCE_TAG: Record<ChatSource, string> = {
   imessage: "imsg",
   telegram: "tg",
   slack: "slack",
+  irc: "irc",
 };
 
 export function sourceTag(guid: string): string {
@@ -27,6 +28,7 @@ const PREFIXES: Record<string, ChatSource> = {
   "telegram:": "telegram",
   "slack:": "slack",
   "sl:": "slack",
+  "irc:": "irc",
 };
 
 export function filterChats(chats: Chat[], query: string): Chat[] {
@@ -99,7 +101,11 @@ export function nextTriageChange(chats: Chat[], now: number): number {
   let due = Infinity;
   for (const c of chats) {
     const until = c.mutedUntil;
-    if (until !== undefined && until > now && (c.unreadCount ?? 0) > 0) due = Math.min(due, until);
+    // IRC channels are muted for good (Number.MAX_SAFE_INTEGER); that never
+    // lapses, so it schedules nothing.
+    if (until !== undefined && until > now && until < Number.MAX_SAFE_INTEGER && (c.unreadCount ?? 0) > 0) {
+      due = Math.min(due, until);
+    }
   }
   return due;
 }

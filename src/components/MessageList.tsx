@@ -4,7 +4,7 @@ import { MessageBubble } from "@/components/MessageBubble";
 import { MessageListSkeleton } from "@/components/MessageListSkeleton";
 import { TypingIndicator } from "@/components/TypingIndicator";
 import { useAppStore } from "@/store/useAppStore";
-import { isSource } from "@/lib/source";
+import { isSource, supports } from "@/lib/source";
 import { getClient } from "@/api/clientFactory";
 import { tg } from "@/telegram/api";
 import { parseTgChatGuid } from "@/telegram/adapters";
@@ -135,9 +135,16 @@ function senderKey(m: Message): string {
   return m.isFromMe ? "me" : (m.handle?.address ?? "unknown");
 }
 
-/** `b`, right after `a`, joins its bubble group: same sender, under a minute on. */
-function sameGroup(a: Message, b: Message): boolean {
-  return senderKey(a) === senderKey(b) && b.dateCreated - a.dateCreated < GROUP_GAP_MS;
+/**
+ * `b`, right after `a`, joins its bubble group: same sender, within `gap`
+ * (a minute by default), and never across a date chip.
+ */
+function sameGroup(a: Message, b: Message, gap = GROUP_GAP_MS): boolean {
+  return (
+    senderKey(a) === senderKey(b) &&
+    b.dateCreated - a.dateCreated < gap &&
+    isSameDay(a.dateCreated, b.dateCreated)
+  );
 }
 
 // Stable stand-in for a chat with no history yet, so the memos below keyed on
@@ -179,6 +186,14 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
       new Set(visible.filter((m) => !m.isFromMe).map(senderKey)).size > 1,
     [participantCount, visible]
   );
+  // IRC reads as a transcript: who said what matters on every group, even in
+  // a channel where only one person has spoken in the loaded history, and a
+  // run of lines from one nick stays one group until a time header would
+  // split it anyway.
+  const isIrc = isSource(chatGUID, "irc");
+  const groupGap = isIrc ? TIME_HEADER_MS : GROUP_GAP_MS;
+  const canReply = supports(chatGUID, "replies");
+  const canReact = supports(chatGUID, "reactions");
   const latestVisible = visible[visible.length - 1];
   const latestVisibleKey = latestVisible ? `${latestVisible.guid}:${latestVisible.dateCreated}` : "";
 
@@ -193,7 +208,7 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
     if (showTimestamps) {
       visible.forEach((m, i) => {
         const next = visible[i + 1];
-        if (!next || !sameGroup(m, next)) {
+        if (!next || !sameGroup(m, next, groupGap)) {
           due = Math.min(due, nextMessageTimeChange(m.dateCreated, renderedAt));
         }
       });
@@ -201,7 +216,7 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
     return whenDue(due, () => setClockTick((n) => n + 1));
     // renderedAt is the time of the render that scheduled this; renders after
     // it and before `due` show the same labels.
-  }, [visible, showTimestamps, clockTick]);
+  }, [visible, showTimestamps, clockTick, groupGap]);
 
   // The previous map, whose arrays are reused where unchanged. Writing the ref
   // during render is safe: an array is only ever swapped for one with the same
@@ -423,13 +438,13 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
             const showTimeHeader =
               showTimestamps && !showDateChip && (!prev || msg.dateCreated - prev.dateCreated > TIME_HEADER_MS);
 
-            const sameSenderAsPrev = !!prev && sameGroup(prev, msg);
-            const sameSenderAsNext = !!next && sameGroup(msg, next);
+            const sameSenderAsPrev = !!prev && sameGroup(prev, msg, groupGap);
+            const sameSenderAsNext = !!next && sameGroup(msg, next, groupGap);
 
             const isFirstInGroup = !sameSenderAsPrev;
             const isLastInGroup = !sameSenderAsNext;
 
-            const showSender = isGroup && isFirstInGroup && !msg.isFromMe;
+            const showSender = (isGroup || isIrc) && isFirstInGroup && !msg.isFromMe;
             const showTime = showTimestamps && isLastInGroup;
             // Formatted here rather than in the memoized bubble, so a label
             // that has aged ("14:35" → "Tue") still refreshes whenever the
@@ -462,8 +477,8 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
                   timeLabel={timeLabel}
                   reactions={reactions}
                   isFirstInGroup={isFirstInGroup}
-                  onReply={handleReply}
-                  onReact={handleReact}
+                  onReply={canReply ? handleReply : undefined}
+                  onReact={canReact ? handleReact : undefined}
                 />
               </div>
             );

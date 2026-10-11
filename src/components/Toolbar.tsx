@@ -20,8 +20,11 @@ function ConnectionStatus() {
   const slackLive = useAppStore(
     (s) => s.slackAvailable && s.chats.some((c) => isSource(c.guid, "slack"))
   );
+  const ircLive = useAppStore(
+    (s) => s.ircAvailable && s.chats.some((c) => isSource(c.guid, "irc"))
+  );
   const imessageLive = isConfigured && (wsConnected || pollingFallback);
-  const live = [imessageLive, telegramLive, slackLive].filter(Boolean).length;
+  const live = [imessageLive, telegramLive, slackLive, ircLive].filter(Boolean).length;
   const polling = isConfigured && !wsConnected && pollingFallback;
 
   const dot = polling ? "bg-[#f59e0b]" : live > 0 ? "bg-[#22c55e]" : "bg-muted-foreground/40";

@@ -13,6 +13,7 @@ use tauri::{
 };
 use tauri::{tray::MouseButton, tray::MouseButtonState, tray::TrayIconBuilder, tray::TrayIconEvent};
 
+mod irc;
 mod onboarding;
 mod slack;
 mod uploads;
@@ -287,7 +288,7 @@ fn setup_tray<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<()>
 pub fn run() {
     tauri::Builder::default()
         // First, so a second launch (from the app menu, a terminal) exits
-        // before starting another Telegram/Slack core against the same
+        // before starting another Telegram/Slack/IRC core against the same
         // session and just brings the running window forward.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             focus_main_window(app);
@@ -336,6 +337,17 @@ pub fn run() {
             slack::sl_download_file,
             slack::sl_user_names,
             slack::sl_user_avatar,
+            // IRC (e.g. through IRCCloud's bouncer)
+            irc::irc_status,
+            irc::irc_save_network,
+            irc::irc_remove_network,
+            irc::irc_connect,
+            irc::irc_buffers,
+            irc::irc_history,
+            irc::irc_send,
+            irc::irc_open_query,
+            irc::irc_close_buffer,
+            irc::irc_import_irccloud,
             ai::ai_retrieve_context,
             ai::ai_conversation_state,
             ai::ai_social_graph,
@@ -385,6 +397,7 @@ pub fn run() {
             // never blocked (Keychain reads, connecting, sync, temp cleanup).
             app.manage(telegram::TelegramState::new());
             app.manage(slack::SlackState::new());
+            app.manage(irc::IrcState::new());
             std::thread::spawn(telegram::clear_media_tmp);
             let tg_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {

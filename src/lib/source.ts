@@ -12,17 +12,19 @@
  * backends can't silently inherit iMessage behaviour.
  */
 
-export type ChatSource = "imessage" | "telegram" | "slack";
+export type ChatSource = "imessage" | "telegram" | "slack" | "irc";
 
 /** GUID prefix per non-default source. iMessage is the unprefixed default. */
 export const SOURCE_PREFIX: Record<Exclude<ChatSource, "imessage">, string> = {
   telegram: "tg:",
   slack: "sl:",
+  irc: "irc:",
 };
 
 export function sourceOfGuid(guid: string): ChatSource {
   if (guid.startsWith(SOURCE_PREFIX.telegram)) return "telegram";
   if (guid.startsWith(SOURCE_PREFIX.slack)) return "slack";
+  if (guid.startsWith(SOURCE_PREFIX.irc)) return "irc";
   return "imessage";
 }
 
@@ -38,12 +40,21 @@ export function isSource(guid: string, source: ChatSource): boolean {
 export interface SourceCapabilities {
   /** Contact photos resolved from the BlueBubbles Contacts database. */
   contactAvatars: boolean;
+  /** Tapback/emoji reactions on a message. */
+  reactions: boolean;
+  /** Replying to a specific message (a thread, a quote). */
+  replies: boolean;
+  /** Sending files from the composer. */
+  attachments: boolean;
 }
 
 export const SOURCE_CAPABILITIES: Record<ChatSource, SourceCapabilities> = {
-  imessage: { contactAvatars: true },
-  telegram: { contactAvatars: false },
-  slack: { contactAvatars: false },
+  imessage: { contactAvatars: true, reactions: true, replies: true, attachments: true },
+  telegram: { contactAvatars: false, reactions: true, replies: true, attachments: true },
+  slack: { contactAvatars: false, reactions: true, replies: true, attachments: true },
+  // Plain IRC has none of these; offering them would fall through to the
+  // iMessage paths and send to BlueBubbles instead.
+  irc: { contactAvatars: false, reactions: false, replies: false, attachments: false },
 };
 
 export function supports(guid: string, capability: keyof SourceCapabilities): boolean {

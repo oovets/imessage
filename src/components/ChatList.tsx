@@ -73,9 +73,10 @@ export function ChatList() {
   const isConfigured = useAppStore((s) => s.isConfigured);
   const telegramAvailable = useAppStore((s) => s.telegramAvailable);
   const slackAvailable = useAppStore((s) => s.slackAvailable);
+  const ircAvailable = useAppStore((s) => s.ircAvailable);
   // The list is shown if ANY messaging source is available — a Slack-only or
   // Telegram-only setup is as valid as an iMessage one.
-  const hasAnySource = isConfigured || telegramAvailable || slackAvailable;
+  const hasAnySource = isConfigured || telegramAvailable || slackAvailable || ircAvailable;
   const starredChats = useAppStore((s) => s.starredChats);
   const toggleStarred = useAppStore((s) => s.toggleStarred);
   const networkOnline = useAppStore((s) => s.networkOnline);

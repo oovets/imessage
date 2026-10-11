@@ -6,6 +6,8 @@ import { useAppStore, aiModeFor } from "@/store/useAppStore";
 import { isSource } from "@/lib/source";
 import { sl } from "@/slack/api";
 import { parseSlChatGuid, slMessageToMessage } from "@/slack/adapters";
+import { irc } from "@/irc/api";
+import { ircMessageToMessage, parseIrcChatGuid } from "@/irc/adapters";
 import { getClient } from "@/api/clientFactory";
 import { getChatDisplayName, formatMessageTime, nextMessageTimeChange, whenDue } from "@/types";
 import { accountOfGuid, fallbackAccountLabel } from "@/lib/accounts";
@@ -66,6 +68,7 @@ export const ChatPane = memo(function ChatPane({
   // message load so a pane opened before the core was ready recovers.
   const telegramReloadNonce = useAppStore((s) => s.telegramReloadNonce);
   const slackReloadNonce = useAppStore((s) => s.slackReloadNonce);
+  const ircReloadNonce = useAppStore((s) => s.ircReloadNonce);
   // Slack marks a message as ours by user id, which the history payload
   // doesn't carry — resolved from the workspace once connected.
   const slackSelfUserIds = useAppStore((s) => s.slackSelfUserIds);
@@ -152,6 +155,39 @@ export const ChatPane = memo(function ChatPane({
     const lastFetchedAt = snapshot.messageFetchedAt[chatGUID] ?? 0;
 
     if (!hasCached) setLoadingMessages(true);
+
+    // IRC history is irc-core's local log of what the bouncer delivered.
+    if (isSource(chatGUID, "irc")) {
+      const { networkId, bufferId } = parseIrcChatGuid(chatGUID);
+      // The message cache keeps 100 per chat; asking for more is wasted IPC.
+      irc.history(networkId, bufferId, 100)
+        .then((ircMsgs) => {
+          if (cancelled) return;
+          // Oldest first already, which is the order MessageList renders.
+          setMessages(
+            chatGUID,
+            ircMsgs.map((m) => ircMessageToMessage(networkId, bufferId, m))
+          );
+          if (recoverRef.current === chatGUID) {
+            recoverRef.current = null;
+            setListGen((g) => g + 1);
+          }
+        })
+        .catch((e: unknown) => {
+          if (cancelled) return;
+          if (isNotReadyWithCache(chatGUID, e, `IRC network ${networkId} is not started`)) {
+            recoverRef.current = chatGUID;
+            return;
+          }
+          setFetchError(String(e));
+        })
+        .finally(() => {
+          if (!cancelled) setLoadingMessages(false);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
 
     // Slack history comes from the sl_* commands.
     if (isSource(chatGUID, "slack")) {
@@ -267,6 +303,7 @@ export const ChatPane = memo(function ChatPane({
     isSource(chatGUID ?? "", "telegram") ? telegramReloadNonce : 0,
     isSource(chatGUID ?? "", "slack") ? slackReloadNonce : 0,
     isSource(chatGUID ?? "", "slack") ? slackSelfUserIds : null,
+    isSource(chatGUID ?? "", "irc") ? ircReloadNonce : 0,
   ]);
 
   const empty = !chatGUID || !selectedChat;
@@ -281,7 +318,7 @@ export const ChatPane = memo(function ChatPane({
   }, [isActive, empty, chatGUID]);
 
   const workspaceLabel = useAppStore((s) => {
-    if (!chatGUID || !isSource(chatGUID, "slack")) return null;
+    if (!chatGUID || !(isSource(chatGUID, "slack") || isSource(chatGUID, "irc"))) return null;
     const ref = accountOfGuid(chatGUID);
     return s.accountLabels[ref.key] ?? fallbackAccountLabel(ref);
   });
@@ -289,7 +326,9 @@ export const ChatPane = memo(function ChatPane({
     ? null
     : isSource(chatGUID, "slack")
       ? `slack · ${workspaceLabel}`
-      : isSource(chatGUID, "telegram")
+      : isSource(chatGUID, "irc")
+        ? `irc · ${workspaceLabel}`
+        : isSource(chatGUID, "telegram")
         ? "tg"
         : "imessage";
 

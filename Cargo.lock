@@ -109,6 +109,7 @@ dependencies = [
  "base64 0.22.1",
  "cache",
  "chrono",
+ "irc-core",
  "keyring",
  "log",
  "percent-encoding",
@@ -2529,6 +2530,25 @@ name = "ipnet"
 version = "2.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d98f6fed1fde3f8c21bc40a1abb88dd75e67924f9cffc3ef95607bad8017f8e2"
+
+[[package]]
+name = "irc-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "futures-util",
+ "reqwest 0.12.28",
+ "rustls",
+ "rustls-native-certs",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-rustls",
+ "tokio-tungstenite",
+ "tracing",
+]
 
 [[package]]
 name = "itoa"

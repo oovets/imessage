@@ -375,6 +375,12 @@ interface AppState {
   slackUserNames: Record<string, Record<string, string>>;
   setSlackUserNames: (workspaceId: string, names: Record<string, string>) => void;
   setTelegramAvailable: (v: boolean) => void;
+  /** IRC has at least one network configured. */
+  ircAvailable: boolean;
+  setIrcAvailable: (v: boolean) => void;
+  setIrcChats: (chats: Chat[]) => void;
+  ircReloadNonce: number;
+  reloadIrc: () => void;
 
   // Account grouping in the chat list. Labels come from whichever backend owns
   // the account; collapse state is the user's and persists across restarts.
@@ -484,7 +490,7 @@ function chatActivity(chat: Chat): number {
 // Tie-break for chats with equal/unknown activity (e.g. before iMessage
 // enrichment fills activityAt). Without it the order would depend on which
 // source happened to refresh last; this keeps it deterministic.
-const SOURCE_ORDER: Record<ChatSource, number> = { imessage: 0, telegram: 1, slack: 2 };
+const SOURCE_ORDER: Record<ChatSource, number> = { imessage: 0, telegram: 1, slack: 2, irc: 3 };
 
 function sortChatsByRecency(list: Chat[]): Chat[] {
   return [...list].sort(
@@ -863,6 +869,8 @@ export const useAppStore = create<AppState>()(
       slackReloadNonce: 0,
       slackSelfUserIds: {},
       slackUserNames: {},
+      ircAvailable: false,
+      ircReloadNonce: 0,
       telegramPresence: {},
       telegramReloadNonce: 0,
       paneTree: EMPTY_LEAF,
@@ -1225,6 +1233,10 @@ export const useAppStore = create<AppState>()(
             [workspaceId]: { ...s.slackUserNames[workspaceId], ...names },
           },
         })),
+
+      setIrcChats: (ircChats) => get().setChatsForSource("irc", ircChats),
+      setIrcAvailable: (v) => set({ ircAvailable: v }),
+      reloadIrc: () => set((s) => ({ ircReloadNonce: s.ircReloadNonce + 1 })),
 
       setAccountLabel: (key, label) =>
         set((s) =>
