@@ -1,7 +1,13 @@
 import { memo, useEffect, useState } from "react";
 import { Copy, Reply, Smile, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { type LinkPreview, type Message, decodeEscapedUnicode, formatDate } from "@/types";
+import {
+  type LinkPreview,
+  type Message,
+  type ReactionSummary,
+  decodeEscapedUnicode,
+  formatDate,
+} from "@/types";
 import { useAppStore } from "@/store/useAppStore";
 import { isSource } from "@/lib/source";
 import { parseSlackMarks } from "@/slack/mrkdwn";
@@ -27,7 +33,7 @@ interface MessageBubbleProps {
   /** Time shown beside the bubble (the last in a group); omit for none. The
    *  list formats it, so an aged label refreshes whenever the list renders. */
   timeLabel?: string;
-  reactions?: string[];
+  reactions?: ReactionSummary[];
   isFirstInGroup?: boolean;
   isLastInGroup?: boolean;
   onReply?: (message: Message) => void;
@@ -52,6 +58,18 @@ const QUICK_REACTIONS: Array<{ key: string; emoji: string; label: string }> = [
   { key: "emphasize", emoji: "‼️", label: "Emphasize" },
   { key: "question", emoji: "❓", label: "Question" },
 ];
+
+/** iMessage tapback emoji → the key that toggles it. */
+const TAPBACK_KEY_BY_EMOJI: Record<string, string> = Object.fromEntries(
+  QUICK_REACTIONS.map((r) => [r.emoji, r.key])
+);
+
+/** Caches written before reactions were objects hold "👍 2" strings. */
+function toReaction(raw: ReactionSummary | string): ReactionSummary {
+  if (typeof raw !== "string") return raw;
+  const [emoji, count] = raw.split(" ");
+  return { emoji, count: Number(count) || 1, mine: false };
+}
 
 function isTapback(raw: unknown): boolean {
   if (raw === null || raw === undefined || raw === "" || raw === 0 || raw === "0") return false;
@@ -562,9 +580,44 @@ export const MessageBubble = memo(function MessageBubble({
         </div>
 
         {reactions && reactions.length > 0 && (
-          <span className="mt-[3px] whitespace-nowrap font-mono text-cc-meta text-muted-foreground">
-            {reactions.join("  ")}
-          </span>
+          <div className="mt-[3px] flex flex-wrap gap-1">
+            {reactions.map((raw) => {
+              const r = toReaction(raw);
+              // A chip toggles ours: by tapback key on iMessage, by the emoji
+              // itself on Telegram, where any emoji can be a reaction.
+              const key = isSource(chatGuid, "telegram") ? r.emoji : TAPBACK_KEY_BY_EMOJI[r.emoji];
+              const chip = cn(
+                "inline-flex h-[22px] items-center gap-1 rounded-full px-1.5 text-cc-meta",
+                r.mine
+                  ? "bg-muted text-foreground shadow-[inset_0_0_0_1px_hsl(var(--primary))]"
+                  : "bg-panel text-muted-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
+              );
+              const content = (
+                <>
+                  <span>{r.emoji}</span>
+                  {r.count > 1 && <span className="font-mono text-cc-chip">{r.count}</span>}
+                </>
+              );
+              const label = `${r.emoji} ${r.count}${r.mine ? ", yours among them" : ""}`;
+              return onReact && key ? (
+                <button
+                  key={r.emoji}
+                  type="button"
+                  onClick={() => onReact(message, key)}
+                  aria-pressed={r.mine}
+                  aria-label={label}
+                  title={r.mine ? "Take your reaction back" : `React ${r.emoji}`}
+                  className={cn(chip, "transition-[background-color] duration-120 hover:bg-muted")}
+                >
+                  {content}
+                </button>
+              ) : (
+                <span key={r.emoji} aria-label={label} className={chip}>
+                  {content}
+                </span>
+              );
+            })}
+          </div>
         )}
         {message.failed && (
           <span className="mt-[3px] flex items-center gap-1.5 whitespace-nowrap text-cc-meta text-signal">

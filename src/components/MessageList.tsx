@@ -13,6 +13,7 @@ import { deliverIMessage } from "@/lib/sendIMessage";
 import { fetchOlderMessages } from "@/lib/olderHistory";
 import {
   type Message,
+  type ReactionSummary,
   formatDate,
   formatMessageTime,
   nextLocalMidnight,
@@ -55,7 +56,8 @@ function reactionTypeNum(raw: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function buildReactionMap(messages: Message[]): Map<string, string[]> {
+function buildReactionMap(messages: Message[]): Map<string, ReactionSummary[]> {
+  // target guid → "sender-type" → emoji
   const keys = new Map<string, Map<string, string>>();
 
   for (const msg of messages) {
@@ -70,6 +72,10 @@ function buildReactionMap(messages: Message[]): Map<string, string[]> {
       const emoji = TAPBACK_EMOJI[typeNum];
       if (!emoji) continue;
       const byTarget = keys.get(targetGuid) ?? new Map<string, string>();
+      // One tapback per person: a new one replaces theirs.
+      for (const key of byTarget.keys()) {
+        if (key.startsWith(`${sender}-`)) byTarget.delete(key);
+      }
       byTarget.set(`${sender}-${typeNum}`, emoji);
       keys.set(targetGuid, byTarget);
     } else if (typeNum >= 3000 && typeNum <= 3005) {
@@ -79,26 +85,41 @@ function buildReactionMap(messages: Message[]): Map<string, string[]> {
     }
   }
 
-  const result = new Map<string, string[]>();
+  const result = new Map<string, ReactionSummary[]>();
   for (const [guid, byKey] of keys) {
-    const emojis = [...new Set(byKey.values())];
-    if (emojis.length > 0) result.set(guid, emojis);
+    const byEmoji = new Map<string, ReactionSummary>();
+    for (const [key, emoji] of byKey) {
+      const r = byEmoji.get(emoji) ?? { emoji, count: 0, mine: false };
+      r.count++;
+      if (key.startsWith("me-")) r.mine = true;
+      byEmoji.set(emoji, r);
+    }
+    if (byEmoji.size > 0) result.set(guid, [...byEmoji.values()]);
   }
   return result;
 }
 
 /**
- * `next`, with each target's emoji array swapped for the one in `prev` when
- * the contents match. The map is rebuilt whenever the history changes; keeping
+ * `next`, with each target's reaction array swapped for the one in `prev`
+ * when the contents match. The map is rebuilt whenever the history changes; keeping
  * unchanged arrays' identity lets memoized bubbles skip re-rendering.
  */
 function reuseUnchangedReactions(
-  next: Map<string, string[]>,
-  prev: Map<string, string[]>
-): Map<string, string[]> {
-  for (const [guid, emojis] of next) {
+  next: Map<string, ReactionSummary[]>,
+  prev: Map<string, ReactionSummary[]>
+): Map<string, ReactionSummary[]> {
+  for (const [guid, reactions] of next) {
     const old = prev.get(guid);
-    if (old && old.length === emojis.length && old.every((e, i) => e === emojis[i])) {
+    if (
+      old &&
+      old.length === reactions.length &&
+      old.every(
+        (r, i) =>
+          r.emoji === reactions[i].emoji &&
+          r.count === reactions[i].count &&
+          r.mine === reactions[i].mine
+      )
+    ) {
       next.set(guid, old);
     }
   }
@@ -229,12 +250,14 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
   // The previous map, whose arrays are reused where unchanged. Writing the ref
   // during render is safe: an array is only ever swapped for one with the same
   // contents, so even a discarded render can't leave a wrong one behind.
-  const prevReactionMapRef = useRef<Map<string, string[]>>(new Map());
+  const prevReactionMapRef = useRef<Map<string, ReactionSummary[]>>(new Map());
   const reactionMap = useMemo(() => {
     const next = reuseUnchangedReactions(buildReactionMap(history), prevReactionMapRef.current);
     prevReactionMapRef.current = next;
     return next;
   }, [history]);
+  const reactionMapRef = useRef(reactionMap);
+  reactionMapRef.current = reactionMap;
 
   // Stable across renders so memoized bubbles skip re-rendering.
   const handleReply = useCallback(
@@ -244,23 +267,30 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
     [chatGUID, setReplyTarget]
   );
 
+  // Toggles our `reactionKey` reaction: a tapback key (love, like…) or, on
+  // Telegram, an emoji itself (a chip of one with no tapback).
   const handleReact = useCallback(async (m: Message, reactionKey: string) => {
     // Telegram: map the iMessage tapback to the nearest Telegram emoji and
     // send it through the Telegram core (no optimistic tapback child-message;
     // the authoritative aggregate arrives via tg:core-event).
     if (isSource(chatGUID, "telegram")) {
-      const emoji = TAPBACK_TO_EMOJI[reactionKey];
-      if (!emoji) return;
+      const emoji = TAPBACK_TO_EMOJI[reactionKey] ?? reactionKey;
       const { accountId, chatId } = parseTgChatGuid(chatGUID);
       const messageId = Number(m.guid.split(":").pop());
       if (!Number.isFinite(messageId) || messageId <= 0) return;
-      const already = (m.tgReactions ?? []).some((r) => r.startsWith(emoji));
-      void tg.react(accountId, chatId, messageId, already ? null : emoji).catch(() => {});
+      const mine = (m.tgReactions ?? []).some((r) => r.mine && r.emoji === emoji);
+      void tg.react(accountId, chatId, messageId, mine ? null : emoji).catch(() => {});
       return;
     }
 
-    const typeNum = REACTION_KEY_TO_TYPE[reactionKey];
-    if (!typeNum) return;
+    const added = REACTION_KEY_TO_TYPE[reactionKey];
+    if (!added) return;
+    const mine = reactionMapRef.current
+      .get(m.guid)
+      ?.some((r) => r.mine && r.emoji === TAPBACK_EMOJI[added]);
+    // BlueBubbles takes "-love" and friends to take one back.
+    const sendKey = mine ? `-${reactionKey}` : reactionKey;
+    const typeNum = REACTION_KEY_TO_TYPE[sendKey];
     const tempGuid = (typeof crypto !== "undefined" && "randomUUID" in crypto)
       ? crypto.randomUUID()
       : `r-${Date.now()}`;
@@ -279,7 +309,7 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
     };
     upsertMessage(optimistic);
     try {
-      await getClient(serverUrl, password).sendReaction(chatGUID, m.guid, reactionKey);
+      await getClient(serverUrl, password).sendReaction(chatGUID, m.guid, sendKey);
     } catch {
       removeMessage(chatGUID, optimistic.guid);
     }

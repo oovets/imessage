@@ -4,6 +4,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { useAppStore } from "@/store/useAppStore";
 import type { Message } from "@/types";
 import { fetchOlderMessages } from "@/lib/olderHistory";
+import { getClient } from "@/api/clientFactory";
 import { MessageList } from "./MessageList";
 
 // The bubble is swapped for a memoized recorder, so the tests see exactly
@@ -125,7 +126,7 @@ describe("MessageList memo boundaries", () => {
 
     expect(rendersOf("m1")).toHaveLength(1);
     expect(rendersOf("m2")).toHaveLength(1);
-    expect(lastProps("m1")!.reactions).toEqual(["❤️"]);
+    expect(lastProps("m1")!.reactions).toEqual([{ emoji: "❤️", count: 1, mine: true }]);
 
     // A new message in its own group: the old bubbles' props are all the
     // same references (message, reactions, handlers), so they skip.
@@ -150,7 +151,10 @@ describe("MessageList memo boundaries", () => {
       )
     );
     expect(rendersOf("m1")).toHaveLength(2);
-    expect(lastProps("m1")!.reactions).toEqual(["❤️", "👍"]);
+    expect(lastProps("m1")!.reactions).toEqual([
+      { emoji: "❤️", count: 1, mine: true },
+      { emoji: "👍", count: 1, mine: false },
+    ]);
     expect(rendersOf("m2")).toHaveLength(1);
     expect(rendersOf("m3")).toHaveLength(1);
     // Tapbacks never render as bubbles.
@@ -495,5 +499,49 @@ describe("MessageList earlier history", () => {
     await waitFor(() =>
       expect(view.getByText("Couldn’t load earlier messages · retry")).toBeTruthy()
     );
+  });
+});
+
+describe("MessageList reactions", () => {
+  const tapback = (guid: string, from: "me" | typeof alice, type: string, at: number) =>
+    msg(guid, {
+      text: "",
+      isFromMe: from === "me",
+      handle: from === "me" ? null : from,
+      dateCreated: at,
+      associatedMessageGuid: "m1",
+      associatedMessageType: type,
+    });
+
+  it("counts people per emoji, and a new tapback replaces that person's last", async () => {
+    const bob = { address: "bob@example.com", firstName: "Bob" };
+    useAppStore.setState({
+      messages: {
+        [CHAT]: [
+          msg("m1", { isFromMe: false, handle: alice }),
+          tapback("t1", alice, "2000", T0 + 1),
+          tapback("t2", bob, "2000", T0 + 2),
+          tapback("t3", "me", "2001", T0 + 3),
+          // Mine changes from 👍 to ❤️.
+          tapback("t4", "me", "2000", T0 + 4),
+        ],
+      },
+    });
+    await renderReady();
+    expect(lastProps("m1")!.reactions).toEqual([{ emoji: "❤️", count: 3, mine: true }]);
+  });
+
+  it("takes our own tapback back when toggled again", async () => {
+    const sendReaction = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(getClient).mockReturnValue({ sendReaction } as never);
+    useAppStore.setState({
+      messages: { [CHAT]: [msg("m1", { isFromMe: false, handle: alice }), tapback("t1", "me", "2000", T0 + 1)] },
+    });
+    await renderReady();
+
+    const onReact = lastProps("m1")!.onReact as (m: Message, key: string) => Promise<void>;
+    await act(() => onReact(useAppStore.getState().messages[CHAT][0], "love"));
+    expect(sendReaction).toHaveBeenCalledWith(CHAT, "m1", "-love");
+    expect(lastProps("m1")!.reactions).toBeUndefined();
   });
 });

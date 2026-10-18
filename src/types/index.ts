@@ -10,6 +10,14 @@ export interface Attachment {
   url: string;
 }
 
+/** One emoji's reactions on a message. */
+export interface ReactionSummary {
+  emoji: string;
+  count: number;
+  /** One of them is ours. */
+  mine: boolean;
+}
+
 export interface Message {
   guid: string;
   text: string;
@@ -25,8 +33,9 @@ export interface Message {
   failedReason?: string;
   tempGuid?: string;
   // Unified inbox: Telegram's own emoji reaction chips (already aggregated),
-  // shown instead of the iMessage tapback aggregation for tg messages.
-  tgReactions?: string[];
+  // shown instead of the iMessage tapback aggregation for tg messages. Caches
+  // written before these were objects may still hold "👍 2" strings.
+  tgReactions?: ReactionSummary[];
   /** iMessage rich link: the preview the sender's device built, decoded from
    *  BlueBubbles' payloadData. Its images are the message's
    *  .pluginPayloadAttachment files. */

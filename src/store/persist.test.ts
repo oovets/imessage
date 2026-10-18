@@ -381,7 +381,7 @@ describe("persisted bytes", () => {
             chatGUID: "tg:1:5",
             failed: true,
             failedReason: "flood",
-            tgReactions: ["❤️"],
+            tgReactions: [{ emoji: "❤️", count: 1, mine: false }],
           }),
         ],
       },
