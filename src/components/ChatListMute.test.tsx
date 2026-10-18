@@ -50,9 +50,10 @@ afterEach(() => {
 
 describe("muted Telegram chats in the sidebar", () => {
   it("stay out of the queue until the mute lapses, then join it on their own", () => {
-    const { getByText, getAllByText } = render(<ChatList />);
+    const { getByText, getAllByLabelText } = render(<ChatList />);
     expect(getByText("1 new")).toBeTruthy();
-    expect(getAllByText("E done")).toHaveLength(1);
+    // One queue card, each with its "done".
+    expect(getAllByLabelText("Mark done")).toHaveLength(1);
     // Listed in Recent meanwhile, like a read chat.
     expect(getByText("Pontus")).toBeTruthy();
 
@@ -61,7 +62,7 @@ describe("muted Telegram chats in the sidebar", () => {
 
     act(() => vi.advanceTimersByTime(1));
     expect(getByText("2 new")).toBeTruthy();
-    expect(getAllByText("E done")).toHaveLength(2);
+    expect(getAllByLabelText("Mark done")).toHaveLength(2);
   });
 
   it("stay off the compact rail's tiles until the mute lapses", () => {
