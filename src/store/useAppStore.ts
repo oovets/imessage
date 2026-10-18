@@ -11,6 +11,7 @@ import {
 } from "@/lib/appearance";
 import type { Attachment, Chat, Handle, LinkPreview, Message } from "@/types";
 import { sourceOfGuid, type ChatSource } from "@/lib/source";
+import type { ChatListGrouping } from "@/lib/triage";
 import {
   collectOpenChatGuids,
   evictMessageCache,
@@ -455,6 +456,15 @@ interface AppState {
   /** Command-bar query; filters the sidebar. Not persisted. */
   chatQuery: string;
   setChatQuery: (q: string) => void;
+  /**
+   * The sidebar shows one source only; null = all. Not persisted, so a
+   * restart never hides another network's new messages.
+   */
+  chatSourceFilter: ChatSource | null;
+  setChatSourceFilter: (source: ChatSource | null) => void;
+  /** Recent ordered by time, or grouped by network. Persisted. */
+  chatListGrouping: ChatListGrouping;
+  setChatListGrouping: (grouping: ChatListGrouping) => void;
   closePane: (paneId: string) => void;
   setPaneLayout: (groupId: string, sizes: number[]) => void;
   repairPaneState: () => void;
@@ -887,6 +897,8 @@ export const useAppStore = create<AppState>()(
       selectedChatGUID: null,
       focusedPaneId: null,
       chatQuery: "",
+      chatSourceFilter: null,
+      chatListGrouping: "time",
       messages: {},
       messageOrder: [],
       replyTarget: {},
@@ -1150,6 +1162,8 @@ export const useAppStore = create<AppState>()(
       },
 
       setChatQuery: (q) => set({ chatQuery: q }),
+      setChatSourceFilter: (source) => set({ chatSourceFilter: source }),
+      setChatListGrouping: (grouping) => set({ chatListGrouping: grouping }),
 
       closePane: (paneId) => {
         const { paneTree, activePaneId, paneLayouts } = get();
@@ -1524,6 +1538,7 @@ export const useAppStore = create<AppState>()(
         accountLabels: s.accountLabels,
         collapsedAccounts: s.collapsedAccounts,
         starredChats: s.starredChats,
+        chatListGrouping: s.chatListGrouping,
       }),
     }
   )

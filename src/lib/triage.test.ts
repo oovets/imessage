@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Chat } from "@/types";
-import { isMuted, nextTriageChange, triage } from "./triage";
+import {
+  activeSourceFilter,
+  filterChats,
+  isMuted,
+  listedRecent,
+  nextTriageChange,
+  summarizeSources,
+  triage,
+} from "./triage";
 
 const NOW = 1_800_000_000_000;
 
@@ -97,5 +105,72 @@ describe("nextTriageChange", () => {
       Infinity
     );
     expect(nextTriageChange([], NOW)).toBe(Infinity);
+  });
+});
+
+describe("the sidebar's network filter", () => {
+  const chats = [
+    chat("sl:w:C1", { displayName: "#general" }),
+    chat("tg:1:55", { displayName: "Pontus", unreadCount: 2 }),
+    chat("iMessage;-;+4670", { displayName: "Elin" }),
+    chat("tg:1:56", { displayName: "Anna", unreadCount: 1, mutedUntil: NOW + 60_000 }),
+  ];
+
+  it("narrows to one source, and a search prefix overrides it", () => {
+    expect(guids(filterChats(chats, "", "telegram"))).toEqual(["tg:1:55", "tg:1:56"]);
+    expect(guids(filterChats(chats, "pon", "telegram"))).toEqual(["tg:1:55"]);
+    // "slack:" asks for Slack whatever the chips say.
+    expect(guids(filterChats(chats, "slack:", "telegram"))).toEqual(["sl:w:C1"]);
+    expect(filterChats(chats, "", null)).toBe(chats);
+  });
+
+  it("lists the sources present in sidebar order, with what each has waiting", () => {
+    // A muted unread chat is not waiting.
+    expect(summarizeSources(chats, NOW)).toEqual([
+      { source: "imessage", waiting: 0 },
+      { source: "telegram", waiting: 1 },
+      { source: "slack", waiting: 0 },
+    ]);
+  });
+
+  it("drops a filter for a source with no chats left", () => {
+    expect(activeSourceFilter(chats, "slack")).toBe("slack");
+    expect(activeSourceFilter(chats, "irc")).toBeNull();
+    expect(activeSourceFilter(chats, null)).toBeNull();
+  });
+});
+
+describe("listedRecent", () => {
+  const recent = [
+    chat("sl:w:D1", { displayName: "Maja", slackSection: "DirectMessage", activityAt: 9 }),
+    chat("tg:1:55", { activityAt: 8 }),
+    chat("iMessage;-;+4670", { activityAt: 7 }),
+    chat("sl:w:C1", { displayName: "#general", slackSection: "Public", activityAt: 6 }),
+    chat("tg:1:56", { activityAt: 5 }),
+  ];
+
+  it("keeps recency by time", () => {
+    expect(listedRecent(recent, "time", {}, [])).toBe(recent);
+  });
+
+  it("groups by network: iMessage, Telegram, Slack (channels first), IRC", () => {
+    expect(guids(listedRecent(recent, "network", {}, []))).toEqual([
+      "iMessage;-;+4670",
+      "tg:1:55",
+      "tg:1:56",
+      "sl:w:C1",
+      "sl:w:D1",
+    ]);
+  });
+
+  it("leaves folded groups out, but never folds a lone group", () => {
+    expect(guids(listedRecent(recent, "network", {}, ["telegram:1"]))).toEqual([
+      "iMessage;-;+4670",
+      "sl:w:C1",
+      "sl:w:D1",
+    ]);
+    // With one network there is no header to unfold it from.
+    const telegram = recent.filter((c) => c.guid.startsWith("tg:"));
+    expect(guids(listedRecent(telegram, "network", {}, ["telegram:1"]))).toEqual(["tg:1:55", "tg:1:56"]);
   });
 });

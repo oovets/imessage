@@ -4,7 +4,7 @@ import { AiSimulatorDialog, SettingsDialog, SocialGraphDialog } from "@/componen
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useAppStore } from "@/store/useAppStore";
 import { loadIMessageChats } from "@/lib/loadChats";
-import { filterChats, triage } from "@/lib/triage";
+import { activeSourceFilter, filterChats, listedRecent, triage } from "@/lib/triage";
 import { isSource } from "@/lib/source";
 import { ghostIconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
@@ -164,8 +164,13 @@ function CommandBar({ disabled }: { disabled?: boolean }) {
   // pane beside the active one. Either way the bar clears, like a palette.
   function jump(newPane: boolean) {
     const s = useAppStore.getState();
-    const { waiting, starred, recent } = triage(filterChats(s.chats, s.chatQuery), s.starredChats);
-    const target = waiting[0] ?? starred[0] ?? recent[0];
+    // The sidebar's network filter and Recent order count too.
+    const only = s.sidebarHidden ? null : activeSourceFilter(s.chats, s.chatSourceFilter);
+    const { waiting, starred, recent } = triage(filterChats(s.chats, s.chatQuery, only), s.starredChats);
+    const target =
+      waiting[0] ??
+      starred[0] ??
+      listedRecent(recent, s.chatListGrouping, s.accountLabels, s.collapsedAccounts)[0];
     if (!target) return;
     if (newPane) s.splitPane(s.activePaneId, "horizontal", target.guid);
     else s.selectChat(target.guid);

@@ -65,6 +65,11 @@ const SOURCE_ORDER: Record<ChatSource, number> = {
   irc: 3,
 };
 
+/** Every source, in that order. */
+export const SOURCES_IN_ORDER = (Object.keys(SOURCE_ORDER) as ChatSource[]).sort(
+  (a, b) => SOURCE_ORDER[a] - SOURCE_ORDER[b]
+);
+
 export function compareAccounts(
   a: { ref: AccountRef; label: string },
   b: { ref: AccountRef; label: string }
@@ -145,4 +150,25 @@ export function groupChatsByAccount(
     if (group.ref.source === "slack") group.chats = sortSlackChats(group.chats);
   }
   return [...groups.values()].sort(compareAccounts);
+}
+
+export interface NetworkGroup extends AccountGroup {
+  /** Folded in the sidebar (persisted per account). */
+  collapsed: boolean;
+}
+
+/**
+ * Recent grouped by network, the way the sidebar lists it. A lone group gets
+ * no header, so nothing could unfold it: it is never folded.
+ */
+export function networkGroups(
+  chats: Chat[],
+  labels: Record<string, string>,
+  collapsed: readonly string[]
+): NetworkGroup[] {
+  const groups = groupChatsByAccount(chats, labels);
+  return groups.map((g) => ({
+    ...g,
+    collapsed: groups.length > 1 && collapsed.includes(g.ref.key),
+  }));
 }

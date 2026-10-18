@@ -7,20 +7,31 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Star } from "lucide-react";
+import { ChevronRight, Star } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChatItem, type ChatSelectOptions } from "@/components/ChatItem";
 import { ChatListSkeleton } from "@/components/ChatListSkeleton";
 import { useAppStore } from "@/store/useAppStore";
 import { usePaneNumbers } from "@/hooks/usePaneNumbers";
 import { loadIMessageChats } from "@/lib/loadChats";
-import { filterChats, nextTriageChange, triage } from "@/lib/triage";
-import { isSource } from "@/lib/source";
+import {
+  SOURCE_NAME,
+  SOURCE_TAG,
+  activeSourceFilter,
+  filterChats,
+  nextTriageChange,
+  summarizeSources,
+  triage,
+  type ChatListGrouping,
+  type SourceSummary,
+} from "@/lib/triage";
+import { isSource, type ChatSource } from "@/lib/source";
+import { networkGroups, type NetworkGroup } from "@/lib/accounts";
 import { tg } from "@/telegram/api";
 import { parseTgChatGuid } from "@/telegram/adapters";
 import { cn } from "@/lib/utils";
 import { openSettings } from "@/lib/openSettings";
-import { whenDue } from "@/types";
+import { whenDue, type Chat } from "@/types";
 
 /** Card fold-out duration for "E done" — matches the ChatItem transition. */
 const DONE_ANIMATION_MS = 160;
@@ -54,10 +65,117 @@ function SectionHeader({
 }
 
 /**
+ * One chip per network the chats come from, plus All: narrows the whole
+ * sidebar to that network. Chips carry the rows' source tags, so they fit
+ * one line; keys 0 (all) and 1–n follow them, shown while the row is hovered.
+ */
+function SourceFilter({
+  sources,
+  active,
+  onPick,
+}: {
+  sources: SourceSummary[];
+  active: ChatSource | null;
+  onPick: (source: ChatSource | null) => void;
+}) {
+  const chip = (key: string, source: ChatSource | null, waiting = 0) => {
+    const on = active === source;
+    const name = source ? SOURCE_NAME[source] : "All networks";
+    return (
+      <button
+        key={key}
+        type="button"
+        aria-pressed={on}
+        aria-keyshortcuts={key}
+        aria-label={waiting > 0 ? `${name}, ${waiting} waiting` : name}
+        title={`${source ? `Only ${name}` : name} (${key})`}
+        // Clicking the network that is on goes back to all of them.
+        onClick={() => onPick(on && source ? null : source)}
+        className={cn(
+          "relative flex h-[22px] items-center gap-1 whitespace-nowrap rounded-md px-1.5 font-mono text-cc-meta",
+          on
+            ? "bg-muted text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
+            : "text-muted-foreground hover:bg-muted hover:text-foreground"
+        )}
+      >
+        {source ? SOURCE_TAG[source] : "all"}
+        {waiting > 0 && <span className="text-signal">{waiting}</span>}
+        <span
+          aria-hidden
+          className="pointer-events-none absolute -right-0.5 -top-1.5 text-[9px] leading-none text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+        >
+          {key}
+        </span>
+      </button>
+    );
+  };
+  return (
+    <div
+      role="toolbar"
+      aria-label="Show one network"
+      className="group flex shrink-0 items-center gap-1 px-2.5 pt-2.5"
+    >
+      {chip("0", null)}
+      {sources.map((s, i) => chip(String(i + 1), s.source, s.waiting))}
+    </div>
+  );
+}
+
+/** "time · network": how Recent is ordered. G toggles it. */
+function GroupingToggle({
+  grouping,
+  onChange,
+}: {
+  grouping: ChatListGrouping;
+  onChange: (grouping: ChatListGrouping) => void;
+}) {
+  const option = (value: ChatListGrouping) => (
+    <button
+      type="button"
+      aria-pressed={grouping === value}
+      onClick={() => onChange(value)}
+      className={cn("hover:text-foreground", grouping === value && "text-foreground")}
+    >
+      {value}
+    </button>
+  );
+  return (
+    <span role="group" aria-label="Sort Recent by" title="Sort Recent by time or network (G)" className="flex gap-1">
+      {option("time")}
+      <span aria-hidden>·</span>
+      {option("network")}
+    </span>
+  );
+}
+
+/** "Slack · Acme": the network, then the account where it has a name of its own. */
+function groupTitle(group: NetworkGroup): string {
+  const network = SOURCE_NAME[group.ref.source];
+  return group.label.startsWith(network) ? group.label : `${network} · ${group.label}`;
+}
+
+function GroupHeader({ group, onToggle }: { group: NetworkGroup; onToggle: (key: string) => void }) {
+  return (
+    <button
+      type="button"
+      aria-expanded={!group.collapsed}
+      onClick={() => onToggle(group.ref.key)}
+      className="flex w-full items-center gap-1 px-3 pb-1 pt-3 font-mono text-cc-chip uppercase tracking-wide text-muted-foreground hover:text-foreground"
+    >
+      <ChevronRight
+        className={cn("h-3 w-3 shrink-0 transition-transform", !group.collapsed && "rotate-90")}
+      />
+      <span className="truncate">{groupTitle(group)}</span>
+      <span className="ml-auto pl-2">{group.chats.length}</span>
+    </button>
+  );
+}
+
+/**
  * The sidebar as a triage queue: "Waiting on you" (unread and not muted, as
- * cards), then Starred, then Recent (everything else, all sources mixed by
- * recency). The search input lives in the toolbar's command bar; its query
- * filters here.
+ * cards), then Starred, then Recent (everything else, by recency or grouped
+ * by network). The search input lives in the toolbar's command bar; its
+ * query filters here, and so does the network filter above the list.
  */
 export function ChatList() {
   // Narrow selectors: ChatList must not re-render on every WebSocket message,
@@ -88,6 +206,13 @@ export function ChatList() {
   // uses the deferred value, so the sidebar stays consistent with itself.
   const liveQuery = useAppStore((s) => s.chatQuery);
   const query = useDeferredValue(liveQuery);
+  const sourceFilterSetting = useAppStore((s) => s.chatSourceFilter);
+  const setSourceFilter = useAppStore((s) => s.setChatSourceFilter);
+  const grouping = useAppStore((s) => s.chatListGrouping);
+  const setGrouping = useAppStore((s) => s.setChatListGrouping);
+  const accountLabels = useAppStore((s) => s.accountLabels);
+  const collapsedAccounts = useAppStore((s) => s.collapsedAccounts);
+  const toggleAccountCollapsed = useAppStore((s) => s.toggleAccountCollapsed);
   const activePaneId = useAppStore((s) => s.activePaneId);
   const { byChat, byPane } = usePaneNumbers();
   const activePaneNumber = byPane.get(activePaneId);
@@ -108,11 +233,22 @@ export function ChatList() {
     return () => timers.forEach((t) => window.clearTimeout(t));
   }, []);
 
-  const filteredChats = useMemo(() => filterChats(chats, query), [chats, query]);
   // A muted unread chat joins the queue once its mute lapses, and nothing
   // re-renders the sidebar then; so triage is re-run at the earliest lapse
   // (the effect below). The compact rail shows these same sections.
   const [clockTick, setClockTick] = useState(0);
+
+  // The network filter row, and the filter itself, belong to the full
+  // sidebar: the compact rail has no row to show or clear it, so it lists
+  // every network. One network has nothing to filter.
+  // clockTick: a lapsed mute also changes what a network has waiting.
+  const sources = useMemo(() => summarizeSources(chats), [chats, clockTick]);
+  const showSourceFilter = !sidebarHidden && sources.length > 1;
+  const sourceFilter = showSourceFilter ? activeSourceFilter(chats, sourceFilterSetting) : null;
+  const filteredChats = useMemo(
+    () => filterChats(chats, query, sourceFilter),
+    [chats, query, sourceFilter]
+  );
   const { waiting, starred, recent, triagedAt } = useMemo(() => {
     const now = Date.now();
     return { ...triage(filteredChats, starredChats, now), triagedAt: now };
@@ -124,12 +260,17 @@ export function ChatList() {
     [filteredChats, triagedAt]
   );
 
-  // Keyboard navigation follows what is on screen: queue → starred → recent,
-  // or just the queue and starred tiles on the compact rail.
-  const visibleChats = useMemo(
-    () => (sidebarHidden ? [...waiting, ...starred] : [...waiting, ...starred, ...recent]),
-    [sidebarHidden, waiting, starred, recent]
+  const groups = useMemo(
+    () => (grouping === "network" ? networkGroups(recent, accountLabels, collapsedAccounts) : null),
+    [grouping, recent, accountLabels, collapsedAccounts]
   );
+  // Keyboard navigation follows what is on screen: queue → starred → recent
+  // (minus folded groups), or just the queue and starred tiles on the rail.
+  const visibleChats = useMemo(() => {
+    if (sidebarHidden) return [...waiting, ...starred];
+    const shownRecent = groups ? groups.flatMap((g) => (g.collapsed ? [] : g.chats)) : recent;
+    return [...waiting, ...starred, ...shownRecent];
+  }, [sidebarHidden, waiting, starred, recent, groups]);
   // The list is one Tab stop (roving tabindex): the cursor's item, else the
   // open chat's, else the first; ↑/↓ move between items from there.
   const tabStopGUID =
@@ -179,8 +320,27 @@ export function ChatList() {
       const target = e.target as HTMLElement | null;
       const tag = target?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return;
-      if (tag === "BUTTON" || target?.closest?.("[role=dialog]")) return;
+      if (target?.closest?.("[role=dialog]")) return;
       if (e.metaKey || e.ctrlKey) return;
+
+      // 0 shows every network, 1–n one of them (again: all); G sorts Recent
+      // by time or network. Also from a focused button, such as a chip.
+      if (!e.altKey && !e.shiftKey && !sidebarHidden) {
+        if (showSourceFilter && /^[0-9]$/.test(e.key)) {
+          const n = Number(e.key);
+          if (n > sources.length) return;
+          e.preventDefault();
+          const source = n === 0 ? null : sources[n - 1].source;
+          setSourceFilter(source === sourceFilter ? null : source);
+          return;
+        }
+        if (e.key === "g" || e.key === "G") {
+          e.preventDefault();
+          setGrouping(grouping === "time" ? "network" : "time");
+          return;
+        }
+      }
+      if (tag === "BUTTON") return;
 
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         if (visibleChats.length === 0) return;
@@ -224,11 +384,43 @@ export function ChatList() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [visibleChats, cursorGUID, selectedChatGUID, open, done, waiting, toggleStarred]);
+  }, [
+    visibleChats,
+    cursorGUID,
+    selectedChatGUID,
+    open,
+    done,
+    waiting,
+    toggleStarred,
+    sidebarHidden,
+    showSourceFilter,
+    sources,
+    sourceFilter,
+    setSourceFilter,
+    grouping,
+    setGrouping,
+  ]);
 
   function paneKeyProps(guid: string) {
     const n = byChat.get(guid);
     return { paneKey: n, paneKeyActive: n != null && n === activePaneNumber };
+  }
+
+  function recentRow(chat: Chat) {
+    return (
+      <ChatItem
+        key={chat.guid}
+        chat={chat}
+        variant="row"
+        isSelected={chat.guid === selectedChatGUID}
+        isCursor={chat.guid === cursorGUID}
+        tabStop={chat.guid === tabStopGUID}
+        onSelect={open}
+        starred={false}
+        onToggleStar={toggleStarred}
+        {...paneKeyProps(chat.guid)}
+      />
+    );
   }
 
   let body: ReactNode;
@@ -331,21 +523,21 @@ export function ChatList() {
 
         {recent.length > 0 && (
           <>
-            <SectionHeader title="Recent" meta="all sources" />
-            {recent.map((chat) => (
-              <ChatItem
-                key={chat.guid}
-                chat={chat}
-                variant="row"
-                isSelected={chat.guid === selectedChatGUID}
-                isCursor={chat.guid === cursorGUID}
-                tabStop={chat.guid === tabStopGUID}
-                onSelect={open}
-                starred={false}
-                onToggleStar={toggleStarred}
-                {...paneKeyProps(chat.guid)}
-              />
-            ))}
+            <SectionHeader
+              title="Recent"
+              meta={<GroupingToggle grouping={grouping} onChange={setGrouping} />}
+            />
+            {groups
+              ? groups.map((group) => (
+                  <div key={group.ref.key}>
+                    {/* A lone group would only repeat the filter chip. */}
+                    {groups.length > 1 && (
+                      <GroupHeader group={group} onToggle={toggleAccountCollapsed} />
+                    )}
+                    {!group.collapsed && group.chats.map(recentRow)}
+                  </div>
+                ))
+              : recent.map(recentRow)}
           </>
         )}
       </div>
@@ -362,6 +554,9 @@ export function ChatList() {
       }}
       className="app-sidebar flex h-full min-h-0 flex-col"
     >
+      {showSourceFilter && hasAnySource && (
+        <SourceFilter sources={sources} active={sourceFilter} onPick={setSourceFilter} />
+      )}
       <ScrollArea className="flex-1">{body}</ScrollArea>
     </div>
   );

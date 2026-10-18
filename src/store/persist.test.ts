@@ -325,6 +325,7 @@ function legacySerialised(): string {
     accountLabels: s.accountLabels,
     collapsedAccounts: s.collapsedAccounts,
     starredChats: s.starredChats,
+    chatListGrouping: s.chatListGrouping,
   };
   return JSON.stringify({ state, version: 0 });
 }
