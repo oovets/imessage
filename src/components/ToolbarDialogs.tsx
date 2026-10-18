@@ -5,6 +5,7 @@ import { Dialog, DialogTrigger } from "@/components/ui/dialog";
 import { ghostIconButton } from "@/components/ui/icon-button";
 import { useAppStore } from "@/store/useAppStore";
 import { isTauriRuntime } from "@/lib/tauriEnv";
+import { onOpenSettings } from "@/lib/openSettings";
 import { cn } from "@/lib/utils";
 
 /**
@@ -86,6 +87,9 @@ export function SettingsDialog({ autoOpen = true }: SettingsDialogProps) {
   const onboardingDismissed = useAppStore((s) => s.onboardingDismissed);
   const [open, setOpen] = useState(false);
   const autoOpenedRef = useRef(false);
+
+  // "Open settings" in the app: an empty sidebar, the sources menu.
+  useEffect(() => onOpenSettings(() => setOpen(true)), []);
 
   // The tray / app menu's "Settings…" item.
   useEffect(() => {

@@ -122,3 +122,22 @@ describe("sidebar keyboard", () => {
     expect(useAppStore.getState().selectedChatGUID).toBe("sl:work:C1");
   });
 });
+
+describe("sidebar empty state", () => {
+  it("opens Settings when no source is set up", () => {
+    useAppStore.setState({
+      chats: [],
+      isConfigured: false,
+      telegramAvailable: false,
+      slackAvailable: false,
+      ircAvailable: false,
+      sidebarHidden: false,
+    });
+    const onOpen = vi.fn();
+    window.addEventListener("app:open-settings", onOpen);
+    const view = render(<ChatList />);
+    fireEvent.click(view.getByText("Open settings"));
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    window.removeEventListener("app:open-settings", onOpen);
+  });
+});

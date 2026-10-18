@@ -19,6 +19,7 @@ import { isSource } from "@/lib/source";
 import { tg } from "@/telegram/api";
 import { parseTgChatGuid } from "@/telegram/adapters";
 import { cn } from "@/lib/utils";
+import { openSettings } from "@/lib/openSettings";
 import { whenDue } from "@/types";
 
 /** Card fold-out duration for "E done" — matches the ChatItem transition. */
@@ -235,7 +236,13 @@ export function ChatList() {
     body = !sidebarHidden && (
       <div className="p-6 text-center text-cc-body text-muted-foreground">
         <p>Connect a source to get started.</p>
-        <p className="mt-1">Open settings in the toolbar.</p>
+        <button
+          type="button"
+          onClick={openSettings}
+          className="mt-3 h-7 rounded-md bg-primary px-2.5 font-medium text-primary-foreground"
+        >
+          Open settings
+        </button>
       </div>
     );
   } else if (loadingChats && chats.length === 0) {
