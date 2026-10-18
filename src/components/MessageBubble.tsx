@@ -32,6 +32,10 @@ interface MessageBubbleProps {
   isLastInGroup?: boolean;
   onReply?: (message: Message) => void;
   onReact?: (message: Message, reactionKey: string) => void;
+  /** A failed message we sent: send it again. */
+  onRetry?: (message: Message) => void;
+  /** A failed message we sent: drop it. */
+  onDiscard?: (message: Message) => void;
 }
 
 const REACTION_EMOJI: Record<string | number, string> = {
@@ -173,7 +177,6 @@ function AttachmentImage({
         event.stopPropagation();
         onOpen(fullSrc, alt);
       }}
-      onDoubleClick={(event) => event.stopPropagation()}
       className="-mx-1 mb-1 block cursor-zoom-in border-0 bg-transparent p-0"
       aria-label="Open full image"
     >
@@ -198,6 +201,8 @@ export const MessageBubble = memo(function MessageBubble({
   isLastInGroup = true,
   onReply,
   onReact,
+  onRetry,
+  onDiscard,
 }: MessageBubbleProps) {
   const isMe = message.isFromMe;
   const rawType = message.associatedMessageType as unknown;
@@ -358,7 +363,6 @@ export const MessageBubble = memo(function MessageBubble({
                     message.failed && "shadow-[inset_0_0_0_1px_hsl(var(--signal))]"
                   )
             )}
-            onDoubleClick={() => onReact?.(message, "love")}
           >
             {attachments.map((att) => {
               // Telegram media is fetched lazily via its own component.
@@ -563,11 +567,37 @@ export const MessageBubble = memo(function MessageBubble({
           </span>
         )}
         {message.failed && (
-          <span
-            className="mt-[3px] cursor-help text-cc-meta text-signal"
-            title={message.failedReason ?? "Failed to send"}
-          >
-            Failed to send{message.failedReason ? " · hover for details" : ""}
+          <span className="mt-[3px] flex items-center gap-1.5 whitespace-nowrap text-cc-meta text-signal">
+            <span
+              className={cn(message.failedReason && "cursor-help")}
+              title={message.failedReason ?? "Failed to send"}
+            >
+              Failed to send
+            </span>
+            {onRetry && (
+              <>
+                {"·"}
+                <button
+                  type="button"
+                  onClick={() => onRetry(message)}
+                  className="font-medium underline underline-offset-2 hover:text-foreground"
+                >
+                  Retry
+                </button>
+              </>
+            )}
+            {onDiscard && (
+              <>
+                {"·"}
+                <button
+                  type="button"
+                  onClick={() => onDiscard(message)}
+                  className="underline underline-offset-2 hover:text-foreground"
+                >
+                  Delete
+                </button>
+              </>
+            )}
           </span>
         )}
       </div>

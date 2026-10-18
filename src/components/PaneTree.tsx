@@ -10,6 +10,7 @@ import { useAppStore, paneLeafOrder, type PaneNode } from "@/store/useAppStore";
 import { usePaneNumbers } from "@/hooks/usePaneNumbers";
 import { CHAT_DRAG_MIME } from "@/lib/triage";
 import { cn } from "@/lib/utils";
+import { modLabel } from "@/lib/shortcuts";
 
 /** The empty drop slot only invites another column while the board is roomy. */
 const MAX_PANES_WITH_SLOT = 3;
@@ -116,7 +117,7 @@ function DropSlot({ nextNumber }: { nextNumber: number }) {
         appendPane(guid);
       }}
       aria-label="New pane"
-      title={`New pane (⌘${nextNumber})`}
+      title={`New pane (${modLabel(nextNumber)})`}
       className={cn(
         "cc-stripes flex w-11 shrink-0 flex-col items-center justify-center gap-3 rounded-[10px] text-muted-foreground transition-[box-shadow] duration-120 hover:text-foreground",
         over
@@ -126,7 +127,7 @@ function DropSlot({ nextNumber }: { nextNumber: number }) {
     >
       <Plus className="h-4 w-4" />
       <span className="whitespace-nowrap font-mono text-cc-meta tracking-[0.04em] [writing-mode:vertical-rl]">
-        drop a chat here · ⌘{nextNumber}
+        drop a chat here · {modLabel(nextNumber)}
       </span>
     </button>
   );

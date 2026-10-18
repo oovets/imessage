@@ -79,8 +79,6 @@ export function ChatList() {
   const hasAnySource = isConfigured || telegramAvailable || slackAvailable || ircAvailable;
   const starredChats = useAppStore((s) => s.starredChats);
   const toggleStarred = useAppStore((s) => s.toggleStarred);
-  const networkOnline = useAppStore((s) => s.networkOnline);
-  const connectionNotice = useAppStore((s) => s.connectionNotice);
   const sidebarHidden = useAppStore((s) => s.sidebarHidden);
   // The command bar's input stays bound to the live chatQuery; the list
   // follows a deferred copy, so a keystroke (or clearing the bar, which
@@ -209,19 +207,6 @@ export function ChatList() {
     return { paneKey: n, paneKeyActive: n != null && n === activePaneNumber };
   }
 
-  const notices = !sidebarHidden && (
-    <>
-      {!networkOnline && (
-        <div className="border-b px-4 py-2 text-cc-meta text-signal">
-          You are offline. Trying to reconnect automatically…
-        </div>
-      )}
-      {connectionNotice && (
-        <div className="border-b px-4 py-2 text-cc-meta text-muted-foreground">{connectionNotice}</div>
-      )}
-    </>
-  );
-
   let body: ReactNode;
   if (!hasAnySource) {
     body = !sidebarHidden && (
@@ -335,7 +320,6 @@ export function ChatList() {
 
   return (
     <div className="app-sidebar flex h-full min-h-0 flex-col">
-      {notices}
       <ScrollArea className="flex-1">{body}</ScrollArea>
     </div>
   );

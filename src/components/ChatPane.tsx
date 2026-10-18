@@ -15,6 +15,7 @@ import { CHAT_DRAG_MIME } from "@/lib/triage";
 import { tg } from "@/telegram/api";
 import { parseTgChatGuid, tgMessageToMessage } from "@/telegram/adapters";
 import { cn } from "@/lib/utils";
+import { modLabel, shiftModLabel } from "@/lib/shortcuts";
 
 interface ChatPaneProps {
   paneId: string;
@@ -89,6 +90,8 @@ export const ChatPane = memo(function ChatPane({
   const aiMode = useAppStore((s) => (chatGUID ? aiModeFor(s.aiReplyChats, chatGUID) : "off"));
   const cycleAiReplyChat = useAppStore((s) => s.cycleAiReplyChat);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  // Bumped by the error view's "Try again" to re-run the history fetch.
+  const [retryNonce, setRetryNonce] = useState(0);
   const paneRef = useRef<HTMLDivElement>(null);
   // A not-ready error on a cached chat is swallowed (the cached history stays
   // up), but media inside it failed against the same not-ready backend. The
@@ -300,6 +303,7 @@ export const ChatPane = memo(function ChatPane({
     chatGUID,
     serverUrl,
     password,
+    retryNonce,
     isSource(chatGUID ?? "", "telegram") ? telegramReloadNonce : 0,
     isSource(chatGUID ?? "", "slack") ? slackReloadNonce : 0,
     isSource(chatGUID ?? "", "slack") ? slackSelfUserIds : null,
@@ -394,7 +398,7 @@ export const ChatPane = memo(function ChatPane({
               isActive ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
             )}
           >
-            ⌘{paneNumber}
+            {modLabel(paneNumber)}
           </span>
         )}
 
@@ -454,7 +458,7 @@ export const ChatPane = memo(function ChatPane({
                 className={cn(paneIconButton, "hidden md:inline-flex")}
                 onClick={() => splitPane(paneId, "horizontal")}
                 aria-label="Split right"
-                title="Split right (⌘D)"
+                title={`Split right (${modLabel("D")})`}
               >
                 <SquareSplitHorizontal className="h-3.5 w-3.5" />
               </button>
@@ -463,7 +467,7 @@ export const ChatPane = memo(function ChatPane({
                 className={cn(paneIconButton, "hidden md:inline-flex")}
                 onClick={() => splitPane(paneId, "vertical")}
                 aria-label="Split down"
-                title="Split down (⇧⌘D)"
+                title={`Split down (${shiftModLabel("D")})`}
               >
                 <SquareSplitVertical className="h-3.5 w-3.5" />
               </button>
@@ -501,11 +505,21 @@ export const ChatPane = memo(function ChatPane({
 
       {empty ? (
         <div className="flex flex-1 items-center justify-center p-4 text-center text-cc-body text-muted-foreground">
-          Pick a chat, or press ⌘K
+          Pick a chat, or press {modLabel("K")}
         </div>
       ) : fetchError ? (
-        <div className="flex flex-1 items-center justify-center p-4 text-center text-cc-body text-signal">
-          {fetchError}
+        <div className="flex flex-1 flex-col items-center justify-center gap-2 p-4 text-center">
+          <p className="text-cc-body font-medium">Couldn’t load messages</p>
+          <p className="max-w-[48ch] break-words font-mono text-cc-meta text-muted-foreground [overflow-wrap:anywhere]">
+            {fetchError}
+          </p>
+          <button
+            type="button"
+            onClick={() => setRetryNonce((n) => n + 1)}
+            className="mt-1 h-7 rounded-md bg-primary px-2.5 text-cc-body font-medium text-primary-foreground"
+          >
+            Try again
+          </button>
         </div>
       ) : (
         <>

@@ -2,6 +2,7 @@
 import { fireEvent, render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { Chat } from "@/types";
+import { modLabel } from "@/lib/shortcuts";
 import { ChatItem } from "./ChatItem";
 
 vi.mock("@/telegram/useTelegramAvatar", () => ({ useTelegramAvatar: () => null }));
@@ -76,7 +77,7 @@ describe("ChatItem variants", () => {
       <ChatItem chat={chat()} isSelected={false} onSelect={() => {}} paneKey={2} />
     );
     expect(getByText("slack")).toBeTruthy();
-    expect(getByText("⌘2")).toBeTruthy();
+    expect(getByText(modLabel(2))).toBeTruthy();
   });
 });
 

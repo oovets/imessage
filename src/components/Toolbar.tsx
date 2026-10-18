@@ -9,6 +9,7 @@ import { isSource } from "@/lib/source";
 import { ghostIconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 import { hasTrafficLights } from "@/lib/tauriEnv";
+import { modLabel } from "@/lib/shortcuts";
 
 function ConnectionStatus() {
   const isConfigured = useAppStore((s) => s.isConfigured);
@@ -120,7 +121,7 @@ function CommandBar({ disabled }: { disabled?: boolean }) {
           <X className="h-3 w-3" />
         </button>
       ) : (
-        <kbd className="shrink-0 rounded bg-muted px-[5px] py-px font-mono text-cc-meta">⌘K</kbd>
+        <kbd className="shrink-0 rounded bg-muted px-[5px] py-px font-mono text-cc-meta">{modLabel("K")}</kbd>
       )}
     </label>
   );
