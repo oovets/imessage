@@ -3,6 +3,7 @@ import { useAppStore } from "@/store/useAppStore";
 import { getClient } from "@/api/clientFactory";
 import { notifyIncomingMessage } from "@/lib/desktopNotifications";
 import { getChatDisplayName } from "@/types";
+import { isHistoryFetchInFlight } from "@/lib/historyInFlight";
 
 const CHAT_POLL_MS = 15_000;
 const MSG_POLL_MS = 4_000;
@@ -26,6 +27,10 @@ export function usePollingFallback() {
 
     async function tick() {
       if (cancelled) return;
+      // The pane showing this chat is fetching it right now (it just opened,
+      // or the server changed): that fetch is this tick's. Selecting a chat
+      // that is already open still polls at once, to catch up.
+      if (isHistoryFetchInFlight(selectedChatGUID!)) return;
       try {
         const { messageFetchedAt } = useAppStore.getState();
         const after = messageFetchedAt[selectedChatGUID!] ?? 0;

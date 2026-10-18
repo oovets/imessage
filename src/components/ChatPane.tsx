@@ -16,6 +16,7 @@ import { tg } from "@/telegram/api";
 import { parseTgChatGuid, tgMessageToMessage } from "@/telegram/adapters";
 import { cn } from "@/lib/utils";
 import { modLabel, shiftModLabel } from "@/lib/shortcuts";
+import { trackHistoryFetch } from "@/lib/historyInFlight";
 
 interface ChatPaneProps {
   paneId: string;
@@ -272,8 +273,7 @@ export const ChatPane = memo(function ChatPane({
     const client = getClient(serverUrl, password);
     const after = hasCached ? lastFetchedAt : undefined;
 
-    client
-      .getMessages(chatGUID, 50, after)
+    trackHistoryFetch(chatGUID, client.getMessages(chatGUID, 50, after))
       .then(async (msgs) => {
         if (cancelled) return;
         // An empty delta means nothing arrived since lastFetchedAt — the normal
