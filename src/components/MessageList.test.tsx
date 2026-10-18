@@ -787,6 +787,27 @@ describe("MessageList earlier history", () => {
     vi.unstubAllGlobals();
   });
 
+  it("anchors the button row's removal when an empty page ends paging", async () => {
+    // A merged iMessage/SMS pair proves no start, so its paging ends on an
+    // empty page, with nothing prepended to anchor the row going.
+    const thread = (guid: string) =>
+      ({ guid, displayName: "", chatIdentifier: guid, participants: [], lastMessage: null, unreadCount: 0 });
+    mergeChatThreads([thread(CHAT), thread("SMS;-;+46700000000")]);
+    // 11 rows (1100px) pinned at 570; at 100 a short page of five lands:
+    // 16 rows, the button stays, what was at 100 stays put.
+    const { list, box } = openScrolledBack(10, 100, 5);
+    await waitFor(() => expect(rendersOf("o0")).toHaveLength(1));
+    expect(list.scrollTop).toBe(1600 - 1100 + 100);
+
+    // Near the top again: the next page is empty, and the row goes.
+    vi.mocked(fetchOlderMessages).mockResolvedValueOnce([]);
+    box.scrollTo(250);
+    await waitFor(() => expect(list.querySelector("button")).toBeNull());
+    // 15 rows: what was 250px down is now 150px down, still in view as it was.
+    expect(list.scrollTop).toBe(1500 - 1600 + 250);
+    vi.unstubAllGlobals();
+  });
+
   it("offers a retry when a page fails", async () => {
     useAppStore.setState({ messages: { [CHAT]: [msg("m1")] } });
     vi.mocked(fetchOlderMessages).mockRejectedValueOnce(new Error("offline"));
