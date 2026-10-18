@@ -102,13 +102,9 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+// The list pins and shows its history in the commit that mounts it.
 async function renderReady(chatGUID = CHAT) {
-  const view = render(<MessageList chatGUID={chatGUID} />);
-  // The list fades in after two animation frames; wait for that render too.
-  await waitFor(() =>
-    expect(view.container.querySelector(".opacity-100")).not.toBeNull()
-  );
-  return view;
+  return render(<MessageList chatGUID={chatGUID} />);
 }
 
 describe("MessageList memo boundaries", () => {
@@ -255,31 +251,57 @@ class FakeResizeObserver {
   }
 }
 
-/** The scroll box jsdom doesn't lay out, clamped the way a browser clamps. */
-function fakeScrollBox(el: HTMLElement, clientHeight: number, initialScrollHeight: number) {
-  let scrollHeight = initialScrollHeight;
+/**
+ * The list's scroll box, which jsdom doesn't lay out, clamped the way a
+ * browser clamps. On the prototype, so it is in place before the list mounts
+ * (the list pins in its mounting commit); restoreMocks removes it after.
+ */
+function fakeScrollBox(
+  initialClientHeight: number,
+  /** A height, or one read off the rendered list on every access. */
+  initialScrollHeight: number | (() => number)
+) {
+  let clientHeight = initialClientHeight;
+  let height = initialScrollHeight;
   let scrollTop = 0;
-  const clamp = (v: number) => Math.max(0, Math.min(v, scrollHeight - clientHeight));
-  Object.defineProperties(el, {
-    clientHeight: { configurable: true, get: () => clientHeight },
-    scrollHeight: { configurable: true, get: () => scrollHeight },
-    scrollTop: { configurable: true, get: () => scrollTop, set: (v: number) => (scrollTop = clamp(v)) },
+  const scrollHeightNow = () => (typeof height === "function" ? height() : height);
+  const clamp = (v: number) => Math.max(0, Math.min(v, scrollHeightNow() - clientHeight));
+  const isList = (el: Element) => el.classList.contains("scrollbar-autohide");
+  vi.spyOn(Element.prototype, "clientHeight", "get").mockImplementation(function (this: Element) {
+    return isList(this) ? clientHeight : 0;
   });
-  const content = el.firstElementChild!;
+  vi.spyOn(Element.prototype, "scrollHeight", "get").mockImplementation(function (this: Element) {
+    return isList(this) ? scrollHeightNow() : 0;
+  });
+  vi.spyOn(Element.prototype, "scrollTop", "get").mockImplementation(function (this: Element) {
+    return isList(this) ? scrollTop : 0;
+  });
+  vi.spyOn(Element.prototype, "scrollTop", "set").mockImplementation(function (this: Element, v: number) {
+    if (isList(this)) scrollTop = clamp(v);
+  });
+  const list = () => document.querySelector<HTMLElement>(".scrollbar-autohide")!;
+  /** scrollTop clamps, observers run, and a moved scrollTop fires a scroll event. */
+  function relayout(resized: Element) {
+    const before = scrollTop;
+    scrollTop = clamp(scrollTop);
+    act(() => FakeResizeObserver.resized(resized));
+    if (scrollTop !== before) act(() => void list().dispatchEvent(new Event("scroll")));
+  }
   return {
-    /** The content changed height: scrollTop clamps, observers run, and a
-     *  moved scrollTop fires a scroll event. */
-    resize(height: number) {
-      const before = scrollTop;
-      scrollHeight = height;
-      scrollTop = clamp(scrollTop);
-      act(() => FakeResizeObserver.resized(content));
-      if (scrollTop !== before) act(() => void el.dispatchEvent(new Event("scroll")));
+    /** The content changed height (to `next`, or to what it now reads). */
+    resize(next?: number) {
+      if (next !== undefined) height = next;
+      relayout(list().firstElementChild!);
+    },
+    /** The scroll box changed height (a pane resize, the composer growing). */
+    resizeBox(height: number) {
+      clientHeight = height;
+      relayout(list());
     },
     /** The reader scrolls to `top`. */
     scrollTo(top: number) {
       scrollTop = clamp(top);
-      act(() => void el.dispatchEvent(new Event("scroll")));
+      act(() => void list().dispatchEvent(new Event("scroll")));
     },
   };
 }
@@ -298,7 +320,8 @@ describe("MessageList scroll pinning", () => {
 
   // The list's scroll wiring hangs off the scroll container, which a chat
   // opened without a cache only mounts once the history arrives.
-  async function open(path: "skeleton" | "cached", scrollHeight: number) {
+  function open(path: "skeleton" | "cached", scrollHeight: number) {
+    const box = fakeScrollBox(530, scrollHeight);
     if (path === "skeleton") useAppStore.setState({ loadingMessages: true });
     else useAppStore.setState({ messages: { [CHAT]: history } });
     const view = render(<MessageList chatGUID={CHAT} />);
@@ -306,18 +329,26 @@ describe("MessageList scroll pinning", () => {
       expect(view.queryByTestId("skeleton")).not.toBeNull();
       act(() => useAppStore.setState({ loadingMessages: false, messages: { [CHAT]: history } }));
     }
-    // In place before the first-load pin, which waits two animation frames.
     const list = view.container.querySelector<HTMLElement>(".scrollbar-autohide")!;
-    const box = fakeScrollBox(list, 530, scrollHeight);
-    await waitFor(() => expect(view.container.querySelector(".opacity-100")).not.toBeNull());
     const pill = () => view.getByLabelText("Jump to latest").classList.contains("opacity-100");
     return { list, box, pill };
   }
 
   it.each(["skeleton", "cached"] as const)(
+    "opens on the newest message in the commit that mounts the list (%s)",
+    (path) => {
+      // No frames have run: the first paint is already at the bottom, so
+      // nothing has to be hidden while it settles.
+      const { list } = open(path, 617);
+      expect(list.scrollTop).toBe(87);
+      expect(list.querySelector(".opacity-0")).toBeNull();
+    }
+  );
+
+  it.each(["skeleton", "cached"] as const)(
     "re-pins content that shrinks and grows back after first paint (%s)",
-    async (path) => {
-      const { list, box } = await open(path, 617);
+    (path) => {
+      const { list, box } = open(path, 617);
       expect(list.scrollTop).toBe(87);
 
       // A link card's image swaps in: the list stops overflowing, then grows.
@@ -328,10 +359,18 @@ describe("MessageList scroll pinning", () => {
     }
   );
 
+  it("keeps a pinned reader pinned when the scroll box shrinks", () => {
+    const { list, box } = open("cached", 619);
+    expect(list.scrollTop).toBe(89);
+    // The composer grows a line.
+    box.resizeBox(510);
+    expect(list.scrollTop).toBe(109);
+  });
+
   it.each(["skeleton", "cached"] as const)(
     "leaves a reader who scrolled up where they are (%s)",
-    async (path) => {
-      const { list, box, pill } = await open(path, 619);
+    (path) => {
+      const { list, box, pill } = open(path, 619);
       expect(list.scrollTop).toBe(89);
       expect(pill()).toBe(false);
 
@@ -341,6 +380,7 @@ describe("MessageList scroll pinning", () => {
       expect(pill()).toBe(true);
 
       box.resize(819);
+      box.resizeBox(510);
       expect(list.scrollTop).toBe(0);
     }
   );
@@ -602,6 +642,50 @@ describe("MessageList earlier history", () => {
     fireEvent.click(view.getByText("Load earlier messages"));
     await waitFor(() => expect(view.queryByText("Load earlier messages")).toBeNull());
     expect(vi.mocked(fetchOlderMessages).mock.calls[1]).toEqual([CHAT, m1]);
+  });
+
+  // 100px a row (the button row and each message), so a page landing above
+  // grows the list the way a browser lays it out.
+  function openScrolledBack(cached: number, scrollTo: number, page: number) {
+    FakeResizeObserver.all.length = 0;
+    vi.stubGlobal("ResizeObserver", FakeResizeObserver);
+    const rows = () => document.querySelector(".scrollbar-autohide > div")?.children.length ?? 0;
+    const box = fakeScrollBox(530, () => rows() * 100);
+    const at = (i: number) => T0 + i * MIN;
+    useAppStore.setState({
+      messages: { [CHAT]: Array.from({ length: cached }, (_, i) => msg(`c${i}`, { dateCreated: at(100 + i) })) },
+    });
+    vi.mocked(fetchOlderMessages).mockResolvedValueOnce(
+      Array.from({ length: page }, (_, i) => msg(`o${i}`, { dateCreated: at(i) }))
+    );
+    const view = render(<MessageList chatGUID={CHAT} />);
+    const list = view.container.querySelector<HTMLElement>(".scrollbar-autohide")!;
+    // Near the top: the scroll fetches the page before.
+    box.scrollTo(scrollTo);
+    return { list, box };
+  }
+
+  it("keeps what was on screen in place when an earlier page lands", async () => {
+    // 11 rows: 1100px in a 530px box, pinned at 570; the reader goes to 100.
+    const { list, box } = openScrolledBack(10, 100, 5);
+    await waitFor(() => expect(rendersOf("o0")).toHaveLength(1));
+    // 16 rows now; what was 100px from the top still is.
+    expect(list.scrollTop).toBe(1600 - 1100 + 100);
+    box.resize();
+    expect(list.scrollTop).toBe(600);
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps the anchor in a list that overflows by less than the bottom zone", async () => {
+    // 6 rows: 600px in 530px. At the very top the reader is 70px from the
+    // bottom, which still counts as being there.
+    const { list, box } = openScrolledBack(5, 0, 5);
+    await waitFor(() => expect(rendersOf("o0")).toHaveLength(1));
+    expect(list.scrollTop).toBe(1100 - 600);
+    // The page's growth is above the reader: not a reason to re-pin.
+    box.resize();
+    expect(list.scrollTop).toBe(500);
+    vi.unstubAllGlobals();
   });
 
   it("offers a retry when a page fails", async () => {

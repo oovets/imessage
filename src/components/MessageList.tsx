@@ -341,7 +341,6 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
 
   const [showJump, setShowJump] = useState(false);
   const [unseenCount, setUnseenCount] = useState(0);
-  const [ready, setReady] = useState(false);
 
   // Whether the scroll container is mounted, i.e. neither early return below
   // applies. A chat opened without a cache mounts on the skeleton, so the
@@ -397,6 +396,11 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
     if (!anchor || !el) return;
     prependAnchorRef.current = null;
     el.scrollTop = el.scrollHeight - anchor.height + anchor.top;
+    // The page grew the list above the reader. Within 80px of the bottom
+    // still counts as pinned, so without this the ResizeObserver and the
+    // scroll handler took it for new content and moved what was restored.
+    lastScrollHeightRef.current = el.scrollHeight;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight > 1) wasAtBottomRef.current = false;
   }, [older]);
 
   function scrollToBottom(behavior: ScrollBehavior = "auto") {
@@ -442,10 +446,9 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
 
   // Must run before the firstLoad layout effect below, so readyRef is reset
   // in the same render when chatGUID changes — otherwise switching to a chat
-  // with cached messages leaves the content stuck at opacity-0.
+  // with cached messages skips its first-load pin.
   useLayoutEffect(() => {
     readyRef.current = false;
-    setReady(false);
     wasAtBottomRef.current = true;
     setShowJump(false);
     setUnseenCount(0);
@@ -464,7 +467,10 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
         el.scrollTop = el.scrollHeight;
       }
     });
+    // The content for late images and new bubbles; the scroll box for a pane
+    // resize or the composer growing a line, which shrink it from below.
     ro.observe(content);
+    ro.observe(el);
     return () => ro.disconnect();
   }, [chatGUID, listShown]);
 
@@ -480,18 +486,15 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
     if (firstLoad) {
       lastCountRef.current = visibleCount;
       lastLatestVisibleKeyRef.current = latestVisibleKey;
-      requestAnimationFrame(() => {
-        scrollToBottom("auto");
-        requestAnimationFrame(() => {
-          scrollToBottom("auto");
-          // The pin's own scroll events came before this and were ignored.
-          // Record the height they'd have recorded, or the reader's first
-          // scroll up reads as growth and is snapped back to the bottom.
-          lastScrollHeightRef.current = scrollRef.current?.scrollHeight ?? 0;
-          readyRef.current = true;
-          setReady(true);
-        });
-      });
+      // Pinned before the first paint: reading scrollHeight lays the list
+      // out, so the chat opens on its newest message with nothing to hide.
+      // (It used to wait two frames at opacity 0, then fade in over 150 ms.)
+      // What settles later is re-pinned by the ResizeObserver above.
+      scrollToBottom("auto");
+      // Record the height, or the reader's first scroll up reads as growth
+      // and is snapped back to the bottom.
+      lastScrollHeightRef.current = scrollRef.current?.scrollHeight ?? 0;
+      readyRef.current = true;
       return;
     }
 
@@ -542,18 +545,14 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
         ref={scrollRef}
         className="scrollbar-autohide absolute inset-0 overflow-y-auto overflow-x-hidden py-2.5 [overflow-anchor:none]"
       >
-        <div
-          ref={contentRef}
-          className={cn(
-            // A short history sits at the bottom, next to the composer.
-            "flex min-h-full flex-col justify-end transition-opacity duration-150",
-            ready ? "opacity-100" : "opacity-0"
-          )}
-        >
+        {/* A short history sits at the bottom, next to the composer. */}
+        <div ref={contentRef} className="flex min-h-full flex-col justify-end">
           {olderState !== "done" && (
             <div className="flex justify-center py-1.5">
               {olderState === "loading" ? (
-                <span className="font-mono text-cc-meta text-muted-foreground">
+                // The button's padding, so the row keeps its height and the
+                // history below doesn't jump when loading starts.
+                <span className="py-0.5 font-mono text-cc-meta text-muted-foreground">
                   Loading earlier messages…
                 </span>
               ) : (
