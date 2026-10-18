@@ -29,6 +29,7 @@ interface MessageBubbleProps {
   timeLabel?: string;
   reactions?: string[];
   isFirstInGroup?: boolean;
+  isLastInGroup?: boolean;
   onReply?: (message: Message) => void;
   onReact?: (message: Message, reactionKey: string) => void;
 }
@@ -194,6 +195,7 @@ export const MessageBubble = memo(function MessageBubble({
   timeLabel,
   reactions,
   isFirstInGroup = true,
+  isLastInGroup = true,
   onReply,
   onReact,
 }: MessageBubbleProps) {
@@ -316,7 +318,9 @@ export const MessageBubble = memo(function MessageBubble({
           "flex flex-col px-3.5",
           !superlightMode && "animate-in fade-in slide-in-from-bottom-1 duration-200",
           isMe ? "items-end" : "items-start",
-          isFirstInGroup ? "mt-2.5" : "mt-[3px]"
+          // A group stacks flush: each follow-on bubble overlaps the one
+          // above by its 1px border, so the seam is a single hairline.
+          isFirstInGroup ? "mt-2.5" : superlightMode ? "mt-0" : "-mt-px"
         )}
       >
         {showSender && senderName && !ircLine && (
@@ -345,10 +349,11 @@ export const MessageBubble = memo(function MessageBubble({
                     // Right padding is 6px wider than the left and the text
                     // pulls back into it, so lines wrap a word early and the
                     // rag stays even — the design's bubble measure.
-                    "rounded-md py-2 pl-[11px] pr-[17px]",
-                    isMe
-                      ? "bg-outgoing text-outgoing-foreground"
-                      : "bg-panel text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]",
+                    "rounded-md py-2 pl-[11px] pr-[17px] shadow-[inset_0_0_0_1px_hsl(var(--border))]",
+                    isMe ? "bg-outgoing text-outgoing-foreground" : "bg-panel text-foreground",
+                    // Square the sender-side corners where bubbles join.
+                    !isFirstInGroup && (isMe ? "rounded-tr-none" : "rounded-tl-none"),
+                    !isLastInGroup && (isMe ? "rounded-br-none" : "rounded-bl-none"),
                     message.pending && "opacity-70",
                     message.failed && "shadow-[inset_0_0_0_1px_hsl(var(--signal))]"
                   )

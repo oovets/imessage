@@ -33,7 +33,6 @@ interface MessageListProps {
   chatGUID: string;
 }
 
-const GROUP_GAP_MS = 60 * 1000;
 const TIME_HEADER_MS = 15 * 60 * 1000;
 
 const TAPBACK_EMOJI: Record<number, string> = {
@@ -136,13 +135,13 @@ function senderKey(m: Message): string {
 }
 
 /**
- * `b`, right after `a`, joins its bubble group: same sender, within `gap`
- * (a minute by default), and never across a date chip.
+ * `b`, right after `a`, joins its bubble group: same sender, and never across
+ * a time header or a date chip — a run from one person stays one block.
  */
-function sameGroup(a: Message, b: Message, gap = GROUP_GAP_MS): boolean {
+function sameGroup(a: Message, b: Message): boolean {
   return (
     senderKey(a) === senderKey(b) &&
-    b.dateCreated - a.dateCreated < gap &&
+    b.dateCreated - a.dateCreated <= TIME_HEADER_MS &&
     isSameDay(a.dateCreated, b.dateCreated)
   );
 }
@@ -187,11 +186,8 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
     [participantCount, visible]
   );
   // IRC reads as a transcript: who said what matters on every group, even in
-  // a channel where only one person has spoken in the loaded history, and a
-  // run of lines from one nick stays one group until a time header would
-  // split it anyway.
+  // a channel where only one person has spoken in the loaded history.
   const isIrc = isSource(chatGUID, "irc");
-  const groupGap = isIrc ? TIME_HEADER_MS : GROUP_GAP_MS;
   const canReply = supports(chatGUID, "replies");
   const canReact = supports(chatGUID, "reactions");
   const latestVisible = visible[visible.length - 1];
@@ -208,7 +204,7 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
     if (showTimestamps) {
       visible.forEach((m, i) => {
         const next = visible[i + 1];
-        if (!next || !sameGroup(m, next, groupGap)) {
+        if (!next || !sameGroup(m, next)) {
           due = Math.min(due, nextMessageTimeChange(m.dateCreated, renderedAt));
         }
       });
@@ -216,7 +212,7 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
     return whenDue(due, () => setClockTick((n) => n + 1));
     // renderedAt is the time of the render that scheduled this; renders after
     // it and before `due` show the same labels.
-  }, [visible, showTimestamps, clockTick, groupGap]);
+  }, [visible, showTimestamps, clockTick]);
 
   // The previous map, whose arrays are reused where unchanged. Writing the ref
   // during render is safe: an array is only ever swapped for one with the same
@@ -438,8 +434,8 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
             const showTimeHeader =
               showTimestamps && !showDateChip && (!prev || msg.dateCreated - prev.dateCreated > TIME_HEADER_MS);
 
-            const sameSenderAsPrev = !!prev && sameGroup(prev, msg, groupGap);
-            const sameSenderAsNext = !!next && sameGroup(msg, next, groupGap);
+            const sameSenderAsPrev = !!prev && sameGroup(prev, msg);
+            const sameSenderAsNext = !!next && sameGroup(msg, next);
 
             const isFirstInGroup = !sameSenderAsPrev;
             const isLastInGroup = !sameSenderAsNext;
@@ -477,6 +473,7 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
                   timeLabel={timeLabel}
                   reactions={reactions}
                   isFirstInGroup={isFirstInGroup}
+                  isLastInGroup={isLastInGroup}
                   onReply={canReply ? handleReply : undefined}
                   onReact={canReact ? handleReact : undefined}
                 />

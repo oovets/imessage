@@ -39,6 +39,16 @@ for arg in "$@"; do
   esac
 done
 
+# WebKitGTK builds a GStreamer audio pipeline for <video>/<audio>. Without
+# autoaudiosink (gst-plugins-good) that path SIGABRTs WebKitWebProcess — the
+# window stays up but the UI freezes. Arch's webkit2gtk package does not pull
+# this in. See https://wails.io/docs/guides/linux/#gstreamer-error-when-using-audio-or-video-elements
+if ! gst-inspect-1.0 autoaudiosink >/dev/null 2>&1; then
+  echo "missing GStreamer autoaudiosink (WebKit will crash on media)." >&2
+  echo "install: sudo pacman -S gst-plugins-good" >&2
+  exit 1
+fi
+
 if [ "$BUILD" = 1 ]; then
   (cd "$REPO" && npx tauri build --no-bundle)
 fi

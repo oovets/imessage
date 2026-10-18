@@ -53,8 +53,10 @@ export const DEFAULT_THEME_TOKENS: Record<ThemeMode, ThemeTokenValues> = {
     foreground: "#111110",
     primary: "#111110",
     primaryForeground: "#f4f3ef",
-    outgoing: "#111110",
-    outgoingForeground: "#f4f3ef",
+    // Light grey, a quiet step below the off-white window: a black block
+    // was the loudest thing on screen.
+    outgoing: "#e6e4dd",
+    outgoingForeground: "#111110",
     muted: "#ebe9e3",
     mutedForeground: "#6e6c66",
     border: "#dedcd5",

@@ -127,7 +127,7 @@ describe("MessageList memo boundaries", () => {
 
     // A new message in its own group: the old bubbles' props are all the
     // same references (message, reactions, handlers), so they skip.
-    act(() => useAppStore.getState().upsertMessage(msg("m3", { dateCreated: T0 + 20 * MIN })));
+    act(() => useAppStore.getState().upsertMessage(msg("m3", { dateCreated: T0 + 30 * MIN })));
     expect(rendersOf("m3")).toHaveLength(1);
     expect(rendersOf("m1")).toHaveLength(1);
     expect(rendersOf("m2")).toHaveLength(1);
@@ -439,17 +439,22 @@ describe("MessageList in IRC", () => {
     expect(lastProps("a1")?.onReply).toBeUndefined();
   });
 
-  it("leaves other sources' one-minute grouping alone", async () => {
+  it("groups other sources' consecutive messages until a time header", async () => {
     useAppStore.setState({
       messages: {
         [CHAT]: [
           msg("x1", { isFromMe: false, handle: alice, dateCreated: T0 }),
           msg("x2", { isFromMe: false, handle: alice, dateCreated: T0 + 3 * MIN }),
+          // Past the 15-minute gap: a new group.
+          msg("x3", { isFromMe: false, handle: alice, dateCreated: T0 + 20 * MIN }),
         ],
       },
     });
     await renderReady();
-    expect(lastProps("x2")?.isFirstInGroup).toBe(true);
+    expect(lastProps("x1")?.isLastInGroup).toBe(false);
+    expect(lastProps("x2")?.isFirstInGroup).toBe(false);
+    expect(lastProps("x2")?.isLastInGroup).toBe(true);
+    expect(lastProps("x3")?.isFirstInGroup).toBe(true);
     // One sender in a 1:1 iMessage chat: no name, as before.
     expect(lastProps("x1")?.showSender).toBe(false);
   });

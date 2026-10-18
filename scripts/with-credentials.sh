@@ -25,4 +25,11 @@ else
   echo "with-credentials: $TG_FILE not readable, Telegram stays disabled" >&2
 fi
 
+# WebKitGTK DMA-BUF renderer SIGABRTs the web process on some Wayland+Mesa
+# stacks (Hyprland + Intel). Opt out of that path unless already configured.
+# See https://v2.tauri.app/develop/debug/linux-graphics/
+if [ -z "${WEBKIT_DISABLE_DMABUF_RENDERER+x}" ]; then
+  export WEBKIT_DISABLE_DMABUF_RENDERER=1
+fi
+
 exec "$@"
