@@ -4,6 +4,7 @@
  * bar so Enter in the bar jumps to exactly what the sidebar shows first.
  */
 
+import { SOURCES_IN_ORDER, networkGroups } from "@/lib/accounts";
 import { sourceOfGuid, type ChatSource } from "@/lib/source";
 import { decodeEscapedUnicode, getChatDisplayName, type Chat } from "@/types";
 
@@ -19,8 +20,19 @@ export function sourceTag(guid: string): string {
   return SOURCE_TAG[sourceOfGuid(guid)];
 }
 
-// "tg: anna" / "slack:" / "imsg: …" narrow to one source — the per-account
-// groups are gone from the sidebar, so this is how you filter by source now.
+/** A source's name, as the sidebar's network filter spells it. */
+export const SOURCE_NAME: Record<ChatSource, string> = {
+  imessage: "iMessage",
+  telegram: "Telegram",
+  slack: "Slack",
+  irc: "IRC",
+};
+
+/** How the sidebar orders Recent: by recency, or in per-network groups. */
+export type ChatListGrouping = "time" | "network";
+
+// "tg: anna" / "slack:" / "imsg: …" narrow the search to one source, over
+// the sidebar's network filter if one is set.
 const PREFIXES: Record<string, ChatSource> = {
   "imsg:": "imessage",
   "imessage:": "imessage",
@@ -31,10 +43,11 @@ const PREFIXES: Record<string, ChatSource> = {
   "irc:": "irc",
 };
 
-export function filterChats(chats: Chat[], query: string): Chat[] {
+/** `chats` matching `query`, and from `only` when a network filter is set. */
+export function filterChats(chats: Chat[], query: string, only: ChatSource | null = null): Chat[] {
   let q = query.trim().toLowerCase();
-  if (!q) return chats;
-  let source: ChatSource | null = null;
+  if (!q && !only) return chats;
+  let source: ChatSource | null = only;
   for (const [prefix, src] of Object.entries(PREFIXES)) {
     if (q.startsWith(prefix)) {
       source = src;
@@ -49,6 +62,45 @@ export function filterChats(chats: Chat[], query: string): Chat[] {
     const preview = decodeEscapedUnicode(c.lastMessageText ?? c.lastMessage?.text ?? "").toLowerCase();
     return name.includes(q) || preview.includes(q);
   });
+}
+
+export interface SourceSummary {
+  source: ChatSource;
+  /** Chats in "Waiting on you" (unread, not muted). */
+  waiting: number;
+}
+
+/** The sources `chats` come from, in sidebar order, with what each has waiting. */
+export function summarizeSources(chats: Chat[], now: number = Date.now()): SourceSummary[] {
+  const waiting = new Map<ChatSource, number>();
+  for (const c of chats) {
+    const source = sourceOfGuid(c.guid);
+    waiting.set(source, (waiting.get(source) ?? 0) + (isWaiting(c, now) ? 1 : 0));
+  }
+  return SOURCES_IN_ORDER.filter((s) => waiting.has(s)).map((source) => ({
+    source,
+    waiting: waiting.get(source)!,
+  }));
+}
+
+/**
+ * The network filter in effect: none while no chat comes from that source
+ * (it was disconnected), so the sidebar never strands on an empty list with
+ * its filter row gone.
+ */
+export function activeSourceFilter(chats: Chat[], filter: ChatSource | null): ChatSource | null {
+  return filter && chats.some((c) => sourceOfGuid(c.guid) === filter) ? filter : null;
+}
+
+/** Recent in the order the sidebar lists it; folded network groups left out. */
+export function listedRecent(
+  recent: Chat[],
+  grouping: ChatListGrouping,
+  labels: Record<string, string>,
+  collapsed: readonly string[]
+): Chat[] {
+  if (grouping === "time") return recent;
+  return networkGroups(recent, labels, collapsed).flatMap((g) => (g.collapsed ? [] : g.chats));
 }
 
 export interface TriageSections {
