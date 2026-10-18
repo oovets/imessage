@@ -10,6 +10,7 @@ import { tg } from "@/telegram/api";
 import { parseTgChatGuid } from "@/telegram/adapters";
 import { cn } from "@/lib/utils";
 import { deliverIMessage } from "@/lib/sendIMessage";
+import { fetchOlderMessages } from "@/lib/olderHistory";
 import {
   type Message,
   formatDate,
@@ -157,6 +158,15 @@ const NO_MESSAGES: Message[] = [];
 export const MessageList = memo(function MessageList({ chatGUID }: MessageListProps) {
   const rawMessages = useAppStore((s) => s.messages[chatGUID]);
   const messages: Message[] = rawMessages ?? NO_MESSAGES;
+  // Pages scrolled back to. The store caches only the newest messages per
+  // chat, so these live here, for as long as this chat is open in the pane.
+  const [older, setOlder] = useState<Message[]>(NO_MESSAGES);
+  const [olderState, setOlderState] = useState<"idle" | "loading" | "error" | "done">("idle");
+  const history = useMemo(() => {
+    if (older.length === 0) return messages;
+    const cached = new Set(messages.map((m) => m.guid));
+    return [...older.filter((m) => !cached.has(m.guid)), ...messages];
+  }, [older, messages]);
   // The loading flag is global and only matters while this chat is empty, so
   // subscribe to exactly that: another pane's fetch no longer re-renders a
   // list that already has content.
@@ -172,8 +182,8 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
   const serverUrl = useAppStore((s) => s.serverUrl);
   const password = useAppStore((s) => s.password);
   const visible = useMemo(
-    () => messages.filter((m) => reactionTypeNum(m.associatedMessageType) < 2000),
-    [messages]
+    () => history.filter((m) => reactionTypeNum(m.associatedMessageType) < 2000),
+    [history]
   );
   // Sender names only matter in groups. Participants cover iMessage; for
   // sources whose chats carry none (Slack channels), more than one distinct
@@ -221,10 +231,10 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
   // contents, so even a discarded render can't leave a wrong one behind.
   const prevReactionMapRef = useRef<Map<string, string[]>>(new Map());
   const reactionMap = useMemo(() => {
-    const next = reuseUnchangedReactions(buildReactionMap(messages), prevReactionMapRef.current);
+    const next = reuseUnchangedReactions(buildReactionMap(history), prevReactionMapRef.current);
     prevReactionMapRef.current = next;
     return next;
-  }, [messages]);
+  }, [history]);
 
   // Stable across renders so memoized bubbles skip re-rendering.
   const handleReply = useCallback(
@@ -303,6 +313,56 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
   const [unseenCount, setUnseenCount] = useState(0);
   const [ready, setReady] = useState(false);
 
+  // Scrolling back: fetch the page before the oldest loaded message, then
+  // keep what was on screen in place while it lands above.
+  const historyRef = useRef(history);
+  historyRef.current = history;
+  const olderStateRef = useRef(olderState);
+  olderStateRef.current = olderState;
+  const olderBusyRef = useRef(false);
+  const prependAnchorRef = useRef<{ height: number; top: number } | null>(null);
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
+
+  const loadOlder = useCallback(async () => {
+    const oldest = historyRef.current[0];
+    if (!oldest || olderBusyRef.current || olderStateRef.current === "done") return;
+    olderBusyRef.current = true;
+    setOlderState("loading");
+    try {
+      const page = await fetchOlderMessages(chatGUID, oldest);
+      if (!aliveRef.current) return;
+      const known = new Set(historyRef.current.map((m) => m.guid));
+      const fresh = page.filter((m) => !known.has(m.guid));
+      if (fresh.length > 0) {
+        const el = scrollRef.current;
+        if (el) prependAnchorRef.current = { height: el.scrollHeight, top: el.scrollTop };
+        setOlder((prev) => [...fresh, ...prev].sort((a, b) => a.dateCreated - b.dateCreated));
+      }
+      // Nothing new before the oldest message: the start of the chat.
+      setOlderState(fresh.length > 0 ? "idle" : "done");
+    } catch {
+      if (aliveRef.current) setOlderState("error");
+    } finally {
+      olderBusyRef.current = false;
+    }
+  }, [chatGUID]);
+  const loadOlderRef = useRef(loadOlder);
+  loadOlderRef.current = loadOlder;
+
+  useLayoutEffect(() => {
+    const anchor = prependAnchorRef.current;
+    const el = scrollRef.current;
+    if (!anchor || !el) return;
+    prependAnchorRef.current = null;
+    el.scrollTop = el.scrollHeight - anchor.height + anchor.top;
+  }, [older]);
+
   function scrollToBottom(behavior: ScrollBehavior = "auto") {
     const el = scrollRef.current;
     if (!el) return;
@@ -330,6 +390,9 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
       }
       const atBottom = distanceFromBottom < 80;
       wasAtBottomRef.current = atBottom;
+      // Near the top: fetch the page before. A failed page waits for its
+      // retry button rather than refiring on every scroll.
+      if (el!.scrollTop < 300 && olderStateRef.current === "idle") void loadOlderRef.current();
       if (atBottom) {
         setShowJump(false);
         setUnseenCount(0);
@@ -402,6 +465,10 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
         setUnseenCount((c) => c + added);
         setShowJump(true);
       }
+    } else if (readyRef.current) {
+      // Older pages and removals change the count without a new latest
+      // message; keep it current so the next arrival counts only itself.
+      lastCountRef.current = visibleCount;
     }
   }, [visible.length, latestVisibleKey, latestVisible?.isFromMe]);
 
@@ -443,6 +510,28 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
             ready ? "opacity-100" : "opacity-0"
           )}
         >
+          {olderState !== "done" && (
+            <div className="flex justify-center py-1.5">
+              {olderState === "loading" ? (
+                <span className="font-mono text-cc-meta text-muted-foreground">
+                  Loading earlier messages…
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void loadOlder()}
+                  className={cn(
+                    "rounded-md px-2 py-0.5 font-mono text-cc-meta transition-[background-color] duration-120 hover:bg-muted hover:text-foreground",
+                    olderState === "error" ? "text-signal" : "text-muted-foreground"
+                  )}
+                >
+                  {olderState === "error"
+                    ? "Couldn’t load earlier messages · retry"
+                    : "Load earlier messages"}
+                </button>
+              )}
+            </div>
+          )}
           {visible.map((msg, i) => {
             const prev = visible[i - 1];
             const next = visible[i + 1];

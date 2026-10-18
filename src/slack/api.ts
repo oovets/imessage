@@ -17,8 +17,14 @@ export const sl = {
   connect: (workspaceId: string) => invoke<void>("sl_connect", { workspaceId }),
   conversations: (workspaceId: string) =>
     invoke<SlChat[]>("sl_conversations", { workspaceId }),
-  history: (workspaceId: string, channelId: string, limit = 50) =>
-    invoke<SlMessage[]>("sl_history", { workspaceId, channelId, limit }),
+  /** Newest first. `latest` (a message ts) pages back from that message. */
+  history: (workspaceId: string, channelId: string, limit = 50, latest?: string) =>
+    invoke<SlMessage[]>("sl_history", {
+      workspaceId,
+      channelId,
+      limit,
+      ...(latest ? { latest } : {}),
+    }),
   selfUserId: (workspaceId: string) =>
     invoke<string | null>("sl_self_user_id", { workspaceId }),
   /** A user's public avatar URL, or null if they have none. */

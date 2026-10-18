@@ -285,6 +285,19 @@ impl History {
         buffer.recent.iter().skip(skip).cloned().collect()
     }
 
+    /// The newest `limit` messages older than `before_ts` (epoch millis),
+    /// oldest first: the page above what the UI has loaded.
+    pub fn before(&self, id: &str, before_ts: i64, limit: usize) -> Vec<IrcMessage> {
+        let buffers = self.lock();
+        let Some(buffer) = buffers.get(id) else {
+            return Vec::new();
+        };
+        // `recent` is kept sorted by time.
+        let end = buffer.recent.partition_point(|m| m.ts < before_ts);
+        let start = end.saturating_sub(limit);
+        buffer.recent.range(start..end).cloned().collect()
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Buffer>> {
         // A panic while holding the lock leaves plain data behind, not a
         // broken invariant worth taking the whole network down for.
@@ -394,6 +407,23 @@ mod tests {
         assert_eq!(info.last_ts, 2);
         // Dedupe state is rebuilt from disk too.
         assert!(!h.append("#rust", &msg("b", 2, "two")));
+    }
+
+    #[test]
+    fn pages_backwards_from_a_timestamp() {
+        let dir = tempfile::tempdir().unwrap();
+        let h = History::open(dir.path()).unwrap();
+        h.ensure("#rust", "#Rust", BufferKind::Channel, true);
+        for (i, text) in ["one", "two", "three", "four", "five"].iter().enumerate() {
+            h.append("#rust", &msg(text, i as i64 + 1, text));
+        }
+        let page = |ts, limit| -> Vec<String> {
+            h.before("#rust", ts, limit).into_iter().map(|m| m.text).collect()
+        };
+        assert_eq!(page(4, 2), vec!["two", "three"]);
+        assert_eq!(page(3, 10), vec!["one", "two"]);
+        assert!(page(1, 10).is_empty());
+        assert!(h.before("#nope", 10, 10).is_empty());
     }
 
     #[test]

@@ -302,7 +302,8 @@ export class BlueBubblesClient {
     chatGUID: string,
     limit: number,
     includeAttachments: boolean,
-    after?: number
+    after?: number,
+    before?: number
   ): Promise<Message[]> {
     let qs = `${this.authParam()}&limit=${limit}`;
     if (includeAttachments) {
@@ -311,6 +312,9 @@ export class BlueBubblesClient {
     }
     if (after) {
       qs += `&after=${after}`;
+    }
+    if (before) {
+      qs += `&before=${before}`;
     }
     const url =
       `${this.baseUrl}/api/v1/chat/${encodeURIComponent(chatGUID)}/message` +
@@ -334,17 +338,23 @@ export class BlueBubblesClient {
     return [...msgs].reverse();
   }
 
-  async getMessages(chatGUID: string, limit = 50, after?: number): Promise<Message[]> {
+  /** The newest `limit` messages, oldest first; after/before (epoch ms) bound them. */
+  async getMessages(
+    chatGUID: string,
+    limit = 50,
+    after?: number,
+    before?: number
+  ): Promise<Message[]> {
     // A merged conversation reads from every underlying thread (usually just
     // one; two for split iMessage/SMS pairs) and interleaves by time, stamped
     // with the canonical guid so the UI sees a single conversation.
     const variants = chatGuidVariants(chatGUID);
     let msgs: Message[];
     if (variants.length === 1) {
-      msgs = await this._getMessages(chatGUID, limit, true, after);
+      msgs = await this._getMessages(chatGUID, limit, true, after, before);
     } else {
       const perThread = await Promise.all(
-        variants.map((v) => this._getMessages(v, limit, true, after).catch(() => []))
+        variants.map((v) => this._getMessages(v, limit, true, after, before).catch(() => []))
       );
       msgs = perThread
         .flat()

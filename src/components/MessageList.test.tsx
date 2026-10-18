@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { act, render, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "@/store/useAppStore";
 import type { Message } from "@/types";
+import { fetchOlderMessages } from "@/lib/olderHistory";
 import { MessageList } from "./MessageList";
 
 // The bubble is swapped for a memoized recorder, so the tests see exactly
@@ -34,6 +35,7 @@ vi.mock("@/components/MessageListSkeleton", () => ({
 }));
 vi.mock("@/api/clientFactory", () => ({ getClient: vi.fn() }));
 vi.mock("@/telegram/api", () => ({ tg: { react: vi.fn() } }));
+vi.mock("@/lib/olderHistory", () => ({ fetchOlderMessages: vi.fn() }));
 
 const CHAT = "iMessage;-;+46700000000";
 const OTHER = "iMessage;-;+46700000001";
@@ -457,5 +459,41 @@ describe("MessageList in IRC", () => {
     expect(lastProps("x3")?.isFirstInGroup).toBe(true);
     // One sender in a 1:1 iMessage chat: no name, as before.
     expect(lastProps("x1")?.showSender).toBe(false);
+  });
+});
+
+describe("MessageList earlier history", () => {
+  it("prepends the page before the oldest message, until the start", async () => {
+    const m3 = msg("m3", { dateCreated: T0 + 30 * MIN });
+    const m4 = msg("m4", { dateCreated: T0 + 31 * MIN });
+    useAppStore.setState({ messages: { [CHAT]: [m3, m4] } });
+    const m1 = msg("m1", { dateCreated: T0 });
+    const m2 = msg("m2", { dateCreated: T0 + MIN });
+    // The page may overlap what is loaded; m3 must not double up.
+    vi.mocked(fetchOlderMessages).mockResolvedValueOnce([m1, m2, m3]).mockResolvedValueOnce([]);
+    const view = await renderReady();
+
+    fireEvent.click(view.getByText("Load earlier messages"));
+    await waitFor(() => expect(rendersOf("m1")).toHaveLength(1));
+    expect(vi.mocked(fetchOlderMessages).mock.calls[0]).toEqual([CHAT, m3]);
+    const order = [...new Set(spy.bubbles.map((b) => b.guid))];
+    expect(order.indexOf("m1")).toBeLessThan(order.indexOf("m2"));
+    expect(rendersOf("m3").length).toBeGreaterThan(0);
+
+    // The next page is empty: the start of the chat, so the button goes.
+    fireEvent.click(view.getByText("Load earlier messages"));
+    await waitFor(() => expect(view.queryByText("Load earlier messages")).toBeNull());
+    expect(vi.mocked(fetchOlderMessages).mock.calls[1]).toEqual([CHAT, m1]);
+  });
+
+  it("offers a retry when a page fails", async () => {
+    useAppStore.setState({ messages: { [CHAT]: [msg("m1")] } });
+    vi.mocked(fetchOlderMessages).mockRejectedValueOnce(new Error("offline"));
+    const view = await renderReady();
+
+    fireEvent.click(view.getByText("Load earlier messages"));
+    await waitFor(() =>
+      expect(view.getByText("Couldn’t load earlier messages · retry")).toBeTruthy()
+    );
   });
 });
