@@ -149,6 +149,11 @@ impl IrcClient {
         self.inner.history.recent(&proto::irc_lower(buffer), limit)
     }
 
+    /// The `limit` messages just older than `before_ts` (epoch millis).
+    pub fn history_before(&self, buffer: &str, before_ts: i64, limit: usize) -> Vec<IrcMessage> {
+        self.inner.history.before(&proto::irc_lower(buffer), before_ts, limit)
+    }
+
     /// Send what the user typed into `buffer`. Each line is a message, or a
     /// command when it starts with `/` (`//` sends a literal slash).
     pub fn send_input(&self, buffer: &str, text: &str) -> Result<()> {

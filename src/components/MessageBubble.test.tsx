@@ -230,7 +230,7 @@ describe("MessageBubble memo", () => {
     const m = msg({ text: "stable" });
     const onReply = () => {};
     const onReact = () => {};
-    const reactions = ["❤️"];
+    const reactions = [{ emoji: "❤️", count: 1, mine: false }];
     function Harness() {
       const [n, setN] = useState(0);
       const [message, setMessage] = useState(m);
@@ -332,5 +332,45 @@ describe("MessageBubble actions", () => {
     expect(onRetry).toHaveBeenCalledWith(m);
     fireEvent.click(getByText("Delete"));
     expect(onDiscard).toHaveBeenCalledWith(m);
+  });
+});
+
+describe("MessageBubble reaction chips", () => {
+  it("shows counts and toggles ours by tapback key", () => {
+    const onReact = vi.fn();
+    const m = msg();
+    const { getByLabelText } = render(
+      <MessageBubble
+        message={m}
+        showSender={false}
+        onReact={onReact}
+        reactions={[
+          { emoji: "❤️", count: 2, mine: true },
+          { emoji: "👍", count: 1, mine: false },
+        ]}
+      />
+    );
+    const love = getByLabelText("❤️ 2, yours among them");
+    expect(love.getAttribute("aria-pressed")).toBe("true");
+    expect(love.textContent).toBe("❤️2");
+    fireEvent.click(love);
+    expect(onReact).toHaveBeenCalledWith(m, "love");
+    fireEvent.click(getByLabelText("👍 1"));
+    expect(onReact).toHaveBeenLastCalledWith(m, "like");
+  });
+
+  it("reacts with the emoji itself on Telegram, and reads old cached strings", () => {
+    const onReact = vi.fn();
+    const m = msg({ chatGUID: "tg:1:42", guid: "tg:1:42:7" });
+    const { getByLabelText } = render(
+      <MessageBubble
+        message={m}
+        showSender={false}
+        onReact={onReact}
+        reactions={["🎉 3" as never]}
+      />
+    );
+    fireEvent.click(getByLabelText("🎉 3"));
+    expect(onReact).toHaveBeenCalledWith(m, "🎉");
   });
 });

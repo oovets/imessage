@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render } from "@testing-library/react";
+import { act, fireEvent, render, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { Chat } from "@/types";
 import { useAppStore } from "@/store/useAppStore";
@@ -57,13 +57,13 @@ describe("triage sections", () => {
       sidebarHidden: false,
       chatQuery: "",
     });
-    const { getByText } = render(<ChatList />);
+    const { getByText, getByLabelText } = render(<ChatList />);
     expect(getByText("Waiting on you")).toBeTruthy();
     expect(getByText("1 new")).toBeTruthy();
     expect(getByText("Starred")).toBeTruthy();
     expect(getByText("Recent")).toBeTruthy();
-    // The queue card carries the keyboard hints.
-    expect(getByText("E done")).toBeTruthy();
+    // The queue card carries its "done".
+    expect(getByLabelText("Mark done")).toBeTruthy();
   });
 
   it("filters by source prefix from the command bar", () => {
@@ -78,5 +78,66 @@ describe("triage sections", () => {
     const { queryByText } = render(<ChatList />);
     expect(queryByText("Pontus")).toBeTruthy();
     expect(queryByText("#daily")).toBeNull();
+  });
+});
+
+describe("sidebar keyboard", () => {
+  function setup() {
+    useAppStore.setState({
+      chats: [chat("iMessage;-;+4670", "Elin"), chat("sl:work:C1", "#daily")],
+      isConfigured: true,
+      loadingChats: false,
+      starredChats: [],
+      sidebarHidden: false,
+      chatQuery: "",
+      selectedChatGUID: null,
+    });
+    return render(<ChatList />);
+  }
+  const rowOf = (el: HTMLElement) => el.closest<HTMLElement>("[data-chat-guid]")!;
+
+  it("is one Tab stop, and ↓ moves focus to the next row", async () => {
+    const view = setup();
+    const elin = rowOf(view.getByText("Elin"));
+    const daily = rowOf(view.getByText("#daily"));
+    expect(elin.tabIndex).toBe(0);
+    expect(daily.tabIndex).toBe(-1);
+
+    act(() => elin.focus());
+    fireEvent.keyDown(elin, { key: "ArrowDown" });
+    await waitFor(() => expect(document.activeElement).toBe(daily));
+    expect(daily.tabIndex).toBe(0);
+    expect(elin.tabIndex).toBe(-1);
+  });
+
+  it("opens the focused row with Enter and stars it with S", () => {
+    const view = setup();
+    const daily = rowOf(view.getByText("#daily"));
+    act(() => daily.focus());
+
+    fireEvent.keyDown(daily, { key: "s" });
+    expect(useAppStore.getState().starredChats).toEqual(["sl:work:C1"]);
+
+    fireEvent.keyDown(rowOf(view.getByText("#daily")), { key: "Enter" });
+    expect(useAppStore.getState().selectedChatGUID).toBe("sl:work:C1");
+  });
+});
+
+describe("sidebar empty state", () => {
+  it("opens Settings when no source is set up", () => {
+    useAppStore.setState({
+      chats: [],
+      isConfigured: false,
+      telegramAvailable: false,
+      slackAvailable: false,
+      ircAvailable: false,
+      sidebarHidden: false,
+    });
+    const onOpen = vi.fn();
+    window.addEventListener("app:open-settings", onOpen);
+    const view = render(<ChatList />);
+    fireEvent.click(view.getByText("Open settings"));
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    window.removeEventListener("app:open-settings", onOpen);
   });
 });

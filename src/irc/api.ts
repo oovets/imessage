@@ -41,8 +41,14 @@ export const irc = {
   /** Start the network's client; it connects (and reconnects) in the background. */
   connect: (networkId: string) => invoke<void>("irc_connect", { networkId }),
   buffers: (networkId: string) => invoke<IrcBuffer[]>("irc_buffers", { networkId }),
-  history: (networkId: string, buffer: string, limit = 100) =>
-    invoke<IrcMessage[]>("irc_history", { networkId, buffer, limit }),
+  /** Oldest first. `before` (epoch ms) pages back from the oldest message shown. */
+  history: (networkId: string, buffer: string, limit = 100, before?: number) =>
+    invoke<IrcMessage[]>("irc_history", {
+      networkId,
+      buffer,
+      limit,
+      ...(before !== undefined ? { before } : {}),
+    }),
   /** Composer input: plain lines are messages, `/me`, `/join`, `/msg`… are commands. */
   send: (networkId: string, buffer: string, text: string) =>
     invoke<void>("irc_send", { networkId, buffer, text }),

@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
-import { act, render, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "@/store/useAppStore";
 import type { Message } from "@/types";
+import { fetchOlderMessages } from "@/lib/olderHistory";
+import { getClient } from "@/api/clientFactory";
 import { MessageList } from "./MessageList";
 
 // The bubble is swapped for a memoized recorder, so the tests see exactly
@@ -34,6 +36,7 @@ vi.mock("@/components/MessageListSkeleton", () => ({
 }));
 vi.mock("@/api/clientFactory", () => ({ getClient: vi.fn() }));
 vi.mock("@/telegram/api", () => ({ tg: { react: vi.fn() } }));
+vi.mock("@/lib/olderHistory", () => ({ fetchOlderMessages: vi.fn() }));
 
 const CHAT = "iMessage;-;+46700000000";
 const OTHER = "iMessage;-;+46700000001";
@@ -123,7 +126,7 @@ describe("MessageList memo boundaries", () => {
 
     expect(rendersOf("m1")).toHaveLength(1);
     expect(rendersOf("m2")).toHaveLength(1);
-    expect(lastProps("m1")!.reactions).toEqual(["❤️"]);
+    expect(lastProps("m1")!.reactions).toEqual([{ emoji: "❤️", count: 1, mine: true }]);
 
     // A new message in its own group: the old bubbles' props are all the
     // same references (message, reactions, handlers), so they skip.
@@ -148,7 +151,10 @@ describe("MessageList memo boundaries", () => {
       )
     );
     expect(rendersOf("m1")).toHaveLength(2);
-    expect(lastProps("m1")!.reactions).toEqual(["❤️", "👍"]);
+    expect(lastProps("m1")!.reactions).toEqual([
+      { emoji: "❤️", count: 1, mine: true },
+      { emoji: "👍", count: 1, mine: false },
+    ]);
     expect(rendersOf("m2")).toHaveLength(1);
     expect(rendersOf("m3")).toHaveLength(1);
     // Tapbacks never render as bubbles.
@@ -571,5 +577,85 @@ describe("MessageList in IRC", () => {
     expect(lastProps("x3")?.isFirstInGroup).toBe(true);
     // One sender in a 1:1 iMessage chat: no name, as before.
     expect(lastProps("x1")?.showSender).toBe(false);
+  });
+});
+
+describe("MessageList earlier history", () => {
+  it("prepends the page before the oldest message, until the start", async () => {
+    const m3 = msg("m3", { dateCreated: T0 + 30 * MIN });
+    const m4 = msg("m4", { dateCreated: T0 + 31 * MIN });
+    useAppStore.setState({ messages: { [CHAT]: [m3, m4] } });
+    const m1 = msg("m1", { dateCreated: T0 });
+    const m2 = msg("m2", { dateCreated: T0 + MIN });
+    // The page may overlap what is loaded; m3 must not double up.
+    vi.mocked(fetchOlderMessages).mockResolvedValueOnce([m1, m2, m3]).mockResolvedValueOnce([]);
+    const view = await renderReady();
+
+    fireEvent.click(view.getByText("Load earlier messages"));
+    await waitFor(() => expect(rendersOf("m1")).toHaveLength(1));
+    expect(vi.mocked(fetchOlderMessages).mock.calls[0]).toEqual([CHAT, m3]);
+    const order = [...new Set(spy.bubbles.map((b) => b.guid))];
+    expect(order.indexOf("m1")).toBeLessThan(order.indexOf("m2"));
+    expect(rendersOf("m3").length).toBeGreaterThan(0);
+
+    // The next page is empty: the start of the chat, so the button goes.
+    fireEvent.click(view.getByText("Load earlier messages"));
+    await waitFor(() => expect(view.queryByText("Load earlier messages")).toBeNull());
+    expect(vi.mocked(fetchOlderMessages).mock.calls[1]).toEqual([CHAT, m1]);
+  });
+
+  it("offers a retry when a page fails", async () => {
+    useAppStore.setState({ messages: { [CHAT]: [msg("m1")] } });
+    vi.mocked(fetchOlderMessages).mockRejectedValueOnce(new Error("offline"));
+    const view = await renderReady();
+
+    fireEvent.click(view.getByText("Load earlier messages"));
+    await waitFor(() =>
+      expect(view.getByText("Couldn’t load earlier messages · retry")).toBeTruthy()
+    );
+  });
+});
+
+describe("MessageList reactions", () => {
+  const tapback = (guid: string, from: "me" | typeof alice, type: string, at: number) =>
+    msg(guid, {
+      text: "",
+      isFromMe: from === "me",
+      handle: from === "me" ? null : from,
+      dateCreated: at,
+      associatedMessageGuid: "m1",
+      associatedMessageType: type,
+    });
+
+  it("counts people per emoji, and a new tapback replaces that person's last", async () => {
+    const bob = { address: "bob@example.com", firstName: "Bob" };
+    useAppStore.setState({
+      messages: {
+        [CHAT]: [
+          msg("m1", { isFromMe: false, handle: alice }),
+          tapback("t1", alice, "2000", T0 + 1),
+          tapback("t2", bob, "2000", T0 + 2),
+          tapback("t3", "me", "2001", T0 + 3),
+          // Mine changes from 👍 to ❤️.
+          tapback("t4", "me", "2000", T0 + 4),
+        ],
+      },
+    });
+    await renderReady();
+    expect(lastProps("m1")!.reactions).toEqual([{ emoji: "❤️", count: 3, mine: true }]);
+  });
+
+  it("takes our own tapback back when toggled again", async () => {
+    const sendReaction = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(getClient).mockReturnValue({ sendReaction } as never);
+    useAppStore.setState({
+      messages: { [CHAT]: [msg("m1", { isFromMe: false, handle: alice }), tapback("t1", "me", "2000", T0 + 1)] },
+    });
+    await renderReady();
+
+    const onReact = lastProps("m1")!.onReact as (m: Message, key: string) => Promise<void>;
+    await act(() => onReact(useAppStore.getState().messages[CHAT][0], "love"));
+    expect(sendReaction).toHaveBeenCalledWith(CHAT, "m1", "-love");
+    expect(lastProps("m1")!.reactions).toBeUndefined();
   });
 });

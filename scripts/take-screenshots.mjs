@@ -100,10 +100,10 @@ for (const theme of ["dark", "light"]) {
   await waitFor(`!!${byText("Alex Rivera")}`, "the chat list");
   await evaluate(`${byText("Alex Rivera")}.click()`);
   await waitFor(`!!${byText("Fjord Homes")} || !!${byText("4 rooms · Vasastan, Stockholm")}`, "the link card");
-  // The "Open in new pane" action on the group chat's triage card.
-  await evaluate(`[...document.querySelectorAll('[aria-label="Open in new pane"]')]
-    .find((b) => b.parentElement?.parentElement?.textContent.includes("hike"))
-    .click()`);
+  // ⌥-click the group chat's triage card: it opens in a new pane.
+  await evaluate(`[...document.querySelectorAll("[data-chat-guid]")]
+    .find((el) => el.textContent.includes("hike"))
+    .dispatchEvent(new MouseEvent("click", { bubbles: true, altKey: true }))`);
   await waitFor(`!!${byText("View from the cabin last time")}`, "the group chat");
 
   await sleep(1500); // images decode, the entrance animations settle

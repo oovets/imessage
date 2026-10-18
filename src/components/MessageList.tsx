@@ -10,8 +10,10 @@ import { tg } from "@/telegram/api";
 import { parseTgChatGuid } from "@/telegram/adapters";
 import { cn } from "@/lib/utils";
 import { deliverIMessage } from "@/lib/sendIMessage";
+import { fetchOlderMessages } from "@/lib/olderHistory";
 import {
   type Message,
+  type ReactionSummary,
   formatDate,
   formatMessageTime,
   nextLocalMidnight,
@@ -54,7 +56,8 @@ function reactionTypeNum(raw: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function buildReactionMap(messages: Message[]): Map<string, string[]> {
+function buildReactionMap(messages: Message[]): Map<string, ReactionSummary[]> {
+  // target guid → "sender-type" → emoji
   const keys = new Map<string, Map<string, string>>();
 
   for (const msg of messages) {
@@ -69,6 +72,10 @@ function buildReactionMap(messages: Message[]): Map<string, string[]> {
       const emoji = TAPBACK_EMOJI[typeNum];
       if (!emoji) continue;
       const byTarget = keys.get(targetGuid) ?? new Map<string, string>();
+      // One tapback per person: a new one replaces theirs.
+      for (const key of byTarget.keys()) {
+        if (key.startsWith(`${sender}-`)) byTarget.delete(key);
+      }
       byTarget.set(`${sender}-${typeNum}`, emoji);
       keys.set(targetGuid, byTarget);
     } else if (typeNum >= 3000 && typeNum <= 3005) {
@@ -78,26 +85,41 @@ function buildReactionMap(messages: Message[]): Map<string, string[]> {
     }
   }
 
-  const result = new Map<string, string[]>();
+  const result = new Map<string, ReactionSummary[]>();
   for (const [guid, byKey] of keys) {
-    const emojis = [...new Set(byKey.values())];
-    if (emojis.length > 0) result.set(guid, emojis);
+    const byEmoji = new Map<string, ReactionSummary>();
+    for (const [key, emoji] of byKey) {
+      const r = byEmoji.get(emoji) ?? { emoji, count: 0, mine: false };
+      r.count++;
+      if (key.startsWith("me-")) r.mine = true;
+      byEmoji.set(emoji, r);
+    }
+    if (byEmoji.size > 0) result.set(guid, [...byEmoji.values()]);
   }
   return result;
 }
 
 /**
- * `next`, with each target's emoji array swapped for the one in `prev` when
- * the contents match. The map is rebuilt whenever the history changes; keeping
+ * `next`, with each target's reaction array swapped for the one in `prev`
+ * when the contents match. The map is rebuilt whenever the history changes; keeping
  * unchanged arrays' identity lets memoized bubbles skip re-rendering.
  */
 function reuseUnchangedReactions(
-  next: Map<string, string[]>,
-  prev: Map<string, string[]>
-): Map<string, string[]> {
-  for (const [guid, emojis] of next) {
+  next: Map<string, ReactionSummary[]>,
+  prev: Map<string, ReactionSummary[]>
+): Map<string, ReactionSummary[]> {
+  for (const [guid, reactions] of next) {
     const old = prev.get(guid);
-    if (old && old.length === emojis.length && old.every((e, i) => e === emojis[i])) {
+    if (
+      old &&
+      old.length === reactions.length &&
+      old.every(
+        (r, i) =>
+          r.emoji === reactions[i].emoji &&
+          r.count === reactions[i].count &&
+          r.mine === reactions[i].mine
+      )
+    ) {
       next.set(guid, old);
     }
   }
@@ -157,6 +179,15 @@ const NO_MESSAGES: Message[] = [];
 export const MessageList = memo(function MessageList({ chatGUID }: MessageListProps) {
   const rawMessages = useAppStore((s) => s.messages[chatGUID]);
   const messages: Message[] = rawMessages ?? NO_MESSAGES;
+  // Pages scrolled back to. The store caches only the newest messages per
+  // chat, so these live here, for as long as this chat is open in the pane.
+  const [older, setOlder] = useState<Message[]>(NO_MESSAGES);
+  const [olderState, setOlderState] = useState<"idle" | "loading" | "error" | "done">("idle");
+  const history = useMemo(() => {
+    if (older.length === 0) return messages;
+    const cached = new Set(messages.map((m) => m.guid));
+    return [...older.filter((m) => !cached.has(m.guid)), ...messages];
+  }, [older, messages]);
   // The loading flag is global and only matters while this chat is empty, so
   // subscribe to exactly that: another pane's fetch no longer re-renders a
   // list that already has content.
@@ -172,8 +203,8 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
   const serverUrl = useAppStore((s) => s.serverUrl);
   const password = useAppStore((s) => s.password);
   const visible = useMemo(
-    () => messages.filter((m) => reactionTypeNum(m.associatedMessageType) < 2000),
-    [messages]
+    () => history.filter((m) => reactionTypeNum(m.associatedMessageType) < 2000),
+    [history]
   );
   // Sender names only matter in groups. Participants cover iMessage; for
   // sources whose chats carry none (Slack channels), more than one distinct
@@ -219,12 +250,14 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
   // The previous map, whose arrays are reused where unchanged. Writing the ref
   // during render is safe: an array is only ever swapped for one with the same
   // contents, so even a discarded render can't leave a wrong one behind.
-  const prevReactionMapRef = useRef<Map<string, string[]>>(new Map());
+  const prevReactionMapRef = useRef<Map<string, ReactionSummary[]>>(new Map());
   const reactionMap = useMemo(() => {
-    const next = reuseUnchangedReactions(buildReactionMap(messages), prevReactionMapRef.current);
+    const next = reuseUnchangedReactions(buildReactionMap(history), prevReactionMapRef.current);
     prevReactionMapRef.current = next;
     return next;
-  }, [messages]);
+  }, [history]);
+  const reactionMapRef = useRef(reactionMap);
+  reactionMapRef.current = reactionMap;
 
   // Stable across renders so memoized bubbles skip re-rendering.
   const handleReply = useCallback(
@@ -234,23 +267,30 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
     [chatGUID, setReplyTarget]
   );
 
+  // Toggles our `reactionKey` reaction: a tapback key (love, like…) or, on
+  // Telegram, an emoji itself (a chip of one with no tapback).
   const handleReact = useCallback(async (m: Message, reactionKey: string) => {
     // Telegram: map the iMessage tapback to the nearest Telegram emoji and
     // send it through the Telegram core (no optimistic tapback child-message;
     // the authoritative aggregate arrives via tg:core-event).
     if (isSource(chatGUID, "telegram")) {
-      const emoji = TAPBACK_TO_EMOJI[reactionKey];
-      if (!emoji) return;
+      const emoji = TAPBACK_TO_EMOJI[reactionKey] ?? reactionKey;
       const { accountId, chatId } = parseTgChatGuid(chatGUID);
       const messageId = Number(m.guid.split(":").pop());
       if (!Number.isFinite(messageId) || messageId <= 0) return;
-      const already = (m.tgReactions ?? []).some((r) => r.startsWith(emoji));
-      void tg.react(accountId, chatId, messageId, already ? null : emoji).catch(() => {});
+      const mine = (m.tgReactions ?? []).some((r) => r.mine && r.emoji === emoji);
+      void tg.react(accountId, chatId, messageId, mine ? null : emoji).catch(() => {});
       return;
     }
 
-    const typeNum = REACTION_KEY_TO_TYPE[reactionKey];
-    if (!typeNum) return;
+    const added = REACTION_KEY_TO_TYPE[reactionKey];
+    if (!added) return;
+    const mine = reactionMapRef.current
+      .get(m.guid)
+      ?.some((r) => r.mine && r.emoji === TAPBACK_EMOJI[added]);
+    // BlueBubbles takes "-love" and friends to take one back.
+    const sendKey = mine ? `-${reactionKey}` : reactionKey;
+    const typeNum = REACTION_KEY_TO_TYPE[sendKey];
     const tempGuid = (typeof crypto !== "undefined" && "randomUUID" in crypto)
       ? crypto.randomUUID()
       : `r-${Date.now()}`;
@@ -269,7 +309,7 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
     };
     upsertMessage(optimistic);
     try {
-      await getClient(serverUrl, password).sendReaction(chatGUID, m.guid, reactionKey);
+      await getClient(serverUrl, password).sendReaction(chatGUID, m.guid, sendKey);
     } catch {
       removeMessage(chatGUID, optimistic.guid);
     }
@@ -309,6 +349,56 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
   // without that, nothing re-pinned an image that decoded after first paint.
   const listShown = !showLoading && messages.length > 0;
 
+  // Scrolling back: fetch the page before the oldest loaded message, then
+  // keep what was on screen in place while it lands above.
+  const historyRef = useRef(history);
+  historyRef.current = history;
+  const olderStateRef = useRef(olderState);
+  olderStateRef.current = olderState;
+  const olderBusyRef = useRef(false);
+  const prependAnchorRef = useRef<{ height: number; top: number } | null>(null);
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
+
+  const loadOlder = useCallback(async () => {
+    const oldest = historyRef.current[0];
+    if (!oldest || olderBusyRef.current || olderStateRef.current === "done") return;
+    olderBusyRef.current = true;
+    setOlderState("loading");
+    try {
+      const page = await fetchOlderMessages(chatGUID, oldest);
+      if (!aliveRef.current) return;
+      const known = new Set(historyRef.current.map((m) => m.guid));
+      const fresh = page.filter((m) => !known.has(m.guid));
+      if (fresh.length > 0) {
+        const el = scrollRef.current;
+        if (el) prependAnchorRef.current = { height: el.scrollHeight, top: el.scrollTop };
+        setOlder((prev) => [...fresh, ...prev].sort((a, b) => a.dateCreated - b.dateCreated));
+      }
+      // Nothing new before the oldest message: the start of the chat.
+      setOlderState(fresh.length > 0 ? "idle" : "done");
+    } catch {
+      if (aliveRef.current) setOlderState("error");
+    } finally {
+      olderBusyRef.current = false;
+    }
+  }, [chatGUID]);
+  const loadOlderRef = useRef(loadOlder);
+  loadOlderRef.current = loadOlder;
+
+  useLayoutEffect(() => {
+    const anchor = prependAnchorRef.current;
+    const el = scrollRef.current;
+    if (!anchor || !el) return;
+    prependAnchorRef.current = null;
+    el.scrollTop = el.scrollHeight - anchor.height + anchor.top;
+  }, [older]);
+
   function scrollToBottom(behavior: ScrollBehavior = "auto") {
     const el = scrollRef.current;
     if (!el) return;
@@ -336,6 +426,9 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
       }
       const atBottom = distanceFromBottom < 80;
       wasAtBottomRef.current = atBottom;
+      // Near the top: fetch the page before. A failed page waits for its
+      // retry button rather than refiring on every scroll.
+      if (el!.scrollTop < 300 && olderStateRef.current === "idle") void loadOlderRef.current();
       if (atBottom) {
         setShowJump(false);
         setUnseenCount(0);
@@ -412,6 +505,10 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
         setUnseenCount((c) => c + added);
         setShowJump(true);
       }
+    } else if (readyRef.current) {
+      // Older pages and removals change the count without a new latest
+      // message; keep it current so the next arrival counts only itself.
+      lastCountRef.current = visibleCount;
     }
   }, [visible.length, latestVisibleKey, latestVisible?.isFromMe]);
 
@@ -453,6 +550,28 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
             ready ? "opacity-100" : "opacity-0"
           )}
         >
+          {olderState !== "done" && (
+            <div className="flex justify-center py-1.5">
+              {olderState === "loading" ? (
+                <span className="font-mono text-cc-meta text-muted-foreground">
+                  Loading earlier messages…
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void loadOlder()}
+                  className={cn(
+                    "rounded-md px-2 py-0.5 font-mono text-cc-meta transition-[background-color] duration-120 hover:bg-muted hover:text-foreground",
+                    olderState === "error" ? "text-signal" : "text-muted-foreground"
+                  )}
+                >
+                  {olderState === "error"
+                    ? "Couldn’t load earlier messages · retry"
+                    : "Load earlier messages"}
+                </button>
+              )}
+            </div>
+          )}
           {visible.map((msg, i) => {
             const prev = visible[i - 1];
             const next = visible[i + 1];

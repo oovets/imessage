@@ -358,9 +358,15 @@ pub async fn irc_history(
     network_id: String,
     buffer: String,
     limit: usize,
+    before: Option<i64>,
     state: State<'_, IrcState>,
 ) -> Result<Vec<IrcMessage>, String> {
-    Ok(with_client(&state, &network_id).await?.history(&buffer, limit))
+    let client = with_client(&state, &network_id).await?;
+    // `before` (epoch millis) pages back from the oldest message shown.
+    Ok(match before {
+        Some(ts) => client.history_before(&buffer, ts, limit),
+        None => client.history(&buffer, limit),
+    })
 }
 
 /// Send composer input to a buffer: plain lines as messages, `/me`, `/join`,

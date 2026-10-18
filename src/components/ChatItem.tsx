@@ -1,5 +1,5 @@
-import { memo, useEffect, useState, type DragEvent, type MouseEvent } from "react";
-import { Star } from "lucide-react";
+import { memo, useEffect, useState, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
+import { Check, Star } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useTelegramAvatar } from "@/telegram/useTelegramAvatar";
@@ -12,6 +12,8 @@ import {
   getChatDisplayName,
   getChatInitials,
   formatMessageTime,
+  nextMessageTimeChange,
+  whenDue,
   type Chat,
 } from "@/types";
 import { useAppStore } from "@/store/useAppStore";
@@ -32,6 +34,8 @@ interface ChatItemProps {
   isSelected: boolean;
   /** Keyboard cursor (↑/↓) is on this item. */
   isCursor?: boolean;
+  /** The list's one Tab stop (roving tabindex); the rest are reached with ↑/↓. */
+  tabStop?: boolean;
   onSelect: (guid: string, opts?: ChatSelectOptions) => void;
   /** Queue cards: "E done" — mark read and drop into Recent. */
   onDone?: (guid: string) => void;
@@ -102,11 +106,38 @@ function HintChip({ children, onClick, label }: { children: string; onClick?: ()
   );
 }
 
+/** When the chat last saw activity, for its time label. */
+function chatTime(chat: Chat): number | undefined {
+  return chat.lastMessage?.dateCreated || chat.activityAt || undefined;
+}
+
+/** The chat's last message as plain text. */
+function chatPreview(chat: Chat): string {
+  const raw = decodeEscapedUnicode(chat.lastMessageText ?? chat.lastMessage?.text ?? "");
+  // Slack previews would otherwise show literal *bold* and `code` markers.
+  return isSource(chat.guid, "slack") ? stripSlackMarks(raw) : raw;
+}
+
+/**
+ * formatMessageTime(ts), re-rendered when the label is due to change
+ * ("14:35" → "Tue" → "Oct 3"). The store keeps an idle chat's object as it
+ * is, so nothing else would refresh a row's time.
+ */
+function useMessageTime(ts: number | undefined): string {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!ts) return;
+    return whenDue(nextMessageTimeChange(ts, Date.now()), () => setTick((n) => n + 1));
+  }, [ts, tick]);
+  return ts ? formatMessageTime(ts) : "";
+}
+
 function ChatItemComponent({
   chat,
   variant: variantProp,
   isSelected,
   isCursor = false,
+  tabStop = false,
   onSelect,
   onDone,
   leaving = false,
@@ -132,30 +163,46 @@ function ChatItemComponent({
   const isTyping = typingUntil !== undefined && typingUntil > Date.now();
   const name = getChatDisplayName(chat);
   const unread = (chat.unreadCount ?? 0) > 0;
+  const lastTime = useMessageTime(variant === "compact" ? undefined : chatTime(chat));
 
   function onClick(e: MouseEvent) {
     onSelect(chat.guid, { newPane: e.altKey });
+  }
+  // Rows are focusable (one Tab stop for the list, ↑/↓ within it):
+  // ↵ or Space opens, ⌥↵ in a new pane. The list's own keys skip handled ones.
+  function onKeyDown(e: KeyboardEvent) {
+    if (e.target !== e.currentTarget) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onSelect(chat.guid, { newPane: e.altKey });
+    }
   }
   function onDragStart(e: DragEvent) {
     e.dataTransfer.setData(CHAT_DRAG_MIME, chat.guid);
     e.dataTransfer.setData("text/plain", name);
     e.dataTransfer.effectAllowed = "copy";
   }
+  const itemProps = {
+    role: "button",
+    tabIndex: tabStop ? 0 : -1,
+    "data-chat-guid": chat.guid,
+    draggable: true,
+    onDragStart,
+    onClick,
+    onKeyDown,
+    "aria-pressed": isSelected,
+  } as const;
 
   if (variant === "compact") {
     return (
       <div
-        role="button"
-        tabIndex={-1}
-        draggable
-        onDragStart={onDragStart}
-        onClick={onClick}
-        aria-pressed={isSelected}
+        {...itemProps}
         title={name}
         className={cn(
-          "relative mx-auto flex h-9 w-9 items-center justify-center rounded-md transition-[background-color] duration-120 hover:bg-panel",
+          "relative mx-auto flex h-9 w-9 items-center justify-center rounded-md outline-none transition-[background-color] duration-120 hover:bg-panel",
           (isSelected || isCursor) && "bg-panel",
-          isCursor && "shadow-[0_0_0_1.5px_hsl(var(--primary))]"
+          isCursor && "shadow-[0_0_0_1.5px_hsl(var(--primary))]",
+          "focus-visible:shadow-[0_0_0_1.5px_hsl(var(--primary))]"
         )}
       >
         <Tile chat={chat} name={name} />
@@ -169,11 +216,9 @@ function ChatItemComponent({
     );
   }
 
+  const preview = chatPreview(chat);
+
   if (variant === "card") {
-    const lastTime = chat.lastMessage?.dateCreated ? formatMessageTime(chat.lastMessage.dateCreated) : "";
-    const rawPreview = decodeEscapedUnicode(chat.lastMessageText ?? chat.lastMessage?.text ?? "");
-    // Slack previews would otherwise show literal *bold* and `code` markers.
-    const preview = isSource(chat.guid, "slack") ? stripSlackMarks(rawPreview) : rawPreview;
     return (
       // Collapse wrapper: "E done" fades the card out and folds its height
       // (160ms ease-out) before the chat drops into Recent.
@@ -185,17 +230,13 @@ function ChatItemComponent({
       >
         <div className="-m-[1.5px] min-h-0 overflow-hidden p-[1.5px]">
           <div
-            role="button"
-            tabIndex={-1}
-            draggable
-            onDragStart={onDragStart}
-            onClick={onClick}
-            aria-pressed={isSelected}
+            {...itemProps}
             className={cn(
-              "cursor-default rounded-lg bg-panel px-3 py-2.5 text-left",
+              "group relative cursor-default rounded-lg bg-panel px-3 py-2.5 text-left outline-none",
               isCursor || isSelected
                 ? "shadow-[0_0_0_1.5px_hsl(var(--primary))]"
-                : "shadow-[inset_0_0_0_1px_hsl(var(--border))]"
+                : "shadow-[inset_0_0_0_1px_hsl(var(--border))]",
+              "focus-visible:shadow-[0_0_0_1.5px_hsl(var(--primary))]"
             )}
           >
             <div className="flex items-center gap-2">
@@ -204,10 +245,33 @@ function ChatItemComponent({
                 aria-label={`${chat.unreadCount} unread`}
               />
               <span className="min-w-0 flex-1 truncate text-cc-body font-semibold">{name}</span>
-              <span className="shrink-0 whitespace-nowrap font-mono text-cc-chip text-muted-foreground">
+              <span
+                className={cn(
+                  "shrink-0 whitespace-nowrap font-mono text-cc-chip text-muted-foreground",
+                  onDone && !isCursor && "group-hover:invisible"
+                )}
+              >
                 {sourceTag(chat.guid)}
                 {lastTime && ` · ${lastTime}`}
               </span>
+              {/* The mouse's "done", in place of the meta on hover; the
+                  keyboard cursor's card spells its keys out below instead. */}
+              {onDone && !isCursor && (
+                <span
+                  role="button"
+                  tabIndex={-1}
+                  aria-label="Mark done"
+                  title="Mark done (E)"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDone(chat.guid);
+                  }}
+                  className="absolute right-2 top-2 hidden h-[19px] items-center gap-1 rounded bg-muted px-1.5 font-mono text-cc-chip text-muted-foreground hover:bg-border hover:text-foreground group-hover:inline-flex"
+                >
+                  <Check className="h-3 w-3" />
+                  done
+                </span>
+              )}
             </div>
             {isTyping ? (
               <p className="ml-3.5 mt-1 text-cc-body text-signal">typing…</p>
@@ -218,72 +282,84 @@ function ChatItemComponent({
                 </p>
               )
             )}
-            <div className="ml-3.5 mt-2 flex gap-1.5 font-mono text-cc-chip text-muted-foreground">
-              <HintChip label="Open" onClick={() => onSelect(chat.guid)}>↵ open</HintChip>
-              <HintChip label="Open in new pane" onClick={() => onSelect(chat.guid, { newPane: true })}>
-                {`${altLabel("↵")} new pane`}
-              </HintChip>
-              {onDone && (
-                <HintChip label="Mark done" onClick={() => onDone(chat.guid)}>E done</HintChip>
-              )}
-            </div>
+            {/* Key hints only on the card the keyboard cursor is on, so the
+                queue reads as messages rather than as rows of buttons. */}
+            {isCursor && (
+              <div className="ml-3.5 mt-2 flex gap-1.5 font-mono text-cc-chip text-muted-foreground">
+                <HintChip label="Open" onClick={() => onSelect(chat.guid)}>↵ open</HintChip>
+                <HintChip label="Open in new pane" onClick={() => onSelect(chat.guid, { newPane: true })}>
+                  {`${altLabel("↵")} new pane`}
+                </HintChip>
+                {onDone && (
+                  <HintChip label="Mark done" onClick={() => onDone(chat.guid)}>E done</HintChip>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
     );
   }
 
-  // starred / row
+  // starred / row: name and meta, then the last message on a second line.
   return (
     <div
-      role="button"
-      tabIndex={-1}
-      draggable
-      onDragStart={onDragStart}
-      onClick={onClick}
-      aria-pressed={isSelected}
+      {...itemProps}
       className={cn(
-        "group mx-2.5 flex cursor-default items-center gap-2.5 rounded-md px-2 text-left transition-[background-color] duration-120 hover:bg-panel",
-        variant === "starred" ? "py-[7px]" : "py-1.5",
+        "group mx-2.5 flex cursor-default items-center gap-2.5 rounded-md px-2 py-1.5 text-left outline-none transition-[background-color] duration-120 hover:bg-panel",
         (isSelected || isCursor) && "bg-panel",
-        isCursor && !isSelected && "shadow-[inset_0_0_0_1px_hsl(var(--border))]"
+        isCursor && !isSelected && "shadow-[inset_0_0_0_1px_hsl(var(--border))]",
+        "focus-visible:shadow-[inset_0_0_0_1.5px_hsl(var(--primary))]"
       )}
     >
       <Tile chat={chat} name={name} />
-      <span
-        className={cn(
-          "min-w-0 flex-1 truncate text-cc-body",
-          variant === "starred" && "font-medium"
-        )}
-      >
-        {name}
-      </span>
-      {/* Star: revealed on row hover (pinned rows show a filled star to
-          unpin). A span, not a button — the whole row already is one. */}
-      {onToggleStar && (
-        <span
-          role="button"
-          tabIndex={-1}
-          aria-label={starred ? "Unstar chat" : "Star chat"}
-          title={starred ? "Unstar" : "Star"}
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleStar(chat.guid);
-          }}
-          className={cn(
-            "hidden h-[19px] w-[19px] shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground group-hover:inline-flex",
-            starred && "text-foreground"
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span
+            className={cn(
+              "min-w-0 flex-1 truncate text-cc-body",
+              variant === "starred" && "font-medium"
+            )}
+          >
+            {name}
+          </span>
+          {/* Star: shown on hover, on the row focused from the keyboard (S
+              toggles it there) and always where there is no hover. Not on the
+              clicked row, where it would squeeze the name next to the pane
+              key. A span, not a button — the whole row already is one. */}
+          {onToggleStar && (
+            <span
+              role="button"
+              tabIndex={-1}
+              aria-label={starred ? "Unstar chat" : "Star chat"}
+              title={starred ? "Unstar (S)" : "Star (S)"}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleStar(chat.guid);
+              }}
+              className={cn(
+                "hidden h-[19px] w-[19px] shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground group-hover:inline-flex group-focus-visible:inline-flex [@media(hover:none)]:inline-flex",
+                starred && "text-foreground"
+              )}
+            >
+              <Star className={cn("h-3 w-3", starred && "fill-current")} />
+            </span>
           )}
-        >
-          <Star className={cn("h-3 w-3", starred && "fill-current")} />
-        </span>
-      )}
-      {paneKey != null && <KeyChip n={paneKey} active={paneKeyActive} />}
-      {variant === "row" && (
-        <span className="shrink-0 whitespace-nowrap font-mono text-cc-chip text-muted-foreground">
-          {sourceTag(chat.guid)}
-        </span>
-      )}
+          {paneKey != null && <KeyChip n={paneKey} active={paneKeyActive} />}
+          {(variant === "row" || lastTime) && (
+            <span className="shrink-0 whitespace-nowrap font-mono text-cc-chip text-muted-foreground">
+              {variant === "row" && sourceTag(chat.guid)}
+              {variant === "row" && lastTime && " · "}
+              {lastTime}
+            </span>
+          )}
+        </div>
+        {isTyping ? (
+          <p className="truncate text-cc-meta text-signal">typing…</p>
+        ) : (
+          preview && <p className="truncate text-cc-meta text-muted-foreground">{preview}</p>
+        )}
+      </div>
     </div>
   );
 }

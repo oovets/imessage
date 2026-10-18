@@ -290,11 +290,12 @@ pub async fn sl_history(
     workspace_id: String,
     channel_id: String,
     limit: usize,
+    latest: Option<String>,
     state: State<'_, SlackState>,
 ) -> Result<Vec<SlackMessage>, String> {
     with_client(&state, &workspace_id)
         .await?
-        .get_conversation_history(&channel_id, limit)
+        .get_conversation_history(&channel_id, limit, latest.as_deref())
         .await
         .map_err(|e| format!("slack history failed: {e}"))
 }
