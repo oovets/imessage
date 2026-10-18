@@ -104,7 +104,7 @@ export function tgMessageToMessage(m: TgMessage): Message {
   // (polls, locations); otherwise let the image/document speak for itself.
   const text = m.text || (attachments.length === 0 ? mediaPlaceholder(m.media) : "");
   const tgReactions = m.reactions.length
-    ? m.reactions.map((r) => (r.count > 1 ? `${r.emoji} ${r.count}` : r.emoji))
+    ? m.reactions.map((r) => ({ emoji: r.emoji, count: r.count, mine: r.chosen }))
     : undefined;
   return {
     guid: tgMessageGuid(m.account_id, m.chat_id, m.id),

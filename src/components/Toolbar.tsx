@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { PanelLeftClose, PanelLeftOpen, RefreshCw, Search, X } from "lucide-react";
 import { AiSimulatorDialog, SettingsDialog, SocialGraphDialog } from "@/components/ToolbarDialogs";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -10,45 +10,135 @@ import { ghostIconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 import { hasTrafficLights } from "@/lib/tauriEnv";
 import { modLabel } from "@/lib/shortcuts";
+import { openSettings } from "@/lib/openSettings";
 
+type SourceState = "live" | "polling" | "connecting" | "disconnected" | "off";
+
+const STATE_LABEL: Record<SourceState, string> = {
+  live: "live",
+  polling: "polling",
+  connecting: "connecting…",
+  disconnected: "disconnected",
+  off: "not set up",
+};
+
+const STATE_DOT: Record<SourceState, string> = {
+  live: "bg-[#22c55e]",
+  polling: "bg-[#f59e0b]",
+  connecting: "bg-[#f59e0b]",
+  disconnected: "bg-signal",
+  off: "bg-muted-foreground/40",
+};
+
+/** A set-up source with no chats yet is still coming up. */
+function chatSourceState(available: boolean, hasChats: boolean): SourceState {
+  return !available ? "off" : hasChats ? "live" : "connecting";
+}
+
+/**
+ * "2 sources live" in the toolbar; a click lists each source's state, with
+ * the way to Settings for the ones that are off.
+ */
 function ConnectionStatus() {
   const isConfigured = useAppStore((s) => s.isConfigured);
   const wsConnected = useAppStore((s) => s.wsConnected);
   const pollingFallback = useAppStore((s) => s.pollingFallback);
-  const telegramLive = useAppStore(
-    (s) => s.telegramAvailable && s.chats.some((c) => isSource(c.guid, "telegram"))
+  const telegram = useAppStore((s) =>
+    chatSourceState(s.telegramAvailable, s.chats.some((c) => isSource(c.guid, "telegram")))
   );
-  const slackLive = useAppStore(
-    (s) => s.slackAvailable && s.chats.some((c) => isSource(c.guid, "slack"))
+  const slack = useAppStore((s) =>
+    chatSourceState(s.slackAvailable, s.chats.some((c) => isSource(c.guid, "slack")))
   );
-  const ircLive = useAppStore(
-    (s) => s.ircAvailable && s.chats.some((c) => isSource(c.guid, "irc"))
+  const ircState = useAppStore((s) =>
+    chatSourceState(s.ircAvailable, s.chats.some((c) => isSource(c.guid, "irc")))
   );
-  const imessageLive = isConfigured && (wsConnected || pollingFallback);
-  const live = [imessageLive, telegramLive, slackLive, ircLive].filter(Boolean).length;
-  const polling = isConfigured && !wsConnected && pollingFallback;
+  const imessage: SourceState = !isConfigured
+    ? "off"
+    : wsConnected
+      ? "live"
+      : pollingFallback
+        ? "polling"
+        : "disconnected";
+  const sources: Array<[string, SourceState]> = [
+    ["iMessage", imessage],
+    ["Telegram", telegram],
+    ["Slack", slack],
+    ["IRC", ircState],
+  ];
+  const live = sources.filter(([, st]) => st === "live" || st === "polling").length;
+  const polling = imessage === "polling";
 
   const dot = polling ? "bg-[#f59e0b]" : live > 0 ? "bg-[#22c55e]" : "bg-muted-foreground/40";
   const label =
     live === 0
       ? "offline"
       : `${live} ${live === 1 ? "source" : "sources"} ${polling ? "polling" : "live"}`;
-  const title = polling
-    ? "iMessage is on the polling fallback (HTTPS blocks ws://). Use an https:// server URL for realtime."
-    : imessageLive
-      ? "Realtime connected"
-      : isConfigured
-        ? "iMessage disconnected"
-        : undefined;
+
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  // Close on outside click or Escape.
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: PointerEvent) {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
 
   return (
-    <span
-      className="flex items-center gap-1.5 whitespace-nowrap font-mono text-cc-meta text-muted-foreground"
-      title={title}
-    >
-      <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", dot)} />
-      {label}
-    </span>
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        title="Sources"
+        className="flex items-center gap-1.5 whitespace-nowrap rounded-md px-1.5 py-1 font-mono text-cc-meta text-muted-foreground transition-[background-color] duration-120 hover:bg-muted hover:text-foreground"
+      >
+        <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", dot)} />
+        {label}
+      </button>
+      {open && (
+        <div
+          role="dialog"
+          aria-label="Sources"
+          className="absolute right-0 top-full z-50 mt-1 w-60 rounded-xl border bg-popover p-1.5 text-popover-foreground shadow-lg"
+        >
+          <ul>
+            {sources.map(([name, st]) => (
+              <li key={name} className="flex items-center gap-2 px-2 py-1 text-cc-body">
+                <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", STATE_DOT[st])} />
+                <span className="flex-1">{name}</span>
+                <span className="font-mono text-cc-meta text-muted-foreground">{STATE_LABEL[st]}</span>
+              </li>
+            ))}
+          </ul>
+          {polling && (
+            <p className="px-2 pb-1 text-cc-meta text-muted-foreground">
+              HTTPS blocks ws://, so iMessage polls. Use an https:// server URL for realtime.
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              openSettings();
+            }}
+            className="mt-1 w-full rounded-md px-2 py-1 text-left text-cc-body transition-[background-color] duration-120 hover:bg-muted"
+          >
+            Settings…
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 

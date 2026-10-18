@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { fireEvent, render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { Chat } from "@/types";
+import { formatMessageTime, type Chat } from "@/types";
 import { modLabel } from "@/lib/shortcuts";
+import { useAppStore } from "@/store/useAppStore";
 import { ChatItem } from "./ChatItem";
 
 vi.mock("@/telegram/useTelegramAvatar", () => ({ useTelegramAvatar: () => null }));
@@ -100,5 +101,45 @@ describe("ChatItem typing on queue cards", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("ChatItem rows and cards", () => {
+  const at = Date.now() - 60_000;
+
+  it("row shows the last message and its time", () => {
+    // A typing indicator would stand in for the preview.
+    useAppStore.setState({ typingChats: {} });
+    const { getByText } = render(
+      <ChatItem
+        chat={chat({ lastMessageText: "see you at *noon*", activityAt: at })}
+        isSelected={false}
+        onSelect={() => {}}
+      />
+    );
+    // Slack marks are stripped from the preview.
+    expect(getByText("see you at noon")).toBeTruthy();
+    expect(getByText(`slack · ${formatMessageTime(at)}`)).toBeTruthy();
+  });
+
+  it("opens on Enter, in a new pane on Alt+Enter, and is a Tab stop when told", () => {
+    const onSelect = vi.fn();
+    const { getByText } = render(
+      <ChatItem chat={chat()} isSelected={false} onSelect={onSelect} tabStop />
+    );
+    const row = getByText("#daily").closest<HTMLElement>("[data-chat-guid]")!;
+    expect(row.tabIndex).toBe(0);
+    fireEvent.keyDown(row, { key: "Enter" });
+    expect(onSelect).toHaveBeenLastCalledWith("sl:work:C1", { newPane: false });
+    fireEvent.keyDown(row, { key: "Enter", altKey: true });
+    expect(onSelect).toHaveBeenLastCalledWith("sl:work:C1", { newPane: true });
+  });
+
+  it("queue card spells out its keys only under the keyboard cursor", () => {
+    const props = { chat: chat({ unreadCount: 1 }), variant: "card" as const, isSelected: false, onSelect: () => {}, onDone: () => {} };
+    const { queryByText, rerender } = render(<ChatItem {...props} />);
+    expect(queryByText("E done")).toBeNull();
+    rerender(<ChatItem {...props} isCursor />);
+    expect(queryByText("E done")).toBeTruthy();
   });
 });

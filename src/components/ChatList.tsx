@@ -19,6 +19,7 @@ import { isSource } from "@/lib/source";
 import { tg } from "@/telegram/api";
 import { parseTgChatGuid } from "@/telegram/adapters";
 import { cn } from "@/lib/utils";
+import { openSettings } from "@/lib/openSettings";
 import { whenDue } from "@/types";
 
 /** Card fold-out duration for "E done" — matches the ChatItem transition. */
@@ -96,6 +97,7 @@ export function ChatList() {
   // Queue cards animating out after "E done".
   const [leaving, setLeaving] = useState<ReadonlySet<string>>(new Set());
   const leaveTimers = useRef(new Map<string, number>());
+  const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     void loadIMessageChats();
@@ -128,6 +130,12 @@ export function ChatList() {
     () => (sidebarHidden ? [...waiting, ...starred] : [...waiting, ...starred, ...recent]),
     [sidebarHidden, waiting, starred, recent]
   );
+  // The list is one Tab stop (roving tabindex): the cursor's item, else the
+  // open chat's, else the first; ↑/↓ move between items from there.
+  const tabStopGUID =
+    visibleChats.find((c) => c.guid === cursorGUID)?.guid ??
+    visibleChats.find((c) => c.guid === selectedChatGUID)?.guid ??
+    visibleChats[0]?.guid;
 
   const open = useCallback(
     (guid: string, opts?: ChatSelectOptions) => {
@@ -166,6 +174,8 @@ export function ChatList() {
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      // An item already acted on it (↵ / Space on a focused row).
+      if (e.defaultPrevented) return;
       const target = e.target as HTMLElement | null;
       const tag = target?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return;
@@ -183,7 +193,18 @@ export function ChatList() {
             : e.key === "ArrowDown"
               ? Math.min(visibleChats.length - 1, idx + 1)
               : Math.max(0, idx - 1);
-        setCursorGUID(visibleChats[next].guid);
+        const guid = visibleChats[next].guid;
+        setCursorGUID(guid);
+        // Focus follows the cursor, which also scrolls it into view.
+        requestAnimationFrame(() => {
+          const items = listRef.current?.querySelectorAll<HTMLElement>("[data-chat-guid]") ?? [];
+          for (const el of items) {
+            if (el.dataset.chatGuid === guid) {
+              el.focus({ preventScroll: false });
+              break;
+            }
+          }
+        });
         return;
       }
 
@@ -196,11 +217,14 @@ export function ChatList() {
         if (!waiting.some((c) => c.guid === cursorChat.guid)) return;
         e.preventDefault();
         done(cursorChat.guid);
+      } else if ((e.key === "s" || e.key === "S") && !e.altKey && !e.shiftKey) {
+        e.preventDefault();
+        toggleStarred(cursorChat.guid);
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [visibleChats, cursorGUID, selectedChatGUID, open, done, waiting]);
+  }, [visibleChats, cursorGUID, selectedChatGUID, open, done, waiting, toggleStarred]);
 
   function paneKeyProps(guid: string) {
     const n = byChat.get(guid);
@@ -212,7 +236,13 @@ export function ChatList() {
     body = !sidebarHidden && (
       <div className="p-6 text-center text-cc-body text-muted-foreground">
         <p>Connect a source to get started.</p>
-        <p className="mt-1">Open settings in the toolbar.</p>
+        <button
+          type="button"
+          onClick={openSettings}
+          className="mt-3 h-7 rounded-md bg-primary px-2.5 font-medium text-primary-foreground"
+        >
+          Open settings
+        </button>
       </div>
     );
   } else if (loadingChats && chats.length === 0) {
@@ -235,6 +265,7 @@ export function ChatList() {
             variant="compact"
             isSelected={chat.guid === selectedChatGUID}
             isCursor={chat.guid === cursorGUID}
+            tabStop={chat.guid === tabStopGUID}
             onSelect={open}
             queued={i < waiting.length}
           />
@@ -259,6 +290,7 @@ export function ChatList() {
                 variant="card"
                 isSelected={chat.guid === selectedChatGUID}
                 isCursor={chat.guid === cursorGUID}
+                tabStop={chat.guid === tabStopGUID}
                 onSelect={open}
                 onDone={done}
                 leaving={leaving.has(chat.guid)}
@@ -280,6 +312,7 @@ export function ChatList() {
                   variant="starred"
                   isSelected={chat.guid === selectedChatGUID}
                   isCursor={chat.guid === cursorGUID}
+                  tabStop={chat.guid === tabStopGUID}
                   onSelect={open}
                   starred
                   onToggleStar={toggleStarred}
@@ -306,6 +339,7 @@ export function ChatList() {
                 variant="row"
                 isSelected={chat.guid === selectedChatGUID}
                 isCursor={chat.guid === cursorGUID}
+                tabStop={chat.guid === tabStopGUID}
                 onSelect={open}
                 starred={false}
                 onToggleStar={toggleStarred}
@@ -319,7 +353,15 @@ export function ChatList() {
   }
 
   return (
-    <div className="app-sidebar flex h-full min-h-0 flex-col">
+    <div
+      ref={listRef}
+      // Tabbing (or clicking) onto an item puts the keyboard cursor there.
+      onFocus={(e) => {
+        const guid = (e.target as HTMLElement).dataset?.chatGuid;
+        if (guid) setCursorGUID(guid);
+      }}
+      className="app-sidebar flex h-full min-h-0 flex-col"
+    >
       <ScrollArea className="flex-1">{body}</ScrollArea>
     </div>
   );

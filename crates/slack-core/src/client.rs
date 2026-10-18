@@ -1141,10 +1141,13 @@ impl SlackClient {
         Ok(chats)
     }
 
+    /// The newest `limit` messages, newest first; with `latest` (a message
+    /// ts), the ones before it, for paging back.
     pub async fn get_conversation_history(
         &self,
         channel_id: &str,
         limit: usize,
+        latest: Option<&str>,
     ) -> Result<Vec<SlackMessage>> {
         let mut all_messages: Vec<SlackMessage> = Vec::new();
         let mut cursor: Option<String> = None;
@@ -1155,6 +1158,9 @@ impl SlackClient {
                 "https://slack.com/api/conversations.history?channel={}&limit={}",
                 channel_id, page_limit
             );
+            if let Some(ts) = latest {
+                url.push_str(&format!("&latest={}", ts));
+            }
             if let Some(ref c) = cursor {
                 url.push_str(&format!("&cursor={}", c));
             }
