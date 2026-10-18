@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render } from "@testing-library/react";
+import { fireEvent, render } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getClient } from "@/api/clientFactory";
 import { useAppStore } from "@/store/useAppStore";
@@ -84,5 +84,17 @@ describe("ChatPane message loading", () => {
     await new Promise((r) => setTimeout(r, 20));
 
     expect(getMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers to try again after a failed load", async () => {
+    getMessages.mockRejectedValueOnce(new Error("HTTP 502"));
+    const view = renderPane(IMESSAGE);
+
+    const retry = await view.findByText("Try again");
+    expect(view.getByText("Error: HTTP 502")).toBeTruthy();
+    fireEvent.click(retry);
+
+    await vi.waitFor(() => expect(getMessages).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(view.queryByText("Try again")).toBeNull());
   });
 });

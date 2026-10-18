@@ -83,6 +83,7 @@ interface SettingsDialogProps {
 export function SettingsDialog({ autoOpen = true }: SettingsDialogProps) {
   const isConfigured = useAppStore((s) => s.isConfigured);
   const configLoaded = useAppStore((s) => s.configLoaded);
+  const onboardingDismissed = useAppStore((s) => s.onboardingDismissed);
   const [open, setOpen] = useState(false);
   const autoOpenedRef = useRef(false);
 
@@ -104,11 +105,14 @@ export function SettingsDialog({ autoOpen = true }: SettingsDialogProps) {
     };
   }, []);
 
+  // isConfigured is iMessage only. Someone who finished onboarding with just
+  // Telegram, Slack or IRC chose that setup; don't push Settings at them on
+  // every launch.
   useEffect(() => {
-    if (!autoOpen || !configLoaded || isConfigured || autoOpenedRef.current) return;
+    if (!autoOpen || !configLoaded || isConfigured || onboardingDismissed || autoOpenedRef.current) return;
     autoOpenedRef.current = true;
     setOpen(true);
-  }, [autoOpen, configLoaded, isConfigured]);
+  }, [autoOpen, configLoaded, isConfigured, onboardingDismissed]);
 
   return (
     <LazyDialog

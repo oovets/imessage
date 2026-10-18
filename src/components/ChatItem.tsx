@@ -15,6 +15,7 @@ import {
   type Chat,
 } from "@/types";
 import { useAppStore } from "@/store/useAppStore";
+import { altLabel, modLabel } from "@/lib/shortcuts";
 
 export type ChatItemVariant = "card" | "starred" | "row" | "compact";
 
@@ -79,7 +80,7 @@ function KeyChip({ n, active }: { n: number; active: boolean }) {
         active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
       )}
     >
-      ⌘{n}
+      {modLabel(n)}
     </span>
   );
 }
@@ -220,7 +221,7 @@ function ChatItemComponent({
             <div className="ml-3.5 mt-2 flex gap-1.5 font-mono text-cc-chip text-muted-foreground">
               <HintChip label="Open" onClick={() => onSelect(chat.guid)}>↵ open</HintChip>
               <HintChip label="Open in new pane" onClick={() => onSelect(chat.guid, { newPane: true })}>
-                ⌥↵ new pane
+                {`${altLabel("↵")} new pane`}
               </HintChip>
               {onDone && (
                 <HintChip label="Mark done" onClick={() => onDone(chat.guid)}>E done</HintChip>

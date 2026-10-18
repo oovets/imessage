@@ -308,3 +308,29 @@ describe("MessageBubble in IRC", () => {
     expect(container.querySelector(".text-cc-sender")!.textContent).toBe("Alice");
   });
 });
+
+describe("MessageBubble actions", () => {
+  it("does not react on double-click, which selects a word", () => {
+    const onReact = vi.fn();
+    const { container } = render(
+      <MessageBubble message={msg()} showSender={false} onReact={onReact} />
+    );
+    fireEvent.doubleClick(container.querySelector("div.select-text")!);
+    expect(onReact).not.toHaveBeenCalled();
+  });
+
+  it("offers retry and delete on a failed send", () => {
+    const onRetry = vi.fn();
+    const onDiscard = vi.fn();
+    const m = msg({ guid: "local-1", isFromMe: true, failed: true, failedReason: "HTTP 500" });
+    const { getByText } = render(
+      <MessageBubble message={m} showSender={false} onRetry={onRetry} onDiscard={onDiscard} />
+    );
+    expect(getByText("Failed to send").getAttribute("title")).toBe("HTTP 500");
+
+    fireEvent.click(getByText("Retry"));
+    expect(onRetry).toHaveBeenCalledWith(m);
+    fireEvent.click(getByText("Delete"));
+    expect(onDiscard).toHaveBeenCalledWith(m);
+  });
+});

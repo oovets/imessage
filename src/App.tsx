@@ -4,6 +4,7 @@ import { ChatPane } from "@/components/ChatPane";
 import { PaneTreeRoot } from "@/components/PaneTree";
 import { ImageContextMenu } from "@/components/ImageContextMenu";
 import { Toolbar } from "@/components/Toolbar";
+import { NoticeBar } from "@/components/NoticeBar";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { usePollingFallback } from "@/hooks/usePollingFallback";
 import { useDesktopFeatures } from "@/hooks/useDesktopFeatures";
@@ -21,6 +22,7 @@ import { useAppStore, type PaneNode } from "@/store/useAppStore";
 import { useTheme } from "@/components/ThemeProvider";
 import { applyAppearance } from "@/lib/appearance";
 import { cn } from "@/lib/utils";
+import { isPrimaryModifier } from "@/lib/shortcuts";
 
 // First run only — keep the checklist (and its Telegram QR / Slack token
 // setup) out of the startup bundle for everyone who is already set up.
@@ -118,7 +120,8 @@ export default function App() {
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (!event.metaKey || event.altKey || event.ctrlKey) return;
+      // ⌘ on macOS, Ctrl on Linux.
+      if (!isPrimaryModifier(event) || event.altKey) return;
       if (event.key === "+" || event.key === "=") {
         event.preventDefault();
         increaseFontScale();
@@ -159,6 +162,9 @@ export default function App() {
   return (
     <div className="app-shell flex h-screen flex-col overflow-hidden bg-background font-sans text-cc-body text-foreground">
       <Toolbar setup={onboarding} />
+      {/* Full width, so a failed send or a dropped connection shows even
+          with the sidebar collapsed to its rail. */}
+      {!onboarding && <NoticeBar />}
       {onboarding ? (
         <Suspense fallback={<div className="flex-1" />}>
           <OnboardingWizard />

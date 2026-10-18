@@ -8,6 +8,7 @@ import { saveSecureConfig } from "@/lib/secureConfig";
 import { tg } from "@/telegram/api";
 import type { TgAccount } from "@/telegram/types";
 import { cn } from "@/lib/utils";
+import { modLabel } from "@/lib/shortcuts";
 
 type SourceKey = "imessage" | "telegram" | "slack";
 type SourceStatus = "idle" | "working" | "permissions" | "done" | "error";
@@ -657,7 +658,7 @@ export function OnboardingWizard() {
           <button type="button" className={primaryButton} onClick={() => void finish()} disabled={!canFinish}>
             {finishing && <Loader2 className="h-4 w-4 animate-spin" />}
             Open inbox
-            <span className="font-mono text-cc-meta opacity-70">⌘↵</span>
+            <span className="font-mono text-cc-meta opacity-70">{modLabel("↵")}</span>
           </button>
         </div>
       </div>

@@ -12,6 +12,7 @@ import { parseTgChatGuid } from "@/telegram/adapters";
 import { cn } from "@/lib/utils";
 import { autoConvertEmoticons } from "@/lib/emoticons";
 import { preferredSendGuid } from "@/lib/chatThreadMerge";
+import { deliverIMessage } from "@/lib/sendIMessage";
 import { log as logAi, wordDiff } from "@/lib/aiTelemetry";
 import { endReplyTrace } from "@/lib/aiTracing";
 import type { Message } from "@/types";
@@ -62,12 +63,14 @@ export const MessageInput = memo(function MessageInput({ chatGUID }: MessageInpu
   const setReplyTarget = useAppStore((s) => s.setReplyTarget);
   const setConnectionNotice = useAppStore((s) => s.setConnectionNotice);
   const upsertMessage = useAppStore((s) => s.upsertMessage);
-  const replaceMessage = useAppStore((s) => s.replaceMessage);
   const updateChatPreview = useAppStore((s) => s.updateChatPreview);
   const aiDraft = useAppStore((s) => s.aiDrafts[chatGUID]);
   const clearAiDraft = useAppStore((s) => s.clearAiDraft);
   const markAiDraftUsed = useAppStore((s) => s.markAiDraftUsed);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // The chat this composer shows now; a pane reuses it when switching chats.
+  const chatRef = useRef(chatGUID);
+  chatRef.current = chatGUID;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [attaching, setAttaching] = useState(false);
   const emoji = useEmojiAutocomplete(text, setText, textareaRef);
@@ -127,6 +130,24 @@ export const MessageInput = memo(function MessageInput({ chatGUID }: MessageInpu
     });
   }
 
+  /**
+   * Telegram, Slack and IRC clear the composer before the send settles and
+   * show no bubble until it does. When it fails, put the text (and the reply
+   * target) back so nothing is lost — unless something new was typed, or
+   * the pane moved on to another chat, meanwhile.
+   */
+  function restoreFailedSend(sentText: string, sentReply: Message | null, err: unknown) {
+    setConnectionNotice(
+      `Unable to send message: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    if (chatRef.current !== chatGUID) return;
+    setText((current) => (current.trim() ? current : sentText));
+    if (sentReply && !useAppStore.getState().replyTarget[chatGUID]) {
+      setReplyTarget(chatGUID, sentReply);
+    }
+    requestAnimationFrame(handleInput);
+  }
+
   function send() {
     const trimmed = text.trim();
     if (!trimmed) return;
@@ -176,11 +197,7 @@ export const MessageInput = memo(function MessageInput({ chatGUID }: MessageInpu
       }
       void irc
         .send(networkId, bufferId, trimmed)
-        .catch((err) =>
-          setConnectionNotice(
-            `Unable to send message: ${err instanceof Error ? err.message : String(err)}`,
-          ),
-        );
+        .catch((err) => restoreFailedSend(trimmed, replyTarget, err));
       return;
     }
 
@@ -198,11 +215,7 @@ export const MessageInput = memo(function MessageInput({ chatGUID }: MessageInpu
       }
       void sl
         .send(workspaceId, channelId, trimmed, threadTs)
-        .catch((err) =>
-          setConnectionNotice(
-            `Unable to send message: ${err instanceof Error ? err.message : String(err)}`,
-          ),
-        );
+        .catch((err) => restoreFailedSend(trimmed, replyTarget, err));
       return;
     }
 
@@ -221,11 +234,7 @@ export const MessageInput = memo(function MessageInput({ chatGUID }: MessageInpu
       }
       void tg
         .sendMessage(accountId, chatId, trimmed, replyTo)
-        .catch((err) =>
-          setConnectionNotice(
-            `Unable to send message: ${err instanceof Error ? err.message : String(err)}`,
-          ),
-        );
+        .catch((err) => restoreFailedSend(trimmed, replyTarget, err));
       return;
     }
 
@@ -240,34 +249,8 @@ export const MessageInput = memo(function MessageInput({ chatGUID }: MessageInpu
       textareaRef.current.focus();
     }
 
-    const replyGuid = replyTarget?.guid ?? "";
-    void (async () => {
-      try {
-        const client = getClient(serverUrl, password);
-        // Merged iMessage/SMS conversation: send on the thread the contact
-        // last used, so the reply goes out over the right service.
-        await client.sendMessage(preferredSendGuid(chatGUID), trimmed, replyGuid, optimistic.tempGuid);
-        replaceMessage(chatGUID, optimistic.guid, { ...optimistic, pending: false });
-      } catch (err) {
-        const detail = err instanceof Error ? err.message : String(err);
-        // Replies/reactions go through the BlueBubbles Private API. If that
-        // isn't set up on the server, only these fail while plain (AppleScript)
-        // messages keep working — so give a targeted hint.
-        const isReply = replyGuid.length > 0;
-        const looksLikePrivateApi =
-          isReply && /private|method|not enabled|helper/i.test(detail);
-        const reason = looksLikePrivateApi
-          ? `Replies need the BlueBubbles Private API, which the server rejected. Enable “Private API Features” in the BlueBubbles server settings (and install the Private API helper bundle). Server said: ${detail}`
-          : detail;
-        setConnectionNotice(`Unable to send message: ${reason}`);
-        replaceMessage(chatGUID, optimistic.guid, {
-          ...optimistic,
-          pending: false,
-          failed: true,
-          failedReason: reason,
-        });
-      }
-    })();
+    // A failure leaves a failed bubble with Retry, so the text is kept there.
+    void deliverIMessage(chatGUID, optimistic);
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {

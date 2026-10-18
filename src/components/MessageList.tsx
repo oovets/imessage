@@ -9,6 +9,7 @@ import { getClient } from "@/api/clientFactory";
 import { tg } from "@/telegram/api";
 import { parseTgChatGuid } from "@/telegram/adapters";
 import { cn } from "@/lib/utils";
+import { deliverIMessage } from "@/lib/sendIMessage";
 import {
   type Message,
   formatDate,
@@ -167,6 +168,7 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
   const setReplyTarget = useAppStore((s) => s.setReplyTarget);
   const upsertMessage = useAppStore((s) => s.upsertMessage);
   const removeMessage = useAppStore((s) => s.removeMessage);
+  const replaceMessage = useAppStore((s) => s.replaceMessage);
   const serverUrl = useAppStore((s) => s.serverUrl);
   const password = useAppStore((s) => s.password);
   const visible = useMemo(
@@ -272,6 +274,21 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
       removeMessage(chatGUID, optimistic.guid);
     }
   }, [chatGUID, serverUrl, password, upsertMessage, removeMessage]);
+
+  // A failed iMessage send stays as its local placeholder; send that again,
+  // or drop it. (Other sources' bubbles come from their cores.)
+  const handleRetry = useCallback(
+    (m: Message) => {
+      const retry: Message = { ...m, pending: true, failed: false, failedReason: undefined };
+      replaceMessage(chatGUID, m.guid, retry);
+      void deliverIMessage(chatGUID, retry);
+    },
+    [chatGUID, replaceMessage]
+  );
+  const handleDiscard = useCallback(
+    (m: Message) => removeMessage(chatGUID, m.guid),
+    [chatGUID, removeMessage]
+  );
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -476,6 +493,9 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
                   isLastInGroup={isLastInGroup}
                   onReply={canReply ? handleReply : undefined}
                   onReact={canReact ? handleReact : undefined}
+                  {...(msg.failed && msg.guid.startsWith("local-")
+                    ? { onRetry: handleRetry, onDiscard: handleDiscard }
+                    : null)}
                 />
               </div>
             );
