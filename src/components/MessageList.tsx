@@ -343,6 +343,12 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
   const [unseenCount, setUnseenCount] = useState(0);
   const [ready, setReady] = useState(false);
 
+  // Whether the scroll container is mounted, i.e. neither early return below
+  // applies. A chat opened without a cache mounts on the skeleton, so the
+  // scroll listener and ResizeObserver re-attach when the history arrives;
+  // without that, nothing re-pinned an image that decoded after first paint.
+  const listShown = !showLoading && messages.length > 0;
+
   // Scrolling back: fetch the page before the oldest loaded message, then
   // keep what was on screen in place while it lands above.
   const historyRef = useRef(history);
@@ -432,7 +438,7 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
     }
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
-  }, [chatGUID]);
+  }, [chatGUID, listShown]);
 
   // Must run before the firstLoad layout effect below, so readyRef is reset
   // in the same render when chatGUID changes — otherwise switching to a chat
@@ -460,7 +466,7 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
     });
     ro.observe(content);
     return () => ro.disconnect();
-  }, [chatGUID]);
+  }, [chatGUID, listShown]);
 
   useLayoutEffect(() => {
     const visibleCount = visible.length;
@@ -478,6 +484,10 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
         scrollToBottom("auto");
         requestAnimationFrame(() => {
           scrollToBottom("auto");
+          // The pin's own scroll events came before this and were ignored.
+          // Record the height they'd have recorded, or the reader's first
+          // scroll up reads as growth and is snapped back to the bottom.
+          lastScrollHeightRef.current = scrollRef.current?.scrollHeight ?? 0;
           readyRef.current = true;
           setReady(true);
         });

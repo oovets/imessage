@@ -232,6 +232,120 @@ describe("MessageList loading state", () => {
   });
 });
 
+// Records what each observer watches, so a test can resize an element.
+class FakeResizeObserver {
+  static all: FakeResizeObserver[] = [];
+  targets = new Set<Element>();
+  constructor(private callback: ResizeObserverCallback) {
+    FakeResizeObserver.all.push(this);
+  }
+  observe(el: Element) {
+    this.targets.add(el);
+  }
+  unobserve(el: Element) {
+    this.targets.delete(el);
+  }
+  disconnect() {
+    this.targets.clear();
+  }
+  static resized(el: Element) {
+    for (const ro of FakeResizeObserver.all) {
+      if (ro.targets.has(el)) ro.callback([], ro as unknown as ResizeObserver);
+    }
+  }
+}
+
+/** The scroll box jsdom doesn't lay out, clamped the way a browser clamps. */
+function fakeScrollBox(el: HTMLElement, clientHeight: number, initialScrollHeight: number) {
+  let scrollHeight = initialScrollHeight;
+  let scrollTop = 0;
+  const clamp = (v: number) => Math.max(0, Math.min(v, scrollHeight - clientHeight));
+  Object.defineProperties(el, {
+    clientHeight: { configurable: true, get: () => clientHeight },
+    scrollHeight: { configurable: true, get: () => scrollHeight },
+    scrollTop: { configurable: true, get: () => scrollTop, set: (v: number) => (scrollTop = clamp(v)) },
+  });
+  const content = el.firstElementChild!;
+  return {
+    /** The content changed height: scrollTop clamps, observers run, and a
+     *  moved scrollTop fires a scroll event. */
+    resize(height: number) {
+      const before = scrollTop;
+      scrollHeight = height;
+      scrollTop = clamp(scrollTop);
+      act(() => FakeResizeObserver.resized(content));
+      if (scrollTop !== before) act(() => void el.dispatchEvent(new Event("scroll")));
+    },
+    /** The reader scrolls to `top`. */
+    scrollTo(top: number) {
+      scrollTop = clamp(top);
+      act(() => void el.dispatchEvent(new Event("scroll")));
+    },
+  };
+}
+
+describe("MessageList scroll pinning", () => {
+  beforeEach(() => {
+    FakeResizeObserver.all.length = 0;
+    vi.stubGlobal("ResizeObserver", FakeResizeObserver);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const history = [msg("m1"), msg("m2", { dateCreated: T0 + MIN })];
+
+  // The list's scroll wiring hangs off the scroll container, which a chat
+  // opened without a cache only mounts once the history arrives.
+  async function open(path: "skeleton" | "cached", scrollHeight: number) {
+    if (path === "skeleton") useAppStore.setState({ loadingMessages: true });
+    else useAppStore.setState({ messages: { [CHAT]: history } });
+    const view = render(<MessageList chatGUID={CHAT} />);
+    if (path === "skeleton") {
+      expect(view.queryByTestId("skeleton")).not.toBeNull();
+      act(() => useAppStore.setState({ loadingMessages: false, messages: { [CHAT]: history } }));
+    }
+    // In place before the first-load pin, which waits two animation frames.
+    const list = view.container.querySelector<HTMLElement>(".scrollbar-autohide")!;
+    const box = fakeScrollBox(list, 530, scrollHeight);
+    await waitFor(() => expect(view.container.querySelector(".opacity-100")).not.toBeNull());
+    const pill = () => view.getByLabelText("Jump to latest").classList.contains("opacity-100");
+    return { list, box, pill };
+  }
+
+  it.each(["skeleton", "cached"] as const)(
+    "re-pins content that shrinks and grows back after first paint (%s)",
+    async (path) => {
+      const { list, box } = await open(path, 617);
+      expect(list.scrollTop).toBe(87);
+
+      // A link card's image swaps in: the list stops overflowing, then grows.
+      box.resize(530);
+      expect(list.scrollTop).toBe(0);
+      box.resize(619);
+      expect(list.scrollTop).toBe(89);
+    }
+  );
+
+  it.each(["skeleton", "cached"] as const)(
+    "leaves a reader who scrolled up where they are (%s)",
+    async (path) => {
+      const { list, box, pill } = await open(path, 619);
+      expect(list.scrollTop).toBe(89);
+      expect(pill()).toBe(false);
+
+      // The first scroll after opening is the reader's, not growth.
+      box.scrollTo(0);
+      expect(list.scrollTop).toBe(0);
+      expect(pill()).toBe(true);
+
+      box.resize(819);
+      expect(list.scrollTop).toBe(0);
+    }
+  );
+});
+
 // The pre-cache chip and label code, verbatim, as the reference output.
 function oldFormatDateChip(ts: number): string {
   const d = new Date(ts);
