@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
 import { ChevronRight, Star } from "lucide-react";
@@ -65,6 +66,15 @@ function SectionHeader({
 }
 
 /**
+ * A click on the sidebar's chips and toggles leaves focus where it was: a
+ * focused button would keep ↑/↓ from the list and take ↵ for itself,
+ * undoing the click.
+ */
+function keepFocus(e: ReactMouseEvent) {
+  e.preventDefault();
+}
+
+/**
  * One chip per network the chats come from, plus All: narrows the whole
  * sidebar to that network. Chips carry the rows' source tags, so they fit
  * one line; keys 0 (all) and 1–n follow them, shown while the row is hovered.
@@ -91,6 +101,7 @@ function SourceFilter({
         title={`${source ? `Only ${name}` : name} (${key})`}
         // Clicking the network that is on goes back to all of them.
         onClick={() => onPick(on && source ? null : source)}
+        onMouseDown={keepFocus}
         className={cn(
           "relative flex h-[22px] items-center gap-1 whitespace-nowrap rounded-md px-1.5 font-mono text-cc-meta",
           on
@@ -134,6 +145,7 @@ function GroupingToggle({
       type="button"
       aria-pressed={grouping === value}
       onClick={() => onChange(value)}
+      onMouseDown={keepFocus}
       className={cn("hover:text-foreground", grouping === value && "text-foreground")}
     >
       {value}
@@ -160,6 +172,7 @@ function GroupHeader({ group, onToggle }: { group: NetworkGroup; onToggle: (key:
       type="button"
       aria-expanded={!group.collapsed}
       onClick={() => onToggle(group.ref.key)}
+      onMouseDown={keepFocus}
       className="flex w-full items-center gap-1 px-3 pb-1 pt-3 font-mono text-cc-chip uppercase tracking-wide text-muted-foreground hover:text-foreground"
     >
       <ChevronRight
@@ -254,10 +267,12 @@ export function ChatList() {
     return { ...triage(filteredChats, starredChats, now), triagedAt: now };
     // clockTick: a mute lapsed since the last triage.
   }, [filteredChats, starredChats, clockTick]);
+  // From every chat, not just the shown ones: a lapse in a network the
+  // filter or the query hides still changes that network's chip.
   useEffect(
-    () => whenDue(nextTriageChange(filteredChats, triagedAt), () => setClockTick((n) => n + 1)),
+    () => whenDue(nextTriageChange(chats, triagedAt), () => setClockTick((n) => n + 1)),
     // triagedAt is the clock the shown sections were split at.
-    [filteredChats, triagedAt]
+    [chats, triagedAt]
   );
 
   const groups = useMemo(
@@ -340,7 +355,10 @@ export function ChatList() {
           return;
         }
       }
-      if (tag === "BUTTON") return;
+      // A focused button keeps ↵ and Space; ↑/↓ still walk the list from
+      // one of the sidebar's own (a chip or group header reached by Tab).
+      const arrow = e.key === "ArrowDown" || e.key === "ArrowUp";
+      if (tag === "BUTTON" && !(arrow && listRef.current?.contains(target))) return;
 
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         if (visibleChats.length === 0) return;

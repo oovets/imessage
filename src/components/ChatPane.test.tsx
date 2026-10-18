@@ -5,6 +5,7 @@ import { getClient } from "@/api/clientFactory";
 import { useAppStore } from "@/store/useAppStore";
 import type { Message } from "@/types";
 import { ChatPane } from "./ChatPane";
+import { mergeChatThreads } from "@/lib/chatThreadMerge";
 
 vi.mock("@/api/clientFactory", () => ({ getClient: vi.fn() }));
 vi.mock("@/telegram/api", () => ({
@@ -75,7 +76,9 @@ describe("ChatPane message loading", () => {
 
   it("marks the start of an uncached chat whose history fits in one load", async () => {
     // Everything there is came back (fewer than the 50 asked for), so
-    // scrolling back has nothing to fetch.
+    // scrolling back has nothing to fetch. The chat list is merged, so a
+    // single-thread chat is known to be one.
+    mergeChatThreads([]);
     useAppStore.setState({ messages: {}, messageFetchedAt: {}, historyStart: {} });
     getMessages.mockResolvedValue([cachedMessage(), { ...cachedMessage(), guid: "srv-2", dateCreated: 2_000 }]);
     renderPane(IMESSAGE);

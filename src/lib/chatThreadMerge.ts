@@ -22,6 +22,14 @@ let variantsByCanonical = new Map<string, string[]>();
 // canonical guid -> the variant whose thread saw the latest traffic; sends go
 // there so we answer on the service the contact is actually using.
 const preferredSendByCanonical = new Map<string, string>();
+// Whether this session's chat list has been merged yet. Until then every
+// conversation looks like a single thread, split pairs included.
+let threadsKnown = false;
+
+/** Whether chatGuidVariants reflects the server's threads yet this session. */
+export function chatThreadsKnown(): boolean {
+  return threadsKnown;
+}
 
 /** Map any thread guid to the merged conversation's guid. */
 export function canonicalChatGuid(guid: string): string {
@@ -105,6 +113,7 @@ export function mergeChatThreads(chats: Chat[]): Chat[] {
 
   aliasToCanonical = alias;
   variantsByCanonical = variants;
+  threadsKnown = true;
   // Keep existing send preferences only for conversations that still exist.
   for (const key of preferredSendByCanonical.keys()) {
     if (!variants.has(key)) preferredSendByCanonical.delete(key);

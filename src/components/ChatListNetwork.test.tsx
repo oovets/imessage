@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Chat } from "@/types";
 import { useAppStore } from "@/store/useAppStore";
 import { ChatList } from "@/components/ChatList";
@@ -37,6 +37,10 @@ beforeEach(() => {
     chatSourceFilter: null,
     chatListGrouping: "time",
   });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 const listed = (container: HTMLElement) =>
@@ -95,6 +99,39 @@ describe("network filter", () => {
     );
     press("2", view.container.querySelector("textarea")!);
     expect(listed(view.container)).toHaveLength(4);
+  });
+
+  it("recounts a hidden network's chip when a mute there lapses", () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    const now = Date.UTC(2026, 9, 18, 12, 0);
+    vi.setSystemTime(now);
+    useAppStore.setState({
+      chats: [
+        chat("sl:w:C1", "#general"),
+        chat("tg:1:55", "Pontus", { unreadCount: 2, mutedUntil: now + 5 * 60_000 }),
+        chat("iMessage;-;+4670", "Elin"),
+      ],
+      // Telegram is filtered away; its chip is the only sign of it.
+      chatSourceFilter: "slack",
+    });
+    const view = render(<ChatList />);
+    expect(view.getByRole("button", { name: "Telegram" })).toBeTruthy();
+
+    act(() => vi.advanceTimersByTime(5 * 60_000 + 1));
+    expect(view.getByRole("button", { name: "Telegram, 1 waiting" })).toBeTruthy();
+  });
+
+  it("leaves focus where it was on a chip click, and ↑/↓ walk the list from a focused chip", async () => {
+    const view = render(<ChatList />);
+    const chip = view.getByRole("button", { name: "Slack" });
+    // A click would otherwise focus the chip, keeping ↑/↓ from the list and
+    // taking ↵ for itself.
+    expect(fireEvent.mouseDown(chip)).toBe(false);
+
+    // Reached by Tab, say: ↓ still moves the list's cursor (and focus).
+    chip.focus();
+    press("ArrowDown", chip);
+    await waitFor(() => expect(document.activeElement?.getAttribute("data-chat-guid")).toBe("tg:1:55"));
   });
 
   it("lists every network on the compact rail, which has no filter row", () => {
