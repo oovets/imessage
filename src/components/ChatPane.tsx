@@ -523,9 +523,8 @@ export const ChatPane = memo(function ChatPane({
         </div>
       ) : (
         <>
-          {/* Remount per chat so first-load scroll + ready state start clean.
-              Reusing one instance across chats could leave a cached chat's
-              history stuck at opacity-0 until the next interaction. */}
+          {/* Remount per chat so the first-load pin, the scroll state and
+              any earlier pages loaded start clean for each chat. */}
           <MessageList key={`${chatGUID}:${listGen}`} chatGUID={chatGUID!} />
           <MessageInput chatGUID={chatGUID!} />
         </>

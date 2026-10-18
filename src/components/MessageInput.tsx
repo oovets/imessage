@@ -47,6 +47,21 @@ function makeOptimisticMessage(chatGUID: string, text: string, replyGuid: string
   };
 }
 
+/**
+ * Fits the composer to its text, up to 140px. Measuring takes height:auto,
+ * and that forced layout used to hand the message list a one-line composer's
+ * room: the list clamped its scroll to it and stayed there, lines short of
+ * the newest message. Holding the wrapper's height while measuring keeps the
+ * list's box as it was, so only the real change reaches it.
+ */
+function fitToText(el: HTMLTextAreaElement) {
+  const hold = el.parentElement;
+  if (hold) hold.style.minHeight = `${hold.offsetHeight}px`;
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight, 140) + "px";
+  if (hold) hold.style.minHeight = "";
+}
+
 // Memoized: its only prop is the chat GUID, so pane activation and header
 // changes in ChatPane no longer re-render the composer.
 export const MessageInput = memo(function MessageInput({ chatGUID }: MessageInputProps) {
@@ -124,8 +139,7 @@ export const MessageInput = memo(function MessageInput({ chatGUID }: MessageInpu
       if (el) {
         el.focus();
         el.setSelectionRange(caret, caret);
-        el.style.height = "auto";
-        el.style.height = Math.min(el.scrollHeight, 140) + "px";
+        fitToText(el);
       }
     });
   }
@@ -268,9 +282,7 @@ export const MessageInput = memo(function MessageInput({ chatGUID }: MessageInpu
 
   function handleInput() {
     const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = Math.min(el.scrollHeight, 140) + "px";
+    if (el) fitToText(el);
   }
 
   const ghost =
