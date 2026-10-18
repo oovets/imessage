@@ -1,4 +1,5 @@
 import { getClient } from "@/api/clientFactory";
+import { chatGuidVariants, chatThreadsKnown } from "@/lib/chatThreadMerge";
 import { irc } from "@/irc/api";
 import { ircMessageToMessage, parseIrcChatGuid } from "@/irc/adapters";
 import { isSource } from "@/lib/source";
@@ -15,15 +16,20 @@ export const OLDER_PAGE_SIZE = 50;
 const byTime = (a: Message, b: Message) => a.dateCreated - b.dateCreated;
 
 /**
- * Whether a history fetch of up to `limit` messages that returned `count`
- * reached the start of the conversation. BlueBubbles and the IRC log answer
- * with everything there is up to the limit, so a short answer is the start.
- * Slack and Telegram can answer short mid-history; for them only an empty
- * page tells.
+ * Whether an answer of `count` messages, asked for up to `limit`, proves the
+ * conversation starts within it, so the start can be remembered for later
+ * opens. Only answers that can't hide a failure count: the IRC log, and
+ * BlueBubbles for a chat of one thread, which errors when it fails. Not a
+ * merged iMessage/SMS pair, whose fetch reads a failed thread as empty, nor
+ * any iMessage chat before this session's chat list is merged (every chat
+ * looks like one thread until then). Not Slack or Telegram: both can answer
+ * short mid-history, and telegram-core answers a failed network backfill
+ * with an empty page. Their empty page still ends paging for the open list.
  */
-export function reachesHistoryStart(chatGUID: string, count: number, limit: number): boolean {
-  if (count === 0) return true;
-  return (isSource(chatGUID, "imessage") || isSource(chatGUID, "irc")) && count < limit;
+export function provesHistoryStart(chatGUID: string, count: number, limit: number): boolean {
+  if (count >= limit) return false;
+  if (isSource(chatGUID, "irc")) return true;
+  return isSource(chatGUID, "imessage") && chatThreadsKnown() && chatGuidVariants(chatGUID).length === 1;
 }
 
 /**

@@ -23,15 +23,15 @@ import { parseTgChatGuid, tgMessageToMessage } from "@/telegram/adapters";
 import { cn } from "@/lib/utils";
 import { modLabel, shiftModLabel } from "@/lib/shortcuts";
 import { trackHistoryFetch } from "@/lib/historyInFlight";
-import { reachesHistoryStart } from "@/lib/olderHistory";
+import { provesHistoryStart } from "@/lib/olderHistory";
 
 /**
- * A first load of up to `limit` messages that came back short, from a
- * source that answers exactly, holds the chat's first message: scrolling
- * back then has nothing to ask for.
+ * A first load of up to `limit` messages that proves it holds the chat's
+ * first message (see provesHistoryStart): scrolling back then has nothing
+ * to ask for.
  */
 function noteHistoryStart(chatGUID: string, msgs: Message[], limit: number) {
-  if (msgs.length > 0 && reachesHistoryStart(chatGUID, msgs.length, limit)) {
+  if (msgs.length > 0 && provesHistoryStart(chatGUID, msgs.length, limit)) {
     useAppStore.getState().setHistoryStart(chatGUID, msgs[0].guid);
   }
 }

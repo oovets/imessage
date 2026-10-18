@@ -10,7 +10,7 @@ import { tg } from "@/telegram/api";
 import { parseTgChatGuid } from "@/telegram/adapters";
 import { cn } from "@/lib/utils";
 import { deliverIMessage } from "@/lib/sendIMessage";
-import { OLDER_PAGE_SIZE, fetchOlderMessages, reachesHistoryStart } from "@/lib/olderHistory";
+import { OLDER_PAGE_SIZE, fetchOlderMessages, provesHistoryStart } from "@/lib/olderHistory";
 import {
   type Message,
   type ReactionSummary,
@@ -383,15 +383,16 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
         if (el) prependAnchorRef.current = { height: el.scrollHeight, top: el.scrollTop };
         setOlder((prev) => [...fresh, ...prev].sort((a, b) => a.dateCreated - b.dateCreated));
       }
-      // Nothing new before the oldest message, or a page that holds the
-      // first one: the start of the chat, remembered for every later open.
-      const atStart = fresh.length === 0 || reachesHistoryStart(chatGUID, page.length, OLDER_PAGE_SIZE);
-      if (atStart) {
+      // Nothing new before the oldest message ends paging for this list. Only
+      // an answer that proves the start (one that can't be a failure in
+      // disguise) is remembered for every later open.
+      const proven = provesHistoryStart(chatGUID, page.length, OLDER_PAGE_SIZE);
+      if (proven) {
         const first =
           fresh.length > 0 ? fresh.reduce((a, b) => (b.dateCreated < a.dateCreated ? b : a)) : oldest;
         useAppStore.getState().setHistoryStart(chatGUID, first.guid);
       }
-      setOlderLoad(atStart ? "done" : "idle");
+      setOlderLoad(fresh.length === 0 || proven ? "done" : "idle");
     } catch {
       if (aliveRef.current) setOlderLoad("error");
     } finally {

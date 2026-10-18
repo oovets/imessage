@@ -4,6 +4,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { useAppStore } from "@/store/useAppStore";
 import type { Message } from "@/types";
 import { OLDER_PAGE_SIZE, fetchOlderMessages } from "@/lib/olderHistory";
+import { mergeChatThreads } from "@/lib/chatThreadMerge";
 import { getClient } from "@/api/clientFactory";
 import { MessageList } from "./MessageList";
 
@@ -83,6 +84,8 @@ beforeAll(() => {
 beforeEach(() => {
   spy.bubbles.length = 0;
   spy.listRenders = 0;
+  // This session's chat list is merged, with no split iMessage/SMS pairs.
+  mergeChatThreads([]);
   useAppStore.setState({
     chats: [
       {
@@ -681,10 +684,37 @@ describe("MessageList earlier history", () => {
 
     fireEvent.click(view.getByText("Load earlier messages"));
     await waitFor(() => expect(rendersOf("m1")).toHaveLength(1));
-    expect(useAppStore.getState().historyStart[SLACK]).toBeUndefined();
     fireEvent.click(view.getByText("Load earlier messages"));
     await waitFor(() => expect(view.queryByText("Load earlier messages")).toBeNull());
-    expect(useAppStore.getState().historyStart[SLACK]).toBe("m1");
+    // Ends paging for this list, but proves no start to remember.
+    expect(useAppStore.getState().historyStart[SLACK]).toBeUndefined();
+  });
+
+  it("remembers no start from an empty Telegram page, which a failed backfill looks like", async () => {
+    const TG = "tg:1:55";
+    useAppStore.setState({ messages: { [TG]: [msg("m3", { dateCreated: T0 + 30 * MIN })] } });
+    vi.mocked(fetchOlderMessages).mockResolvedValueOnce([]);
+    const view = await renderReady(TG);
+
+    fireEvent.click(view.getByText("Load earlier messages"));
+    await waitFor(() => expect(view.queryByText("Load earlier messages")).toBeNull());
+    expect(useAppStore.getState().historyStart[TG]).toBeUndefined();
+  });
+
+  it("remembers no start for a merged iMessage/SMS pair: the next open asks again", async () => {
+    const thread = (guid: string) =>
+      ({ guid, displayName: "", chatIdentifier: guid, participants: [], lastMessage: null, unreadCount: 0 });
+    mergeChatThreads([thread(CHAT), thread("SMS;-;+46700000000")]);
+    useAppStore.setState({ messages: { [CHAT]: [msg("m3", { dateCreated: T0 + 30 * MIN })] } });
+    // With the server out of reach, the pair's fetch answers empty.
+    vi.mocked(fetchOlderMessages).mockResolvedValueOnce([]);
+    const view = await renderReady();
+
+    fireEvent.click(view.getByText("Load earlier messages"));
+    await waitFor(() => expect(view.queryByText("Load earlier messages")).toBeNull());
+    expect(useAppStore.getState().historyStart[CHAT]).toBeUndefined();
+    view.unmount();
+    expect((await renderReady()).getByText("Load earlier messages")).toBeTruthy();
   });
 
   it("opens at a known start without the button, and scrolling asks for nothing", async () => {

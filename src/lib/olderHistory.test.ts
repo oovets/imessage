@@ -5,8 +5,9 @@ import { irc } from "@/irc/api";
 import { sl } from "@/slack/api";
 import { tg } from "@/telegram/api";
 import { useAppStore } from "@/store/useAppStore";
-import type { Message } from "@/types";
-import { fetchOlderMessages, OLDER_PAGE_SIZE, reachesHistoryStart } from "@/lib/olderHistory";
+import type { Chat, Message } from "@/types";
+import { fetchOlderMessages, OLDER_PAGE_SIZE, provesHistoryStart } from "@/lib/olderHistory";
+import { mergeChatThreads } from "@/lib/chatThreadMerge";
 
 vi.mock("@/api/clientFactory", () => ({ getClient: vi.fn() }));
 vi.mock("@/irc/api", () => ({ irc: { history: vi.fn() } }));
@@ -70,17 +71,42 @@ describe("fetchOlderMessages", () => {
   });
 });
 
-describe("reachesHistoryStart", () => {
-  it("reads a short answer as the start where the source answers exactly", () => {
-    expect(reachesHistoryStart("iMessage;-;+46700000000", 12, OLDER_PAGE_SIZE)).toBe(true);
-    expect(reachesHistoryStart("irc:net:#rust", 12, 100)).toBe(true);
-    expect(reachesHistoryStart("iMessage;-;+46700000000", OLDER_PAGE_SIZE, OLDER_PAGE_SIZE)).toBe(false);
+describe("provesHistoryStart", () => {
+  const IMSG = "iMessage;-;+46700000000";
+  const thread = (guid: string) =>
+    ({ guid, displayName: "", chatIdentifier: guid, participants: [], lastMessage: null, unreadCount: 0 }) as Chat;
+
+  it("proves nothing for iMessage before this session's chat list is merged", async () => {
+    // A fresh module: no chat list merged yet, so a split pair would look
+    // like one thread.
+    vi.resetModules();
+    const fresh = await import("@/lib/olderHistory");
+    expect(fresh.provesHistoryStart(IMSG, 12, OLDER_PAGE_SIZE)).toBe(false);
+    expect(fresh.provesHistoryStart("irc:net:#rust", 12, 100)).toBe(true);
   });
 
-  it("needs an empty page from Slack and Telegram, which can answer short mid-history", () => {
-    expect(reachesHistoryStart("sl:work:C1", 12, OLDER_PAGE_SIZE)).toBe(false);
-    expect(reachesHistoryStart("tg:1:55", 12, OLDER_PAGE_SIZE)).toBe(false);
-    expect(reachesHistoryStart("sl:work:C1", 0, OLDER_PAGE_SIZE)).toBe(true);
-    expect(reachesHistoryStart("tg:1:55", 0, OLDER_PAGE_SIZE)).toBe(true);
+  it("reads a short or empty answer as the start from a one-thread iMessage chat and the IRC log", () => {
+    mergeChatThreads([]);
+    expect(provesHistoryStart(IMSG, 12, OLDER_PAGE_SIZE)).toBe(true);
+    expect(provesHistoryStart(IMSG, 0, OLDER_PAGE_SIZE)).toBe(true);
+    expect(provesHistoryStart("irc:net:#rust", 12, 100)).toBe(true);
+    expect(provesHistoryStart(IMSG, OLDER_PAGE_SIZE, OLDER_PAGE_SIZE)).toBe(false);
+  });
+
+  it("proves nothing for a merged iMessage/SMS pair, whose fetch reads a failed thread as empty", () => {
+    mergeChatThreads([thread(IMSG), thread("SMS;-;+46700000000")]);
+    expect(provesHistoryStart(IMSG, 0, OLDER_PAGE_SIZE)).toBe(false);
+    expect(provesHistoryStart(IMSG, 12, OLDER_PAGE_SIZE)).toBe(false);
+    mergeChatThreads([]);
+  });
+
+  it("proves nothing for Slack or Telegram, not even with an empty page", () => {
+    mergeChatThreads([]);
+    // Both can answer short mid-history; telegram-core answers a failed
+    // network backfill with an empty page.
+    for (const chat of ["sl:work:C1", "tg:1:55"]) {
+      expect(provesHistoryStart(chat, 12, OLDER_PAGE_SIZE)).toBe(false);
+      expect(provesHistoryStart(chat, 0, OLDER_PAGE_SIZE)).toBe(false);
+    }
   });
 });
