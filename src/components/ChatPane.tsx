@@ -9,7 +9,13 @@ import { parseSlChatGuid, slMessageToMessage } from "@/slack/adapters";
 import { irc } from "@/irc/api";
 import { ircMessageToMessage, parseIrcChatGuid } from "@/irc/adapters";
 import { getClient } from "@/api/clientFactory";
-import { getChatDisplayName, formatMessageTime, nextMessageTimeChange, whenDue } from "@/types";
+import {
+  getChatDisplayName,
+  formatMessageTime,
+  nextMessageTimeChange,
+  whenDue,
+  type Message,
+} from "@/types";
 import { accountOfGuid, fallbackAccountLabel } from "@/lib/accounts";
 import { CHAT_DRAG_MIME } from "@/lib/triage";
 import { tg } from "@/telegram/api";
@@ -17,6 +23,18 @@ import { parseTgChatGuid, tgMessageToMessage } from "@/telegram/adapters";
 import { cn } from "@/lib/utils";
 import { modLabel, shiftModLabel } from "@/lib/shortcuts";
 import { trackHistoryFetch } from "@/lib/historyInFlight";
+import { reachesHistoryStart } from "@/lib/olderHistory";
+
+/**
+ * A first load of up to `limit` messages that came back short, from a
+ * source that answers exactly, holds the chat's first message: scrolling
+ * back then has nothing to ask for.
+ */
+function noteHistoryStart(chatGUID: string, msgs: Message[], limit: number) {
+  if (msgs.length > 0 && reachesHistoryStart(chatGUID, msgs.length, limit)) {
+    useAppStore.getState().setHistoryStart(chatGUID, msgs[0].guid);
+  }
+}
 
 interface ChatPaneProps {
   paneId: string;
@@ -168,10 +186,9 @@ export const ChatPane = memo(function ChatPane({
         .then((ircMsgs) => {
           if (cancelled) return;
           // Oldest first already, which is the order MessageList renders.
-          setMessages(
-            chatGUID,
-            ircMsgs.map((m) => ircMessageToMessage(networkId, bufferId, m))
-          );
+          const msgs = ircMsgs.map((m) => ircMessageToMessage(networkId, bufferId, m));
+          setMessages(chatGUID, msgs);
+          noteHistoryStart(chatGUID, msgs, 100);
           if (recoverRef.current === chatGUID) {
             recoverRef.current = null;
             setListGen((g) => g + 1);
@@ -284,7 +301,10 @@ export const ChatPane = memo(function ChatPane({
         // .catch below.
         if (hasCached && msgs.length === 0) return;
         if (hasCached) mergeMessages(chatGUID, msgs);
-        else setMessages(chatGUID, msgs);
+        else {
+          setMessages(chatGUID, msgs);
+          noteHistoryStart(chatGUID, msgs, 50);
+        }
       })
       .catch((e: unknown) => {
         if (!cancelled) setFetchError(String(e));

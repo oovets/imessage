@@ -321,6 +321,7 @@ function legacySerialised(): string {
     ),
     messageOrder: s.messageOrder,
     messageFetchedAt: s.messageFetchedAt,
+    historyStart: s.historyStart,
     accountLabels: s.accountLabels,
     collapsedAccounts: s.collapsedAccounts,
     starredChats: s.starredChats,

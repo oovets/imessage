@@ -73,6 +73,26 @@ describe("ChatPane message loading", () => {
     expect(getMessages.mock.calls[0][2]).toBe(1_000);
   });
 
+  it("marks the start of an uncached chat whose history fits in one load", async () => {
+    // Everything there is came back (fewer than the 50 asked for), so
+    // scrolling back has nothing to fetch.
+    useAppStore.setState({ messages: {}, messageFetchedAt: {}, historyStart: {} });
+    getMessages.mockResolvedValue([cachedMessage(), { ...cachedMessage(), guid: "srv-2", dateCreated: 2_000 }]);
+    renderPane(IMESSAGE);
+    await vi.waitFor(() => expect(useAppStore.getState().messages[IMESSAGE]).toHaveLength(2));
+    expect(useAppStore.getState().historyStart[IMESSAGE]).toBe("srv-1");
+  });
+
+  it("leaves the start unknown when the first load is a full page", async () => {
+    useAppStore.setState({ messages: {}, messageFetchedAt: {}, historyStart: {} });
+    getMessages.mockResolvedValue(
+      Array.from({ length: 50 }, (_, i) => ({ ...cachedMessage(), guid: `srv-${i}`, dateCreated: 1_000 + i }))
+    );
+    renderPane(IMESSAGE);
+    await vi.waitFor(() => expect(useAppStore.getState().messages[IMESSAGE]).toHaveLength(50));
+    expect(useAppStore.getState().historyStart[IMESSAGE]).toBeUndefined();
+  });
+
   it("does not refetch an iMessage pane when Telegram reloads", async () => {
     // Regression: telegramReloadNonce sat unconditionally in the effect's
     // dependency array, so every tg:ready re-ran the BlueBubbles fetch in every

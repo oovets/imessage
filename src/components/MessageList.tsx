@@ -10,7 +10,7 @@ import { tg } from "@/telegram/api";
 import { parseTgChatGuid } from "@/telegram/adapters";
 import { cn } from "@/lib/utils";
 import { deliverIMessage } from "@/lib/sendIMessage";
-import { fetchOlderMessages } from "@/lib/olderHistory";
+import { OLDER_PAGE_SIZE, fetchOlderMessages, reachesHistoryStart } from "@/lib/olderHistory";
 import {
   type Message,
   type ReactionSummary,
@@ -182,12 +182,16 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
   // Pages scrolled back to. The store caches only the newest messages per
   // chat, so these live here, for as long as this chat is open in the pane.
   const [older, setOlder] = useState<Message[]>(NO_MESSAGES);
-  const [olderState, setOlderState] = useState<"idle" | "loading" | "error" | "done">("idle");
+  const [olderLoad, setOlderLoad] = useState<"idle" | "loading" | "error" | "done">("idle");
   const history = useMemo(() => {
     if (older.length === 0) return messages;
     const cached = new Set(messages.map((m) => m.guid));
     return [...older.filter((m) => !cached.has(m.guid)), ...messages];
   }, [older, messages]);
+  // The chat's first message is loaded (learnt on an earlier open or page):
+  // there is nothing before it, so no button and no page to ask for.
+  const historyStart = useAppStore((s) => s.historyStart[chatGUID]);
+  const olderState = historyStart !== undefined && history[0]?.guid === historyStart ? "done" : olderLoad;
   // The loading flag is global and only matters while this chat is empty, so
   // subscribe to exactly that: another pane's fetch no longer re-renders a
   // list that already has content.
@@ -368,7 +372,7 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
     const oldest = historyRef.current[0];
     if (!oldest || olderBusyRef.current || olderStateRef.current === "done") return;
     olderBusyRef.current = true;
-    setOlderState("loading");
+    setOlderLoad("loading");
     try {
       const page = await fetchOlderMessages(chatGUID, oldest);
       if (!aliveRef.current) return;
@@ -379,10 +383,17 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
         if (el) prependAnchorRef.current = { height: el.scrollHeight, top: el.scrollTop };
         setOlder((prev) => [...fresh, ...prev].sort((a, b) => a.dateCreated - b.dateCreated));
       }
-      // Nothing new before the oldest message: the start of the chat.
-      setOlderState(fresh.length > 0 ? "idle" : "done");
+      // Nothing new before the oldest message, or a page that holds the
+      // first one: the start of the chat, remembered for every later open.
+      const atStart = fresh.length === 0 || reachesHistoryStart(chatGUID, page.length, OLDER_PAGE_SIZE);
+      if (atStart) {
+        const first =
+          fresh.length > 0 ? fresh.reduce((a, b) => (b.dateCreated < a.dateCreated ? b : a)) : oldest;
+        useAppStore.getState().setHistoryStart(chatGUID, first.guid);
+      }
+      setOlderLoad(atStart ? "done" : "idle");
     } catch {
-      if (aliveRef.current) setOlderState("error");
+      if (aliveRef.current) setOlderLoad("error");
     } finally {
       olderBusyRef.current = false;
     }

@@ -349,6 +349,13 @@ interface AppState {
   messageOrder: string[];
   replyTarget: Record<string, Message | null>;
   messageFetchedAt: Record<string, number>;
+  /**
+   * Guid of each chat's first message, once known. Scrolling back stops
+   * there instead of asking for a page before it, which comes back empty.
+   * Persisted; kept when a chat's messages are evicted (it stays true).
+   */
+  historyStart: Record<string, string>;
+  setHistoryStart: (chatGUID: string, guid: string) => void;
   linkPreviewCache: Record<string, LinkPreview>;
 
   loadingChats: boolean;
@@ -884,6 +891,7 @@ export const useAppStore = create<AppState>()(
       messageOrder: [],
       replyTarget: {},
       messageFetchedAt: {},
+      historyStart: {},
       linkPreviewCache: {},
 
       loadingChats: false,
@@ -920,6 +928,7 @@ export const useAppStore = create<AppState>()(
           messages: {},
           messageOrder: [],
           messageFetchedAt: {},
+          historyStart: {},
           paneTree: EMPTY_LEAF,
           activePaneId: EMPTY_LEAF.id,
           paneLayouts: {},
@@ -1314,6 +1323,13 @@ export const useAppStore = create<AppState>()(
         );
       },
 
+      setHistoryStart: (chatGUID, guid) =>
+        set((s) =>
+          s.historyStart[chatGUID] === guid
+            ? s
+            : { historyStart: { ...s.historyStart, [chatGUID]: guid } }
+        ),
+
       mergeMessages: (chatGUID, newMessages) => {
         if (newMessages.length === 0) return;
         const existing = get().messages[chatGUID] ?? [];
@@ -1504,6 +1520,7 @@ export const useAppStore = create<AppState>()(
         messages: s.messages,
         messageOrder: s.messageOrder,
         messageFetchedAt: s.messageFetchedAt,
+        historyStart: s.historyStart,
         accountLabels: s.accountLabels,
         collapsedAccounts: s.collapsedAccounts,
         starredChats: s.starredChats,

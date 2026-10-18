@@ -6,7 +6,7 @@ import { sl } from "@/slack/api";
 import { tg } from "@/telegram/api";
 import { useAppStore } from "@/store/useAppStore";
 import type { Message } from "@/types";
-import { fetchOlderMessages, OLDER_PAGE_SIZE } from "@/lib/olderHistory";
+import { fetchOlderMessages, OLDER_PAGE_SIZE, reachesHistoryStart } from "@/lib/olderHistory";
 
 vi.mock("@/api/clientFactory", () => ({ getClient: vi.fn() }));
 vi.mock("@/irc/api", () => ({ irc: { history: vi.fn() } }));
@@ -67,5 +67,20 @@ describe("fetchOlderMessages", () => {
     const chat = "irc:net:#rust";
     await fetchOlderMessages(chat, oldest("irc:net:#rust:abc", chat));
     expect(irc.history).toHaveBeenCalledWith("net", "#rust", OLDER_PAGE_SIZE, T);
+  });
+});
+
+describe("reachesHistoryStart", () => {
+  it("reads a short answer as the start where the source answers exactly", () => {
+    expect(reachesHistoryStart("iMessage;-;+46700000000", 12, OLDER_PAGE_SIZE)).toBe(true);
+    expect(reachesHistoryStart("irc:net:#rust", 12, 100)).toBe(true);
+    expect(reachesHistoryStart("iMessage;-;+46700000000", OLDER_PAGE_SIZE, OLDER_PAGE_SIZE)).toBe(false);
+  });
+
+  it("needs an empty page from Slack and Telegram, which can answer short mid-history", () => {
+    expect(reachesHistoryStart("sl:work:C1", 12, OLDER_PAGE_SIZE)).toBe(false);
+    expect(reachesHistoryStart("tg:1:55", 12, OLDER_PAGE_SIZE)).toBe(false);
+    expect(reachesHistoryStart("sl:work:C1", 0, OLDER_PAGE_SIZE)).toBe(true);
+    expect(reachesHistoryStart("tg:1:55", 0, OLDER_PAGE_SIZE)).toBe(true);
   });
 });

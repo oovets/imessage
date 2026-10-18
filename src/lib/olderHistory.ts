@@ -15,6 +15,18 @@ export const OLDER_PAGE_SIZE = 50;
 const byTime = (a: Message, b: Message) => a.dateCreated - b.dateCreated;
 
 /**
+ * Whether a history fetch of up to `limit` messages that returned `count`
+ * reached the start of the conversation. BlueBubbles and the IRC log answer
+ * with everything there is up to the limit, so a short answer is the start.
+ * Slack and Telegram can answer short mid-history; for them only an empty
+ * page tells.
+ */
+export function reachesHistoryStart(chatGUID: string, count: number, limit: number): boolean {
+  if (count === 0) return true;
+  return (isSource(chatGUID, "imessage") || isSource(chatGUID, "irc")) && count < limit;
+}
+
+/**
  * The page of history just before `oldest` (the oldest message loaded),
  * oldest first, from whichever source the chat belongs to. It may overlap
  * what is loaded; callers dedupe by guid. An empty page means the start of

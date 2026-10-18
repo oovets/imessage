@@ -3,7 +3,7 @@ import { act, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "@/store/useAppStore";
 import type { Message } from "@/types";
-import { fetchOlderMessages } from "@/lib/olderHistory";
+import { OLDER_PAGE_SIZE, fetchOlderMessages } from "@/lib/olderHistory";
 import { getClient } from "@/api/clientFactory";
 import { MessageList } from "./MessageList";
 
@@ -36,7 +36,10 @@ vi.mock("@/components/MessageListSkeleton", () => ({
 }));
 vi.mock("@/api/clientFactory", () => ({ getClient: vi.fn() }));
 vi.mock("@/telegram/api", () => ({ tg: { react: vi.fn() } }));
-vi.mock("@/lib/olderHistory", () => ({ fetchOlderMessages: vi.fn() }));
+vi.mock("@/lib/olderHistory", async (actual) => ({
+  ...(await actual<typeof import("@/lib/olderHistory")>()),
+  fetchOlderMessages: vi.fn(),
+}));
 
 const CHAT = "iMessage;-;+46700000000";
 const OTHER = "iMessage;-;+46700000001";
@@ -92,6 +95,7 @@ beforeEach(() => {
       },
     ],
     messages: {},
+    historyStart: {},
     loadingMessages: false,
     superlightMode: false,
     showTimestamps: true,
@@ -627,8 +631,13 @@ describe("MessageList earlier history", () => {
     useAppStore.setState({ messages: { [CHAT]: [m3, m4] } });
     const m1 = msg("m1", { dateCreated: T0 });
     const m2 = msg("m2", { dateCreated: T0 + MIN });
-    // The page may overlap what is loaded; m3 must not double up.
-    vi.mocked(fetchOlderMessages).mockResolvedValueOnce([m1, m2, m3]).mockResolvedValueOnce([]);
+    // A full page, which may overlap what is loaded; m3 must not double up.
+    const between = Array.from({ length: OLDER_PAGE_SIZE - 3 }, (_, i) =>
+      msg(`f${i}`, { dateCreated: T0 + 2 * MIN + i })
+    );
+    vi.mocked(fetchOlderMessages)
+      .mockResolvedValueOnce([m1, m2, ...between, m3])
+      .mockResolvedValueOnce([]);
     const view = await renderReady();
 
     fireEvent.click(view.getByText("Load earlier messages"));
@@ -642,6 +651,63 @@ describe("MessageList earlier history", () => {
     fireEvent.click(view.getByText("Load earlier messages"));
     await waitFor(() => expect(view.queryByText("Load earlier messages")).toBeNull());
     expect(vi.mocked(fetchOlderMessages).mock.calls[1]).toEqual([CHAT, m1]);
+    expect(useAppStore.getState().historyStart[CHAT]).toBe("m1");
+  });
+
+  it("takes a short iMessage page for the start and asks for no more", async () => {
+    useAppStore.setState({ messages: { [CHAT]: [msg("m3", { dateCreated: T0 + 30 * MIN })] } });
+    // BlueBubbles answers with everything up to the limit: two is all.
+    vi.mocked(fetchOlderMessages).mockResolvedValueOnce([
+      msg("m1", { dateCreated: T0 }),
+      msg("m2", { dateCreated: T0 + MIN }),
+    ]);
+    const view = await renderReady();
+
+    fireEvent.click(view.getByText("Load earlier messages"));
+    await waitFor(() => expect(rendersOf("m1")).toHaveLength(1));
+    expect(view.queryByText("Load earlier messages")).toBeNull();
+    expect(useAppStore.getState().historyStart[CHAT]).toBe("m1");
+    expect(fetchOlderMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps paging a Slack chat after a short page, until one comes back empty", async () => {
+    const SLACK = "sl:work:C1";
+    useAppStore.setState({ messages: { [SLACK]: [msg("m3", { dateCreated: T0 + 30 * MIN })] } });
+    // Slack can answer short in the middle of a history.
+    vi.mocked(fetchOlderMessages)
+      .mockResolvedValueOnce([msg("m1", { dateCreated: T0 }), msg("m2", { dateCreated: T0 + MIN })])
+      .mockResolvedValueOnce([]);
+    const view = await renderReady(SLACK);
+
+    fireEvent.click(view.getByText("Load earlier messages"));
+    await waitFor(() => expect(rendersOf("m1")).toHaveLength(1));
+    expect(useAppStore.getState().historyStart[SLACK]).toBeUndefined();
+    fireEvent.click(view.getByText("Load earlier messages"));
+    await waitFor(() => expect(view.queryByText("Load earlier messages")).toBeNull());
+    expect(useAppStore.getState().historyStart[SLACK]).toBe("m1");
+  });
+
+  it("opens at a known start without the button, and scrolling asks for nothing", async () => {
+    useAppStore.setState({
+      messages: { [CHAT]: [msg("m1"), msg("m2", { dateCreated: T0 + MIN })] },
+      historyStart: { [CHAT]: "m1" },
+    });
+    const view = await renderReady();
+    expect(view.queryByText("Load earlier messages")).toBeNull();
+
+    // At the top of the list, where a scroll would fetch the page before.
+    fireEvent.scroll(view.container.querySelector(".scrollbar-autohide")!);
+    expect(fetchOlderMessages).not.toHaveBeenCalled();
+  });
+
+  it("asks again once the cached history no longer reaches the start", async () => {
+    // The cache keeps the newest messages; m0, the first, has dropped out.
+    useAppStore.setState({
+      messages: { [CHAT]: [msg("m1"), msg("m2", { dateCreated: T0 + MIN })] },
+      historyStart: { [CHAT]: "m0" },
+    });
+    const view = await renderReady();
+    expect(view.getByText("Load earlier messages")).toBeTruthy();
   });
 
   // 100px a row (the button row and each message), so a page landing above
@@ -669,10 +735,12 @@ describe("MessageList earlier history", () => {
     // 11 rows: 1100px in a 530px box, pinned at 570; the reader goes to 100.
     const { list, box } = openScrolledBack(10, 100, 5);
     await waitFor(() => expect(rendersOf("o0")).toHaveLength(1));
-    // 16 rows now; what was 100px from the top still is.
-    expect(list.scrollTop).toBe(1600 - 1100 + 100);
+    // 15 rows now: five more, and the button row gone (a short iMessage page
+    // is the start). What was 100px from the top still is.
+    expect(list.querySelector("button")).toBeNull();
+    expect(list.scrollTop).toBe(1500 - 1100 + 100);
     box.resize();
-    expect(list.scrollTop).toBe(600);
+    expect(list.scrollTop).toBe(500);
     vi.unstubAllGlobals();
   });
 
@@ -681,10 +749,11 @@ describe("MessageList earlier history", () => {
     // bottom, which still counts as being there.
     const { list, box } = openScrolledBack(5, 0, 5);
     await waitFor(() => expect(rendersOf("o0")).toHaveLength(1));
-    expect(list.scrollTop).toBe(1100 - 600);
+    // 10 rows: five more, the button row gone.
+    expect(list.scrollTop).toBe(1000 - 600);
     // The page's growth is above the reader: not a reason to re-pin.
     box.resize();
-    expect(list.scrollTop).toBe(500);
+    expect(list.scrollTop).toBe(400);
     vi.unstubAllGlobals();
   });
 
