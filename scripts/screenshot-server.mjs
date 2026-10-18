@@ -281,7 +281,12 @@ createServer((req, res) => {
   if (history) {
     const chat = chats.find((c) => c.guid === decodeURIComponent(history[1]));
     const after = Number(url.searchParams.get("after") ?? 0);
-    const list = (chat?.messages ?? []).filter((m) => m.dateCreated > after);
+    const before = Number(url.searchParams.get("before") ?? Infinity);
+    const limit = Number(url.searchParams.get("limit") ?? Infinity);
+    // Newest first, like BlueBubbles: the `limit` newest in the window.
+    const list = (chat?.messages ?? [])
+      .filter((m) => m.dateCreated > after && m.dateCreated < before)
+      .slice(-limit);
     return send(res, 200, { status: 200, data: [...list].reverse() });
   }
   const download = path.match(/^\/api\/v1\/attachment\/([^/]+)\/download$/);

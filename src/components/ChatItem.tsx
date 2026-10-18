@@ -323,9 +323,10 @@ function ChatItemComponent({
           >
             {name}
           </span>
-          {/* Star: shown on hover, on the keyboard cursor's row (S toggles
-              it) and always where there is no hover. A span, not a button —
-              the whole row already is one. */}
+          {/* Star: shown on hover, on the row focused from the keyboard (S
+              toggles it there) and always where there is no hover. Not on the
+              clicked row, where it would squeeze the name next to the pane
+              key. A span, not a button — the whole row already is one. */}
           {onToggleStar && (
             <span
               role="button"
@@ -338,7 +339,6 @@ function ChatItemComponent({
               }}
               className={cn(
                 "hidden h-[19px] w-[19px] shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground group-hover:inline-flex group-focus-visible:inline-flex [@media(hover:none)]:inline-flex",
-                isCursor && "inline-flex",
                 starred && "text-foreground"
               )}
             >
