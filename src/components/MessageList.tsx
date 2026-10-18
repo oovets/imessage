@@ -392,7 +392,15 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
           fresh.length > 0 ? fresh.reduce((a, b) => (b.dateCreated < a.dateCreated ? b : a)) : oldest;
         useAppStore.getState().setHistoryStart(chatGUID, first.guid);
       }
-      setOlderLoad(fresh.length === 0 || proven ? "done" : "idle");
+      const done = fresh.length === 0 || proven;
+      // Paging's end takes the button row with it. An empty page prepends
+      // nothing to anchor, so anchor the row's removal, or the history
+      // below it jumps up by its height.
+      if (done && fresh.length === 0) {
+        const el = scrollRef.current;
+        if (el) prependAnchorRef.current = { height: el.scrollHeight, top: el.scrollTop };
+      }
+      setOlderLoad(done ? "done" : "idle");
     } catch {
       if (aliveRef.current) setOlderLoad("error");
     } finally {
@@ -408,12 +416,14 @@ export const MessageList = memo(function MessageList({ chatGUID }: MessageListPr
     if (!anchor || !el) return;
     prependAnchorRef.current = null;
     el.scrollTop = el.scrollHeight - anchor.height + anchor.top;
-    // The page grew the list above the reader. Within 80px of the bottom
-    // still counts as pinned, so without this the ResizeObserver and the
-    // scroll handler took it for new content and moved what was restored.
+    // The list changed above the reader (a page landed, or the button row
+    // went). Within 80px of the bottom still counts as pinned, so without
+    // this the ResizeObserver and the scroll handler took it for new content
+    // and moved what was restored.
     lastScrollHeightRef.current = el.scrollHeight;
     if (el.scrollHeight - el.scrollTop - el.clientHeight > 1) wasAtBottomRef.current = false;
-  }, [older]);
+    // olderState: an empty page only removes the button row.
+  }, [older, olderState]);
 
   function scrollToBottom(behavior: ScrollBehavior = "auto") {
     const el = scrollRef.current;
